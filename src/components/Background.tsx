@@ -31,14 +31,14 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
         <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
             {/* Grain Overlay handled in index.css */}
 
-            {/* Decorative Background Elements */}
-            <div className="absolute top-10 left-[-20px] opacity-20 transform rotate-12 transition-transform duration-100 ease-out"
+            {/* Decorative Background Elements - Hidden on mobile */}
+            <div className="hidden md:block absolute top-10 left-[-20px] opacity-20 transform rotate-12 transition-transform duration-100 ease-out"
                 style={{ ...parallax(-20), '--r': '12deg' } as React.CSSProperties}>
                 <img src="https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/uploads/be7bd51c-6dd7-4e04-a620-8108ef138948/1768838242918-60798e6e/Justin_and_Hailey_Bieber___.jpg"
                     className="w-64 h-80 object-cover grayscale contrast-150 blur-sm" alt="decorative" />
             </div>
 
-            <div className="absolute bottom-20 right-[-30px] opacity-10 transform -rotate-12 transition-transform duration-100 ease-out"
+            <div className="hidden md:block absolute bottom-20 right-[-30px] opacity-10 transform -rotate-12 transition-transform duration-100 ease-out"
                 style={{ ...parallax(-30), '--r': '-12deg' } as React.CSSProperties}>
                 <img src="https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/uploads/be7bd51c-6dd7-4e04-a620-8108ef138948/1768838242918-60798e6e/Justin_and_Hailey_Bieber___.jpg"
                     className="w-72 h-96 object-cover sepia contrast-125" alt="decorative" />

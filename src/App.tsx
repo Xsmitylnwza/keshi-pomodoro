@@ -3,6 +3,7 @@ import { Menu, Play, Pause, RotateCcw, History as HistoryIcon } from 'lucide-rea
 import { CustomCursor } from './components/CustomCursor';
 import Background from './components/Background';
 import { SettingsModal, HistoryModal } from './components/Modals';
+import { RadioWidget } from './components/RadioWidget';
 
 type TimerMode = 'focus' | 'break';
 
@@ -94,6 +95,24 @@ function App() {
     document.title = `${m}:${s} • ${mode.toUpperCase()}`;
   }, [timeLeft, mode]);
 
+  // Keyboard Shortcuts (Enter / Spacebar to toggle timer)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input or modal is open
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (showSettings || showHistory) return;
+
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        setIsRunning(prev => !prev);
+        playClick();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showSettings, showHistory, soundEnabled]);
+
   const handleComplete = () => {
     setIsRunning(false);
     if (soundEnabled && audioRef.current) audioRef.current.play();
@@ -162,14 +181,14 @@ function App() {
       <div className="noise-overlay"></div>
 
       {/* Navigation (Floating / Minimal) */}
-      <nav className="fixed top-0 left-0 right-0 z-40 p-6 flex justify-between items-start mix-blend-difference" style={{ viewTransitionName: 'main-nav' }}>
-        <div className="flex items-center gap-4 group cursor-pointer">
-          <div className="w-12 h-12 relative">
+      <nav className="fixed top-0 left-0 right-0 z-40 p-3 sm:p-4 md:p-6 flex justify-between items-start mix-blend-difference" style={{ viewTransitionName: 'main-nav' }}>
+        <div className="flex items-center gap-2 sm:gap-4 group cursor-pointer">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 relative">
             <img src="/profile.jpg"
               alt="Logo"
               className="w-full h-full object-cover rounded-full border-2 border-paper-cream grayscale group-hover:scale-110 group-hover:grayscale-0 transition-all duration-300" />
           </div>
-          <span className="font-grotesk font-bold text-xl tracking-widest text-paper-cream">
+          <span className="font-grotesk font-bold text-sm sm:text-lg md:text-xl tracking-widest text-paper-cream hidden sm:inline">
             DEV<span className="text-accent-red">.</span>GABRIEL
           </span>
         </div>
@@ -208,48 +227,94 @@ function App() {
         </div>
 
         {/* Timer Display */}
-        <div className="relative mb-12 group">
-          <div className="text-[8rem] md:text-[12rem] font-serif-custom italic leading-none tracking-tighter mix-blend-difference opacity-90 group-hover:scale-105 transition-transform duration-500 cursor-default select-none">
+        <div className="relative mb-6 sm:mb-8 md:mb-10 group text-center">
+          <div className="text-[4rem] sm:text-[6rem] md:text-[8rem] lg:text-[12rem] font-serif-custom italic leading-none tracking-tighter mix-blend-difference opacity-90 group-hover:scale-105 transition-transform duration-500 cursor-default select-none">
             {formatTime(timeLeft)}
           </div>
+        </div>
 
-          {/* Progress Bar (Tape Style) */}
-          <div className="w-64 h-2 bg-white/10 mt-4 rounded-full overflow-hidden mx-auto border border-white/20">
-            <div className="h-full transition-all duration-1000 ease-linear relative" style={{ width: `${progress}%`, backgroundColor: MODES[mode].color }}>
-              <div className="absolute inset-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/diagmonds-light.png')] opacity-30"></div>
+        {/* Progress Bar (Typewriter / Newspaper Style) - Separate from timer for stable width */}
+        <div className="w-64 sm:w-72 md:w-80 mb-8 sm:mb-10 md:mb-12 mx-auto">
+          {/* Newspaper Header Line */}
+          <div className="flex items-center gap-2 mb-2">
+            <div className="flex-1 h-px bg-white/30"></div>
+            <span className="text-[8px] sm:text-[10px] font-mono uppercase tracking-[0.2em] sm:tracking-[0.3em] text-white/40">
+              {mode === 'focus' ? 'session in progress' : 'break time'}
+            </span>
+            <div className="flex-1 h-px bg-white/30"></div>
+          </div>
+
+          {/* Typewriter Progress Track */}
+          <div className="relative h-3 sm:h-4 bg-paper-cream/10 border border-white/10 overflow-hidden"
+            style={{
+              clipPath: 'polygon(0 20%, 2% 0, 98% 0, 100% 20%, 100% 80%, 98% 100%, 2% 100%, 0 80%)'
+            }}>
+            {/* Striped Background Pattern */}
+            <div className="absolute inset-0 opacity-20"
+              style={{
+                backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 4px, rgba(255,255,255,0.1) 4px, rgba(255,255,255,0.1) 8px)'
+              }}></div>
+
+            {/* Progress Fill - "Ink" spreading effect */}
+            <div
+              className="h-full transition-all duration-1000 ease-linear relative overflow-hidden"
+              style={{ width: `${progress}%` }}>
+              {/* Halftone / Newspaper Dot Pattern */}
+              <div
+                className={`absolute inset-0 ${mode === 'focus' ? 'bg-accent-red' : 'bg-accent-green'} transition-colors duration-1000`}
+                style={{
+                  backgroundImage: `radial-gradient(circle, ${mode === 'focus' ? '#7f1d1d' : '#065f46'} 1px, transparent 1px)`,
+                  backgroundSize: '4px 4px'
+                }}></div>
+
+              {/* Typewriter "ink stamp" edge effect */}
+              <div className="absolute right-0 top-0 bottom-0 w-2 bg-gradient-to-l from-black/30 to-transparent"></div>
             </div>
+
+            {/* Typewriter Carriage Line */}
+            <div
+              className="absolute top-0 bottom-0 w-0.5 bg-white/60 shadow-[0_0_4px_rgba(255,255,255,0.5)] transition-all duration-1000"
+              style={{ left: `${progress}%` }}></div>
+          </div>
+
+          {/* Percentage Text - Newspaper Style */}
+          <div className="flex justify-between mt-1 sm:mt-1.5 text-[8px] sm:text-[9px] font-mono text-white/30 uppercase tracking-widest">
+            <span>00:00</span>
+            <span className="text-white/50">{Math.round(progress)}%</span>
+            <span>{formatTime(totalTime)}</span>
           </div>
         </div>
 
         {/* Controls */}
-        <div className="flex items-center gap-8">
-          <button onClick={() => { resetTimer(); playClick(); }} className="p-4 rounded-full border border-white/10 hover:border-white/50 hover:bg-white/5 transition-all group">
-            <RotateCcw className="w-6 h-6 text-white/50 group-hover:text-white group-hover:-rotate-180 transition-all duration-500" />
+        <div className="flex items-center gap-4 sm:gap-6 md:gap-8">
+          <button onClick={() => { resetTimer(); playClick(); }} className="p-3 sm:p-4 rounded-full border border-white/10 hover:border-white/50 hover:bg-white/5 transition-all group">
+            <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6 text-white/50 group-hover:text-white group-hover:-rotate-180 transition-all duration-500" />
           </button>
 
           <button onClick={() => { setIsRunning(!isRunning); playClick(); }}
-            className={`group relative px-10 py-4 bg-transparent border border-white/30 transition-colors overflow-hidden ${mode === 'focus' ? 'hover:border-accent-red' : 'hover:border-accent-green'}`}>
-            <span className="relative z-10 font-grotesk text-lg tracking-widest uppercase font-bold group-hover:text-white flex items-center gap-3">
-              {isRunning ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
+            className={`group relative px-6 py-3 sm:px-8 sm:py-3 md:px-10 md:py-4 bg-transparent border border-white/30 transition-colors overflow-hidden ${mode === 'focus' ? 'hover:border-accent-red' : 'hover:border-accent-green'}`}>
+            <span className="relative z-10 font-grotesk text-sm sm:text-base md:text-lg tracking-widest uppercase font-bold group-hover:text-white flex items-center gap-2 sm:gap-3">
+              {isRunning ? <Pause className="w-4 h-4 sm:w-5 sm:h-5 fill-current" /> : <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-current" />}
               {isRunning ? 'Pause' : 'Start'}
             </span>
             <div className={`absolute inset-0 transform translate-y-full group-hover:translate-y-0 transition-transform duration-300 ${mode === 'focus' ? 'bg-accent-red' : 'bg-accent-green'}`}></div>
           </button>
 
-          <button onClick={() => { setShowHistory(true); playClick(); }} className="p-4 rounded-full border border-white/10 hover:border-white/50 hover:bg-white/5 transition-all group">
-            <HistoryIcon className="w-6 h-6 text-white/50 group-hover:text-white transition-colors" />
+          <button onClick={() => { setShowHistory(true); playClick(); }} className="p-3 sm:p-4 rounded-full border border-white/10 hover:border-white/50 hover:bg-white/5 transition-all group">
+            <HistoryIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white/50 group-hover:text-white transition-colors" />
           </button>
         </div>
       </main>
 
       {/* Quote Footer - Poetic Fragment */}
-      <footer className="absolute bottom-8 left-0 right-0 text-center z-20 pointer-events-none">
-        <div className="inline-block bg-black text-white px-4 py-2 font-serif-custom italic text-xl transform -rotate-1 border border-white/20 shadow-lg pointer-events-auto hover:rotate-1 transition-transform duration-300">
+      <footer className="absolute bottom-12 sm:bottom-10 md:bottom-8 left-0 right-0 text-center z-20 pointer-events-none px-4">
+        <div className="inline-block bg-black text-white px-3 py-1.5 sm:px-4 sm:py-2 font-serif-custom italic text-sm sm:text-lg md:text-xl transform -rotate-1 border border-white/20 shadow-lg pointer-events-auto hover:rotate-1 transition-transform duration-300 max-w-[90vw]">
           {MODES[mode].quote}
         </div>
       </footer>
 
       {/* Marquee Tape (Bottom Fixed) */}
+      <RadioWidget mode={mode} />
       <div className={`fixed bottom-0 left-0 w-full overflow-hidden py-1 transform rotate-0 z-30 border-t-2 border-black mix-blend-normal transition-colors duration-1000 ${mode === 'focus' ? 'bg-accent-red' : 'bg-accent-green'}`}>
         <div className="whitespace-nowrap flex animate-ticker">
           <span className="mx-4 font-bold text-black uppercase tracking-widest text-xs">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>

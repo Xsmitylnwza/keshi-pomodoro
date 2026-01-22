@@ -46,7 +46,17 @@ export default {
                 ticker: {
                     '0%': { transform: 'translateX(0)' },
                     '100%': { transform: 'translateX(-50%)' },
+                },
+                marquee: {
+                    '0%': { transform: 'translateX(100%)' },
+                    '100%': { transform: 'translateX(-100%)' },
                 }
+            },
+            animation: {
+                'ticker': 'ticker 20s linear infinite',
+                'marquee': 'marquee 8s linear infinite',
+                'spin': 'spin 3s linear infinite',
+                'pulse-glow': 'pulse-glow 2s ease-in-out infinite',
             }
         },
     },
