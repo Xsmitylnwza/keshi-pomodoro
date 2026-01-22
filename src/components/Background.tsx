@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Star, Pin } from 'lucide-react';
+import { Star } from 'lucide-react';
 
 // Using the images from the user's reference HTML for authentic vibe:
 // Main: https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/uploads/be7bd51c-6dd7-4e04-a620-8108ef138948/1768838242918-60798e6e/Justin_and_Hailey_Bieber___.jpg
