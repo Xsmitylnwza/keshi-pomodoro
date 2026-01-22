@@ -73,9 +73,7 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                         className="w-full h-full object-cover scale-150 object-top mix-blend-multiply opacity-80 grayscale sepia-[.4] contrast-125 brightness-90 group-hover:opacity-100 transition-opacity" alt="fragment" />
                 </div>
                 {/* Vision Board Pin */}
-                <div className="absolute -top-4 -right-2 z-20 drop-shadow-md">
-                    <Pin className={`w-8 h-8 ${mode === 'focus' ? 'text-accent-red fill-accent-red' : 'text-accent-green fill-accent-green'} transform rotate-45 transition-colors duration-1000`} />
-                </div>
+
             </div>
 
             {/* Sticker Stars */}
