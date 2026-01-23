@@ -55,6 +55,7 @@ function App() {
   // Modals
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [hasMounted, setHasMounted] = useState(false);
 
   // Refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -77,8 +78,13 @@ function App() {
     const sBreak = localStorage.getItem('keshi-break');
     if (sFocus) setFocusTime(parseInt(sFocus));
     if (sBreak) setBreakTime(parseInt(sBreak));
-    if (sFocus) setFocusTime(parseInt(sFocus));
-    if (sBreak) setBreakTime(parseInt(sBreak));
+
+    // Request notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    setHasMounted(true);
   }, []);
 
   // Favicon Updater
@@ -129,6 +135,21 @@ function App() {
   const handleComplete = () => {
     setIsRunning(false);
     if (soundEnabled && audioRef.current) audioRef.current.play();
+
+    // Browser notification for users on other tabs
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const notifTitle = mode === 'focus' ? '🍅 Focus Complete!' : '☕ Break Over!';
+      const notifBody = mode === 'focus'
+        ? `Great work! ${focusTime} minute focus session complete. Time for a break.`
+        : `Break's over! Ready to focus for ${focusTime} minutes?`;
+
+      new Notification(notifTitle, {
+        body: notifBody,
+        icon: '/logo.png',
+        tag: 'keshi-pomodoro-timer',
+        requireInteraction: true,
+      });
+    }
 
     // Add to history with unique ID
     const newItem: HistoryItem = {
@@ -187,14 +208,14 @@ function App() {
       <Background mode={mode} />
 
       {/* Audio */}
-      <audio ref={audioRef} src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" preload="auto" />
+      <audio ref={audioRef} src="/yandere-simulator-akademi-school-bell.mp3" preload="auto" />
       <audio ref={clickSoundRef} src="/clicksoundeffect.mp3" preload="auto" />
 
       {/* Grain Overlay handled globally in index.css (.noise-overlay) */}
       <div className="noise-overlay"></div>
 
       {/* Navigation (Floating / Minimal) */}
-      <nav className="fixed top-0 left-0 right-0 z-40 p-3 sm:p-4 md:p-6 flex justify-between items-start mix-blend-difference" style={{ viewTransitionName: 'main-nav' }}>
+      <nav className="fixed top-0 left-0 right-0 z-40 p-3 sm:p-4 md:p-6 flex justify-between items-start" style={{ viewTransitionName: 'main-nav' }}>
         <motion.div
           className="flex items-center gap-2 sm:gap-4 group cursor-pointer"
           variants={fadeDown}
@@ -202,10 +223,10 @@ function App() {
           animate="animate"
           transition={{ delay: entranceDelays.logo }}
         >
-          <div className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 relative">
-            <img src="/profile.jpg"
+          <div className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 relative isolate">
+            <img src="/f25d6e80f442ce4dc10c171831b1fc76.jpg"
               alt="Logo"
-              className="w-full h-full object-cover rounded-full border-2 border-paper-cream grayscale group-hover:scale-110 group-hover:grayscale-0 transition-all duration-300" />
+              className="w-full h-full object-cover rounded-full border-2 border-paper-cream grayscale group-hover:scale-110 group-hover:grayscale-0 transition-all duration-300 mix-blend-normal" />
           </div>
           <span className="font-grotesk font-bold text-sm sm:text-lg md:text-xl tracking-widest text-paper-cream hidden sm:inline">
             DEV<span className="text-accent-red">.</span>GABRIEL
@@ -257,11 +278,32 @@ function App() {
                 className={`ransom-letter torn-text-bg font-grotesk text-4xl shadow-lg`}
                 style={{
                   backgroundColor: i % 2 === 0 ? '#f2efe9' : (mode === 'focus' ? '#b91c1c' : '#34d399'),
-                  color: i % 2 === 0 ? '#000' : (mode === 'focus' ? '#fff' : '#000')
+                  color: i % 2 === 0 ? '#000' : (mode === 'focus' ? '#fff' : '#000'),
+                  transform: `rotate(${(i % 2 === 0 ? -1 : 1) * (2 + i % 3)}deg)`,
                 }}
                 variants={letterItem}
                 custom={i}
-                whileHover={{ scale: 1.2, rotate: 0 }}
+                initial="initial"
+                animate={!hasMounted ? "animate" : (isRunning ? {
+                  opacity: 1,
+                  scale: 1,
+                  y: [0, -3, 0],
+                  rotate: [(i % 2 === 0 ? -1 : 1) * (2 + i % 3), (i % 2 === 0 ? -1 : 1) * (2 + i % 3) + 1, (i % 2 === 0 ? -1 : 1) * (2 + i % 3)],
+                } : {
+                  opacity: 1,
+                  scale: 1,
+                })}
+                transition={!hasMounted ? {
+                  type: "spring",
+                  damping: 12,
+                  stiffness: 200
+                } : {
+                  duration: 2,
+                  repeat: isRunning ? Infinity : 0,
+                  ease: "easeInOut",
+                  delay: i * 0.2,
+                }}
+                whileHover={{ scale: 1.15, rotate: 0 }}
               >
                 {char}
               </motion.span>

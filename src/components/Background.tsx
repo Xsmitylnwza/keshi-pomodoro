@@ -27,32 +27,50 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
         return () => window.removeEventListener('mousemove', handleMouseMove);
     }, []);
 
-    const parallax = (strength: number) => ({
-        transform: `translate(${mousePos.x * strength}px, ${mousePos.y * strength}px) rotate(var(--r, 0deg))`
-    });
-
     return (
         <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
             {/* Grain Overlay handled in index.css */}
 
             {/* Decorative Background Elements - Hidden on mobile */}
             <motion.div
-                className="hidden md:block absolute top-10 left-[-20px] opacity-20 transition-transform duration-100 ease-out"
-                style={{ ...parallax(-20), '--r': '12deg' } as React.CSSProperties}
+                className="hidden md:block absolute top-10 left-[-20px] opacity-20"
                 initial={{ opacity: 0, scale: 0.5, x: -100 }}
-                animate={{ opacity: 0.2, scale: 1, x: 0 }}
-                transition={{ delay: entranceDelays.collageLeft + 0.5, duration: 1 }}
+                animate={{
+                    opacity: 0.2,
+                    scale: 1,
+                    x: mousePos.x * -30,
+                    y: mousePos.y * -20,
+                    rotate: 12 + mousePos.x * 3,
+                }}
+                transition={{
+                    opacity: { delay: entranceDelays.collageLeft + 0.5, duration: 1 },
+                    scale: { delay: entranceDelays.collageLeft + 0.5, duration: 1 },
+                    x: { type: "spring", stiffness: 30, damping: 20 },
+                    y: { type: "spring", stiffness: 30, damping: 20 },
+                    rotate: { type: "spring", stiffness: 50, damping: 30 },
+                }}
             >
-                <img src="https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/uploads/be7bd51c-6dd7-4e04-a620-8108ef138948/1768838242918-60798e6e/Justin_and_Hailey_Bieber___.jpg"
+                <img src="/Hailey Bieber & Justin bieber, 2022_.jpg"
                     className="w-64 h-80 object-cover grayscale contrast-150 blur-sm" alt="decorative" />
             </motion.div>
 
             <motion.div
-                className="hidden md:block absolute bottom-20 right-[-30px] opacity-10 transition-transform duration-100 ease-out"
-                style={{ ...parallax(-30), '--r': '-12deg' } as React.CSSProperties}
+                className="hidden md:block absolute bottom-20 right-[-30px] opacity-10"
                 initial={{ opacity: 0, scale: 0.5, x: 100 }}
-                animate={{ opacity: 0.1, scale: 1, x: 0 }}
-                transition={{ delay: entranceDelays.collageRight + 0.5, duration: 1 }}
+                animate={{
+                    opacity: 0.1,
+                    scale: 1,
+                    x: mousePos.x * -40,
+                    y: mousePos.y * -25,
+                    rotate: -12 + mousePos.x * -3,
+                }}
+                transition={{
+                    opacity: { delay: entranceDelays.collageRight + 0.5, duration: 1 },
+                    scale: { delay: entranceDelays.collageRight + 0.5, duration: 1 },
+                    x: { type: "spring", stiffness: 25, damping: 25 },
+                    y: { type: "spring", stiffness: 25, damping: 25 },
+                    rotate: { type: "spring", stiffness: 40, damping: 30 },
+                }}
             >
                 <img src="https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/uploads/be7bd51c-6dd7-4e04-a620-8108ef138948/1768838242918-60798e6e/Justin_and_Hailey_Bieber___.jpg"
                     className="w-72 h-96 object-cover sepia contrast-125" alt="decorative" />
@@ -97,7 +115,56 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                             <div className="absolute top-0.5 left-0.5 w-1 h-1 bg-white/40 rounded-full"></div>
                         </div>
                     </div>
+
                 </motion.div>
+
+                {/* Decorations - Outside the clipped container to be visible */}
+                <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 100 }}>
+                    {/* Handwritten Text */}
+                    <motion.div
+                        className="absolute -bottom-8 -right-4 font-marker text-xl text-white transform rotate-[-8deg] drop-shadow-lg"
+                        initial={{ opacity: 0, scale: 0 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: entranceDelays.collageLeft + 0.5, duration: 0.5 }}
+                    >
+                        for you ♡
+                        <svg className="absolute -bottom-2 left-0 w-full h-3 overflow-visible" viewBox="0 0 100 12" preserveAspectRatio="none">
+                            <motion.path
+                                d="M0,5 Q 50,15 100,5"
+                                fill="transparent"
+                                stroke="white"
+                                strokeWidth="4"
+                                strokeLinecap="round"
+                                initial={{ pathLength: 0, opacity: 0 }}
+                                animate={{ pathLength: 1, opacity: 1 }}
+                                transition={{ delay: entranceDelays.collageLeft + 0.8, duration: 0.8, ease: "easeInOut" }}
+                            />
+                        </svg>
+                    </motion.div>
+
+                    {/* Sparkle Particles */}
+                    <motion.div
+                        className="absolute -top-4 -right-6 text-white text-lg"
+                        animate={{ scale: [1, 1.3, 1], opacity: [0.8, 1, 0.8] }}
+                        transition={{ duration: 2, repeat: Infinity }}
+                    >
+                        ✦
+                    </motion.div>
+                    <motion.div
+                        className="absolute top-1/4 -left-5 text-white/70 text-sm"
+                        animate={{ scale: [1, 1.2, 1], opacity: [0.6, 1, 0.6] }}
+                        transition={{ duration: 1.5, repeat: Infinity, delay: 0.3 }}
+                    >
+                        ✧
+                    </motion.div>
+                    <motion.div
+                        className="absolute bottom-1/3 -right-8 text-white/60 text-xs"
+                        animate={{ scale: [1, 1.4, 1], opacity: [0.5, 0.9, 0.5] }}
+                        transition={{ duration: 2.5, repeat: Infinity, delay: 0.7 }}
+                    >
+                        ❋
+                    </motion.div>
+                </div>
             </motion.div>
 
             {/* Secondary Fragment - Torn Paper Right */}
@@ -126,7 +193,56 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                 >
                     <img src="/right.jpg"
                         className="w-full h-full object-cover scale-150 object-top mix-blend-multiply opacity-80 grayscale sepia-[.4] contrast-125 brightness-90 group-hover:opacity-100 transition-opacity" alt="fragment" />
+
                 </motion.div>
+
+                {/* Decorations - Outside the clipped container to be visible */}
+                <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 100 }}>
+                    {/* Handwritten Text */}
+                    <motion.div
+                        className="absolute -top-6 -left-2 font-marker text-lg text-white transform rotate-[12deg] drop-shadow-lg"
+                        initial={{ opacity: 0, scale: 0 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: entranceDelays.collageRight + 0.5, duration: 0.5 }}
+                    >
+                        stay ✿
+                        <svg className="absolute -bottom-2 left-0 w-full h-3 overflow-visible" viewBox="0 0 100 12" preserveAspectRatio="none">
+                            <motion.path
+                                d="M0,5 Q 50,15 100,5"
+                                fill="transparent"
+                                stroke="white"
+                                strokeWidth="4"
+                                strokeLinecap="round"
+                                initial={{ pathLength: 0, opacity: 0 }}
+                                animate={{ pathLength: 1, opacity: 1 }}
+                                transition={{ delay: entranceDelays.collageRight + 0.8, duration: 0.8, ease: "easeInOut" }}
+                            />
+                        </svg>
+                    </motion.div>
+
+                    {/* Sparkle Particles */}
+                    <motion.div
+                        className="absolute -bottom-3 -left-4 text-white text-base"
+                        animate={{ scale: [1, 1.2, 1], opacity: [0.7, 1, 0.7], rotate: [0, 15, 0] }}
+                        transition={{ duration: 3, repeat: Infinity }}
+                    >
+                        ✦
+                    </motion.div>
+                    <motion.div
+                        className="absolute top-1/2 -right-4 text-white/80 text-sm"
+                        animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0.9, 0.5] }}
+                        transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
+                    >
+                        ❀
+                    </motion.div>
+                    <motion.div
+                        className="absolute -top-2 right-1/4 text-white/60 text-xs"
+                        animate={{ scale: [1, 1.5, 1], opacity: [0.4, 0.8, 0.4] }}
+                        transition={{ duration: 2.2, repeat: Infinity, delay: 1 }}
+                    >
+                        ✧
+                    </motion.div>
+                </div>
             </motion.div>
 
             {/* Sticker Stars */}
