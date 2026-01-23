@@ -130,10 +130,10 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                         for you ♡
                         <svg className="absolute -bottom-2 left-0 w-full h-3 overflow-visible" viewBox="0 0 100 12" preserveAspectRatio="none">
                             <motion.path
-                                d="M0,5 Q 50,15 100,5"
+                                d="M0,6 Q 25,0 50,6 T 100,6"
                                 fill="transparent"
                                 stroke="white"
-                                strokeWidth="4"
+                                strokeWidth="3"
                                 strokeLinecap="round"
                                 initial={{ pathLength: 0, opacity: 0 }}
                                 animate={{ pathLength: 1, opacity: 1 }}
@@ -208,10 +208,10 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                         stay ✿
                         <svg className="absolute -bottom-2 left-0 w-full h-3 overflow-visible" viewBox="0 0 100 12" preserveAspectRatio="none">
                             <motion.path
-                                d="M0,5 Q 50,15 100,5"
+                                d="M5,8 Q 50,0 95,6"
                                 fill="transparent"
                                 stroke="white"
-                                strokeWidth="4"
+                                strokeWidth="3"
                                 strokeLinecap="round"
                                 initial={{ pathLength: 0, opacity: 0 }}
                                 animate={{ pathLength: 1, opacity: 1 }}
