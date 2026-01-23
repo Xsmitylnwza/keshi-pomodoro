@@ -105,8 +105,7 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                         alt="Artist Portrait"
                         className="w-full h-full object-cover grayscale sepia-[.4] contrast-125 brightness-90 hover:grayscale-0 hover:sepia-0 hover:contrast-100 hover:brightness-100 transition-all duration-500" />
 
-                    {/* Tape Strip */}
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-20 h-6 bg-[#dbd8d0] opacity-80 transform rotate-2 shadow-sm backdrop-blur-sm"></div>
+
 
                     {/* Vision Board Pin (Realistic Tack) */}
                     <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-20">
@@ -127,7 +126,6 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: entranceDelays.collageLeft + 0.5, duration: 0.5 }}
                     >
-                        for you ♡
                         <svg className="absolute -bottom-2 left-0 w-full h-3 overflow-visible" viewBox="0 0 100 12" preserveAspectRatio="none">
                             <motion.path
                                 d="M0,6 Q 25,0 50,6 T 100,6"
@@ -141,6 +139,12 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                             />
                         </svg>
                     </motion.div>
+
+                    {/* Realistic Transparent Tape Sticker - Outside clipped container */}
+                    <div className="absolute -top-6 left-[40%] w-28 h-10 transform -rotate-[15deg] opacity-90 z-20 pointer-events-none mix-blend-normal drop-shadow-md">
+                        <div className="w-full h-full bg-white/25 backdrop-blur-[1px] shadow-[0_1px_2px_rgba(0,0,0,0.1)] border-t-2 border-white/40 skew-x-[-2deg] rounded-sm"></div>
+                        <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-b from-white/10 to-transparent"></div>
+                    </div>
 
                     {/* Sparkle Particles */}
                     <motion.div
@@ -165,7 +169,7 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                         ❋
                     </motion.div>
                 </div>
-            </motion.div>
+            </motion.div >
 
             {/* Secondary Fragment - Torn Paper Right */}
             <motion.div
@@ -191,6 +195,8 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                         delay: 2,
                     }}
                 >
+
+
                     <img src="/right.jpg"
                         className="w-full h-full object-cover scale-150 object-top mix-blend-multiply opacity-80 grayscale sepia-[.4] contrast-125 brightness-90 group-hover:opacity-100 transition-opacity" alt="fragment" />
 
@@ -220,6 +226,12 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                         </svg>
                     </motion.div>
 
+                    {/* Realistic Transparent Tape Sticker - Outside clipped container */}
+                    <div className="absolute -top-5 -right-2 w-24 h-9 transform rotate-[35deg] opacity-90 z-20 pointer-events-none mix-blend-normal drop-shadow-md">
+                        <div className="w-full h-full bg-white/25 backdrop-blur-[1px] shadow-[0_1px_2px_rgba(0,0,0,0.1)] border-t-2 border-white/40 skew-x-[5deg] rounded-sm"></div>
+                        <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-t from-white/10 to-transparent"></div>
+                    </div>
+
                     {/* Sparkle Particles */}
                     <motion.div
                         className="absolute -bottom-3 -left-4 text-white text-base"
@@ -243,10 +255,10 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                         ✧
                     </motion.div>
                 </div>
-            </motion.div>
+            </motion.div >
 
             {/* Sticker Stars */}
-            <motion.div
+            < motion.div
                 className="absolute top-[15%] left-[5%] z-0"
                 variants={starPop}
                 initial="initial"
@@ -261,7 +273,7 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                 >
                     <Star className="w-12 h-12 text-white fill-white drop-shadow-[0_0_10px_rgba(255,255,255,0.8)] transform rotate-12" />
                 </motion.div>
-            </motion.div>
+            </motion.div >
 
             <motion.div
                 className={`absolute bottom-[20%] right-[5%] opacity-60 transition-colors duration-1000 ${mode === 'focus' ? 'text-accent-red fill-accent-red' : 'text-accent-green fill-accent-green'}`}
@@ -296,7 +308,7 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                     keshi.mode_v2
                 </div>
             </motion.div>
-        </div>
+        </div >
     );
 };
 
