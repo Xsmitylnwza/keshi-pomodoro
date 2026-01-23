@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { Radio, Play, Pause, SkipForward, Volume2, VolumeX, ChevronLeft, ChevronRight } from 'lucide-react';
+import { slideInRight, entranceDelays } from '../utils/animations';
 
 interface RadioStation {
     id: string;
@@ -142,8 +144,12 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
             )}
 
             {/* Radio Widget */}
-            <div
+            <motion.div
                 className={`fixed bottom-16 right-4 z-50 transition-all duration-500 ${isExpanded ? 'w-72' : 'w-20'}`}
+                variants={slideInRight}
+                initial="initial"
+                animate="animate"
+                transition={{ delay: entranceDelays.radioWidget }}
             >
                 {/* Main Container - Cassette Tape Style with Glow */}
                 <div
@@ -333,7 +339,7 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
                         {station.shortName} • 88.{currentStation + 1} FM
                     </span>
                 </div>
-            </div>
+            </motion.div>
 
             {/* Custom Styles for Animations */}
             <style>{`
