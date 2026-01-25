@@ -7,8 +7,8 @@ export default {
     theme: {
         extend: {
             colors: {
-                'accent-red': '#b91c1c',
-                'accent-green': '#34d399', // Emerald 400
+                'accent-red': 'var(--accent-red)',
+                'accent-green': 'var(--accent-green)', // Dynamic variable
                 'accent-burgundy': '#4a0404',
                 'paper-cream': '#f2efe9',
                 'bg-dark': '#080808',

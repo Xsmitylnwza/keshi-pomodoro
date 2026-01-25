@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Radio, Play, Pause, SkipForward, Volume2, VolumeX, ChevronLeft, ChevronRight } from 'lucide-react';
 import { slideInRight, entranceDelays } from '../utils/animations';
+import { useTheme } from '../context/ThemeContext';
 
 interface RadioStation {
     id: string;
@@ -31,9 +32,19 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
     const [showTooltip, setShowTooltip] = useState(false);
     const iframeRef = useRef<HTMLIFrameElement>(null);
 
+    const { colors } = useTheme();
     const station = STATIONS[currentStation];
-    const bgAccent = mode === 'focus' ? '#b91c1c' : '#34d399';
-    const glowColor = mode === 'focus' ? 'rgba(185, 28, 28, 0.4)' : 'rgba(52, 211, 153, 0.4)';
+    const bgAccent = mode === 'focus' ? colors.focus : colors.break;
+
+    // Helper to add opacity to hex color
+    const getGlowColor = (hex: string, opacity: number) => {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+    };
+
+    const glowColor = getGlowColor(bgAccent, 0.4);
 
     // Show tooltip on first visit
     useEffect(() => {

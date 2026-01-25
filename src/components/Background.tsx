@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useTheme } from '../context/ThemeContext';
 import { motion } from 'framer-motion';
 import { Star } from 'lucide-react';
 import {
@@ -14,6 +15,7 @@ interface BackgroundProps {
 }
 
 const Background: React.FC<BackgroundProps> = ({ mode }) => {
+    const { leftImage, rightImage } = useTheme();
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
     useEffect(() => {
@@ -29,6 +31,9 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
 
     return (
         <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+            {/* Grain Overlay handled in index.css */}
+
+            {/* Decorative Background Elements - Hidden on mobile */}
             {/* Grain Overlay handled in index.css */}
 
             {/* Decorative Background Elements - Hidden on mobile */}
@@ -88,8 +93,7 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                 style={{ '--r': '-3deg' } as React.CSSProperties}
             >
                 <motion.div
-                    className="relative w-72 h-96 bg-white p-2 torn-paper-1 shadow-2xl transform -rotate-3 z-10 pointer-events-auto"
-                    whileHover={{ scale: 1.08, rotate: 0 }}
+                    className="relative"
                     animate={{
                         y: [0, -15, -5, -20, 0],
                         x: [0, 8, -5, 10, 0],
@@ -101,74 +105,80 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                         ease: "easeInOut",
                     }}
                 >
-                    <img src="/left.jpg"
-                        alt="Artist Portrait"
-                        className="w-full h-full object-cover grayscale sepia-[.4] contrast-125 brightness-90 hover:grayscale-0 hover:sepia-0 hover:contrast-100 hover:brightness-100 transition-all duration-500" />
+                    <motion.div
+                        className="relative w-72 h-96 bg-white p-2 pb-16 torn-paper-1 shadow-2xl transform -rotate-3 z-10 pointer-events-auto"
+                        whileHover={{ scale: 1.08, rotate: 0 }}
+                    >
+                        <img src={leftImage || "/left.jpg"}
+                            alt="Artist Portrait"
+                            className="w-full h-full object-cover grayscale sepia-[.4] contrast-125 brightness-90 hover:grayscale-0 hover:sepia-0 hover:contrast-100 hover:brightness-100 transition-all duration-500" />
 
-
-
-                    {/* Vision Board Pin (Realistic Tack) */}
-                    <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-20">
-                        <div className={`w-3 h-3 rounded-full shadow-[0_1px_2px_rgba(0,0,0,0.4)] border border-black/10 transition-colors duration-1000 ${mode === 'focus' ? 'bg-[#b91c1c] shadow-red-900/30' : 'bg-[#34d399] shadow-emerald-900/30'}`}>
-                            {/* Tiny highlight for 3D effect */}
-                            <div className="absolute top-0.5 left-0.5 w-1 h-1 bg-white/40 rounded-full"></div>
+                        {/* Vision Board Pin (Realistic Tack) */}
+                        <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-20">
+                            <div className={`w-3 h-3 rounded-full shadow-[0_1px_2px_rgba(0,0,0,0.4)] border border-black/10 transition-colors duration-1000 ${mode === 'focus' ? 'bg-accent-red shadow-red-900/30' : 'bg-accent-green shadow-emerald-900/30'}`}>
+                                {/* Tiny highlight for 3D effect */}
+                                <div className="absolute top-0.5 left-0.5 w-1 h-1 bg-white/40 rounded-full"></div>
+                            </div>
                         </div>
-                    </div>
 
+                        {/* Handwritten Text - Nested for perfect sync */}
+                        <motion.div
+                            className="absolute bottom-4 right-4 font-marker text-xl text-black transform -rotate-6 drop-shadow-sm z-20"
+                            initial={{ opacity: 0, scale: 0 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: entranceDelays.collageLeft + 0.5, duration: 0.5 }}
+                        >
+                            for you
+                            <svg className="absolute -bottom-2 left-0 w-full h-3 overflow-visible" viewBox="0 0 100 12" preserveAspectRatio="none">
+                                <motion.path
+                                    d="M0,6 Q 25,0 50,6 T 100,6"
+                                    fill="transparent"
+                                    stroke="black"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    initial={{ pathLength: 0, opacity: 0 }}
+                                    animate={{ pathLength: 1, opacity: 1 }}
+                                    transition={{ delay: entranceDelays.collageLeft + 0.8, duration: 0.8, ease: "easeInOut" }}
+                                />
+                            </svg>
+                        </motion.div>
+                    </motion.div>
+
+                    {/* Decorations - Outside the clipped container to be visible */}
+                    <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 100 }}>
+                        {/* Handwritten Text */}
+
+
+                        {/* Realistic Transparent Tape Sticker - Outside clipped container */}
+                        <div className="absolute -top-6 left-[40%] w-28 h-10 transform -rotate-[15deg] opacity-90 z-20 pointer-events-none mix-blend-normal drop-shadow-md">
+                            <div className="w-full h-full bg-white/25 backdrop-blur-[1px] shadow-[0_1px_2px_rgba(0,0,0,0.1)] border-t-2 border-white/40 skew-x-[-2deg] rounded-sm"></div>
+                            <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-b from-white/10 to-transparent"></div>
+                        </div>
+
+                        {/* Sparkle Particles */}
+                        <motion.div
+                            className="absolute -top-4 -right-6 text-white text-lg"
+                            animate={{ scale: [1, 1.3, 1], opacity: [0.8, 1, 0.8] }}
+                            transition={{ duration: 2, repeat: Infinity }}
+                        >
+                            ✦
+                        </motion.div>
+                        <motion.div
+                            className="absolute top-1/4 -left-5 text-white/70 text-sm"
+                            animate={{ scale: [1, 1.2, 1], opacity: [0.6, 1, 0.6] }}
+                            transition={{ duration: 1.5, repeat: Infinity, delay: 0.3 }}
+                        >
+                            ✧
+                        </motion.div>
+                        <motion.div
+                            className="absolute bottom-1/3 -right-8 text-white/60 text-xs"
+                            animate={{ scale: [1, 1.4, 1], opacity: [0.5, 0.9, 0.5] }}
+                            transition={{ duration: 2.5, repeat: Infinity, delay: 0.7 }}
+                        >
+                            ❋
+                        </motion.div>
+                    </div>
                 </motion.div>
-
-                {/* Decorations - Outside the clipped container to be visible */}
-                <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 100 }}>
-                    {/* Handwritten Text */}
-                    <motion.div
-                        className="absolute -bottom-8 -right-4 font-marker text-xl text-white transform rotate-[-8deg] drop-shadow-lg"
-                        initial={{ opacity: 0, scale: 0 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: entranceDelays.collageLeft + 0.5, duration: 0.5 }}
-                    >
-                        <svg className="absolute -bottom-2 left-0 w-full h-3 overflow-visible" viewBox="0 0 100 12" preserveAspectRatio="none">
-                            <motion.path
-                                d="M0,6 Q 25,0 50,6 T 100,6"
-                                fill="transparent"
-                                stroke="white"
-                                strokeWidth="3"
-                                strokeLinecap="round"
-                                initial={{ pathLength: 0, opacity: 0 }}
-                                animate={{ pathLength: 1, opacity: 1 }}
-                                transition={{ delay: entranceDelays.collageLeft + 0.8, duration: 0.8, ease: "easeInOut" }}
-                            />
-                        </svg>
-                    </motion.div>
-
-                    {/* Realistic Transparent Tape Sticker - Outside clipped container */}
-                    <div className="absolute -top-6 left-[40%] w-28 h-10 transform -rotate-[15deg] opacity-90 z-20 pointer-events-none mix-blend-normal drop-shadow-md">
-                        <div className="w-full h-full bg-white/25 backdrop-blur-[1px] shadow-[0_1px_2px_rgba(0,0,0,0.1)] border-t-2 border-white/40 skew-x-[-2deg] rounded-sm"></div>
-                        <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-b from-white/10 to-transparent"></div>
-                    </div>
-
-                    {/* Sparkle Particles */}
-                    <motion.div
-                        className="absolute -top-4 -right-6 text-white text-lg"
-                        animate={{ scale: [1, 1.3, 1], opacity: [0.8, 1, 0.8] }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                    >
-                        ✦
-                    </motion.div>
-                    <motion.div
-                        className="absolute top-1/4 -left-5 text-white/70 text-sm"
-                        animate={{ scale: [1, 1.2, 1], opacity: [0.6, 1, 0.6] }}
-                        transition={{ duration: 1.5, repeat: Infinity, delay: 0.3 }}
-                    >
-                        ✧
-                    </motion.div>
-                    <motion.div
-                        className="absolute bottom-1/3 -right-8 text-white/60 text-xs"
-                        animate={{ scale: [1, 1.4, 1], opacity: [0.5, 0.9, 0.5] }}
-                        transition={{ duration: 2.5, repeat: Infinity, delay: 0.7 }}
-                    >
-                        ❋
-                    </motion.div>
-                </div>
             </motion.div >
 
             {/* Secondary Fragment - Torn Paper Right */}
@@ -197,7 +207,7 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                 >
 
 
-                    <img src="/right.jpg"
+                    <img src={rightImage || "/right.jpg"}
                         className="w-full h-full object-cover scale-150 object-top mix-blend-multiply opacity-80 grayscale sepia-[.4] contrast-125 brightness-90 group-hover:opacity-100 transition-opacity" alt="fragment" />
 
                 </motion.div>
@@ -308,6 +318,8 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                     keshi.mode_v2
                 </div>
             </motion.div>
+
+
         </div >
     );
 };

@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Menu, Play, Pause, RotateCcw, History as HistoryIcon } from 'lucide-react';
+import { Menu, Play, Pause, RotateCcw } from 'lucide-react';
 import { CustomCursor } from './components/CustomCursor';
 import Background from './components/Background';
 import { SettingsModal, HistoryModal } from './components/Modals';
+import { AnalyticsModal } from './components/AnalyticsModal';
 import { RadioWidget } from './components/RadioWidget';
+import { useTheme } from './context/ThemeContext';
 import {
   fadeDown,
   fadeUp,
@@ -23,13 +25,13 @@ type TimerMode = 'focus' | 'break';
 const MODES = {
   focus: {
     label: 'FOCUS',
-    color: '#b91c1c', // accent-red
+    color: 'var(--accent-red)', // Dynamic
     bgColor: 'bg-bg-dark',
     quote: '"I only show you the best of me."'
   },
   break: {
     label: 'RELAX',
-    color: '#34d399', // accent-green
+    color: 'var(--accent-green)', // Dynamic
     bgColor: 'bg-bg-forest',
     quote: '"Take a breath. You earned this."'
   }
@@ -55,6 +57,7 @@ function App() {
   // Modals
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
   const [hasMounted, setHasMounted] = useState(false);
 
   // Refs
@@ -202,8 +205,19 @@ function App() {
   // Calculate progress ensuring we don't divide by zero
   const progress = totalTime > 0 ? ((totalTime - timeLeft) / totalTime) * 100 : 0;
 
+  const { colors } = useTheme();
+
+  // Calculate dynamic background color - Only tint background in Relax mode
+  // Focus mode should correspond to "The Void" (Absolute Black) for maximum contrast
+  const dynamicBg = mode === 'focus'
+    ? '#080808'
+    : `color-mix(in srgb, ${colors.break} 10%, #050505)`;
+
   return (
-    <div className={`min-h-screen ${MODES[mode].bgColor} text-paper-cream relative overflow-hidden flex flex-col font-grotesk transition-colors duration-1000 ease-in-out`}>
+    <div
+      className={`min-h-screen text-paper-cream relative overflow-hidden flex flex-col font-grotesk transition-[background-color] duration-1000 ease-in-out`}
+      style={{ backgroundColor: dynamicBg }}
+    >
       <CustomCursor />
       <Background mode={mode} />
 
@@ -277,7 +291,7 @@ function App() {
                 key={i}
                 className={`ransom-letter torn-text-bg font-grotesk text-4xl shadow-lg`}
                 style={{
-                  backgroundColor: i % 2 === 0 ? '#f2efe9' : (mode === 'focus' ? '#b91c1c' : '#34d399'),
+                  backgroundColor: i % 2 === 0 ? 'var(--paper-cream)' : (mode === 'focus' ? 'var(--accent-red)' : 'var(--accent-green)'),
                   color: i % 2 === 0 ? '#000' : (mode === 'focus' ? '#fff' : '#000'),
                   transform: `rotate(${(i % 2 === 0 ? -1 : 1) * (2 + i % 3)}deg)`,
                 }}
@@ -394,21 +408,12 @@ function App() {
 
         {/* Controls */}
         <motion.div
-          className="flex items-center gap-4 sm:gap-6 md:gap-8"
+          className="relative w-full max-w-md flex items-center justify-center"
           variants={staggerContainer}
           initial="initial"
           animate="animate"
         >
-          <motion.button
-            onClick={() => { resetTimer(); playClick(); }}
-            className="p-3 sm:p-4 rounded-full border border-white/10 hover:border-white/50 hover:bg-white/5 transition-all group"
-            variants={staggerItem}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-          >
-            <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6 text-white/50 group-hover:text-white group-hover:-rotate-180 transition-all duration-500" />
-          </motion.button>
-
+          {/* Start/Pause Button (Centered) */}
           <motion.button
             onClick={() => { setIsRunning(!isRunning); playClick(); }}
             className={`group relative px-6 py-3 sm:px-8 sm:py-3 md:px-10 md:py-4 bg-transparent border border-white/30 transition-colors overflow-hidden ${mode === 'focus' ? 'hover:border-accent-red' : 'hover:border-accent-green'}`}
@@ -423,14 +428,15 @@ function App() {
             <div className={`absolute inset-0 transform translate-y-full group-hover:translate-y-0 transition-transform duration-300 ${mode === 'focus' ? 'bg-accent-red' : 'bg-accent-green'}`}></div>
           </motion.button>
 
+          {/* Reset Button (Right Side) */}
           <motion.button
-            onClick={() => { setShowHistory(true); playClick(); }}
-            className="p-3 sm:p-4 rounded-full border border-white/10 hover:border-white/50 hover:bg-white/5 transition-all group"
+            onClick={() => { resetTimer(); playClick(); }}
+            className="absolute right-0 p-3 sm:p-4 rounded-full border border-white/10 hover:border-white/50 hover:bg-white/5 transition-all group"
             variants={staggerItem}
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
           >
-            <HistoryIcon className="w-5 h-5 sm:w-6 sm:h-6 text-white/50 group-hover:text-white transition-colors" />
+            <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6 text-white/50 group-hover:text-white group-hover:-rotate-180 transition-all duration-500" />
           </motion.button>
         </motion.div>
       </main>
@@ -478,6 +484,8 @@ function App() {
         setBreakTime={setBreakTime}
         soundEnabled={soundEnabled}
         toggleSound={() => setSoundEnabled(!soundEnabled)}
+        openHistory={() => setShowHistory(true)}
+        openAnalytics={() => setShowAnalytics(true)}
       />
 
       <HistoryModal
@@ -485,6 +493,14 @@ function App() {
         onClose={() => setShowHistory(false)}
         history={history}
         clearHistory={clearHistory}
+        onBack={() => { setShowHistory(false); setShowSettings(true); }}
+      />
+
+      <AnalyticsModal
+        isOpen={showAnalytics}
+        onClose={() => setShowAnalytics(false)}
+        history={history}
+        onBack={() => { setShowAnalytics(false); setShowSettings(true); }}
       />
     </div>
   );
