@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { RefreshCw, Image as ImageIcon, Upload, Trash2 } from 'lucide-react';
+import { RefreshCw, Image as ImageIcon, Trash2 } from 'lucide-react';
 
 const COLOR_PRESETS = [
     { name: 'Keshi Red', value: '#b91c1c' },
