@@ -54,6 +54,9 @@ function App() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>([]);
 
+  // Ref to store the absolute end time (timestamp when timer should complete)
+  const endTimeRef = useRef<number | null>(null);
+
   // Modals
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -99,16 +102,56 @@ function App() {
     link.href = '/logo.png';
   }, [mode]);
 
-  // Timer Logic
+  // Timer Logic - Using absolute time to handle browser tab throttling
   useEffect(() => {
     let interval: number;
+
     if (isRunning && timeLeft > 0) {
-      interval = setInterval(() => setTimeLeft((prev) => prev - 1), 1000);
+      // Set the end time when starting the timer
+      if (endTimeRef.current === null) {
+        endTimeRef.current = Date.now() + timeLeft * 1000;
+      }
+
+      // Check time more frequently (every 100ms) to keep display accurate
+      interval = setInterval(() => {
+        if (endTimeRef.current !== null) {
+          const remaining = Math.ceil((endTimeRef.current - Date.now()) / 1000);
+
+          if (remaining <= 0) {
+            setTimeLeft(0);
+          } else {
+            setTimeLeft(remaining);
+          }
+        }
+      }, 100);
     } else if (timeLeft === 0) {
       handleComplete();
     }
+
+    // Clear endTimeRef when timer is paused or stopped
+    if (!isRunning) {
+      endTimeRef.current = null;
+    }
+
     return () => clearInterval(interval);
   }, [isRunning, timeLeft]);
+
+  // Handle visibility change - recalculate time when returning to tab
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isRunning && endTimeRef.current !== null) {
+        const remaining = Math.ceil((endTimeRef.current - Date.now()) / 1000);
+        if (remaining <= 0) {
+          setTimeLeft(0);
+        } else {
+          setTimeLeft(remaining);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isRunning]);
 
   // Document Title
   useEffect(() => {
