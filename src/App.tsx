@@ -1,10 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { motion } from 'framer-motion';
 import { Menu, Play, Pause, RotateCcw } from 'lucide-react';
 import { CustomCursor } from './components/CustomCursor';
 import Background from './components/Background';
-import { SettingsModal, HistoryModal } from './components/Modals';
-import { AnalyticsModal } from './components/AnalyticsModal';
+
+// Lazy load modals for smaller initial bundle
+const SettingsModal = lazy(() => import('./components/Modals').then(m => ({ default: m.SettingsModal })));
+const HistoryModal = lazy(() => import('./components/Modals').then(m => ({ default: m.HistoryModal })));
+const AnalyticsModal = lazy(() => import('./components/AnalyticsModal').then(m => ({ default: m.AnalyticsModal })));
 import { RadioWidget } from './components/RadioWidget';
 import { useTheme } from './context/ThemeContext';
 import {
@@ -112,7 +115,7 @@ function App() {
         endTimeRef.current = Date.now() + timeLeft * 1000;
       }
 
-      // Check time more frequently (every 100ms) to keep display accurate
+      // Check time every 250ms - sufficient for second-level display accuracy
       interval = setInterval(() => {
         if (endTimeRef.current !== null) {
           const remaining = Math.ceil((endTimeRef.current - Date.now()) / 1000);
@@ -123,7 +126,7 @@ function App() {
             setTimeLeft(remaining);
           }
         }
-      }, 100);
+      }, 250);
     } else if (timeLeft === 0) {
       handleComplete();
     }
@@ -518,33 +521,45 @@ function App() {
         </div>
       </motion.div>
 
-      <SettingsModal
-        isOpen={showSettings}
-        onClose={() => { setShowSettings(false); saveSettings(); }}
-        focusTime={focusTime}
-        breakTime={breakTime}
-        setFocusTime={setFocusTime}
-        setBreakTime={setBreakTime}
-        soundEnabled={soundEnabled}
-        toggleSound={() => setSoundEnabled(!soundEnabled)}
-        openHistory={() => setShowHistory(true)}
-        openAnalytics={() => setShowAnalytics(true)}
-      />
+      <Suspense fallback={null}>
+        {showSettings && (
+          <SettingsModal
+            isOpen={showSettings}
+            onClose={() => { setShowSettings(false); saveSettings(); }}
+            focusTime={focusTime}
+            breakTime={breakTime}
+            setFocusTime={setFocusTime}
+            setBreakTime={setBreakTime}
+            soundEnabled={soundEnabled}
+            toggleSound={() => setSoundEnabled(!soundEnabled)}
+            openHistory={() => setShowHistory(true)}
+            openAnalytics={() => setShowAnalytics(true)}
+          />
+        )}
+      </Suspense>
 
-      <HistoryModal
-        isOpen={showHistory}
-        onClose={() => setShowHistory(false)}
-        history={history}
-        clearHistory={clearHistory}
-        onBack={() => { setShowHistory(false); setShowSettings(true); }}
-      />
+      <Suspense fallback={null}>
+        {showHistory && (
+          <HistoryModal
+            isOpen={showHistory}
+            onClose={() => setShowHistory(false)}
+            history={history}
+            clearHistory={clearHistory}
+            onBack={() => { setShowHistory(false); setShowSettings(true); }}
+          />
+        )}
+      </Suspense>
 
-      <AnalyticsModal
-        isOpen={showAnalytics}
-        onClose={() => setShowAnalytics(false)}
-        history={history}
-        onBack={() => { setShowAnalytics(false); setShowSettings(true); }}
-      />
+      <Suspense fallback={null}>
+        {showAnalytics && (
+          <AnalyticsModal
+            isOpen={showAnalytics}
+            onClose={() => setShowAnalytics(false)}
+            history={history}
+            onBack={() => { setShowAnalytics(false); setShowSettings(true); }}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

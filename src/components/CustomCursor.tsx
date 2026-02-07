@@ -11,17 +11,21 @@ export const CustomCursor: React.FC = () => {
 
         if (!cursor || !trailer) return;
 
+        let pending = false;
         const onMouseMove = (e: MouseEvent) => {
-            const { clientX, clientY } = e;
-
-            // Main cursor follows instantly
-            cursor.style.transform = `translate(${clientX}px, ${clientY}px)`;
-
-            // Trailer follows with delay
-            trailer.animate({
-                left: `${clientX}px`,
-                top: `${clientY}px`
-            }, { duration: 500, fill: "forwards" });
+            if (pending) return;
+            pending = true;
+            requestAnimationFrame(() => {
+                const { clientX, clientY } = e;
+                // Main cursor follows instantly
+                if (cursor) cursor.style.transform = `translate(${clientX}px, ${clientY}px)`;
+                // Trailer follows with delay
+                if (trailer) trailer.animate({
+                    left: `${clientX}px`,
+                    top: `${clientY}px`
+                }, { duration: 500, fill: "forwards" });
+                pending = false;
+            });
         };
 
         const onMouseOver = (e: MouseEvent) => {
@@ -33,8 +37,8 @@ export const CustomCursor: React.FC = () => {
             }
         };
 
-        window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mouseover', onMouseOver);
+        window.addEventListener('mousemove', onMouseMove, { passive: true });
+        window.addEventListener('mouseover', onMouseOver, { passive: true });
 
         return () => {
             window.removeEventListener('mousemove', onMouseMove);

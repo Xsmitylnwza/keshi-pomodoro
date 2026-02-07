@@ -104,3 +104,15 @@
   border: 1px solid rgba(242, 239, 233, 0.1);
   box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.9);
 }
+
+/* GPU Acceleration Hints for Animated Elements */
+.torn-paper-1,
+.torn-paper-2,
+.ransom-letter {
+  will-change: transform;
+}
+
+/* Optimize noise overlay rendering */
+.noise-overlay {
+  contain: strict;
+}
