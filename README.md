@@ -5,7 +5,14 @@
 <h1 align="center">🍅 Keshi Pomodoro</h1>
 
 <p align="center">
-  <strong>A beautifully crafted Pomodoro timer with a dreamy, artistic aesthetic</strong>
+  <strong>"I couldn't find a timer that felt like <em>me</em>, so I built one."</strong>
+</p>
+
+<p align="center">
+  This isn't just another productivity tool. It's a digital space carved out of frustration with sterile, lifeless apps. 
+  Born from a need to escape the noise and find a rhythm that feels less like "work" and more like "creation."
+  <br><br>
+  Heavily inspired by <strong>Keshi's</strong> lo-fi aesthetic—where every imperfection is intentional, and the vibe matters more than the metrics.
 </p>
 
 <p align="center">
@@ -24,24 +31,41 @@
 
 ---
 
-## ✨ Demo
+## ✨ The Vibe (Demos)
+
+### 🍅 Just Flow
+No distractions. Just you, the timer, and the mood. A seamless switch between grinding and breathing.
 
 <p align="center">
-  <img src="assets/demo.webp" alt="Keshi Pomodoro Demo" width="100%" />
+  <img src="public/demo/main_page.webp" alt="Main Page Demo" width="100%" />
+</p>
+
+### 🎨 Your Space, Your Rules
+Because the default settings never feel right. Tweak the colors until it hits that specific feeling you're looking for.
+
+<p align="center">
+  <img src="public/demo/theme_demo.webp" alt="Theme Customization Demo" width="100%" />
+</p>
+
+### ⚙️ Behind the Scenes
+Fine-tune the rhythm. Check your stats not for productivity scores, but to see how much of yourself you put into the work.
+
+<p align="center">
+  <img src="public/demo/menu_general.webp" alt="Settings Menu Demo" width="100%" />
 </p>
 
 ---
 
-## 🎨 Features
+## 🎨 Crafted Details (Features)
 
-### 🎭 Dual Mode Experience
-
-Switch seamlessly between **Focus** and **Relax** modes with smooth color transitions.
+### 🎭 Mood Switching
+Work hard, burn out? No. We switch modes.
+**Focus** is deep, intense, red. **Relax** is calm, healing, green. The transition isn't just a color swap; it's a mental shift.
 
 <table>
   <tr>
-    <td align="center"><strong>🔴 Focus Mode</strong></td>
-    <td align="center"><strong>🟢 Relax Mode</strong></td>
+    <td align="center"><strong>🔴 The Grind (Focus)</strong></td>
+    <td align="center"><strong>🟢 The Breath (Relax)</strong></td>
   </tr>
   <tr>
     <td><img src="assets/focus_mode.png" alt="Focus Mode" width="100%" /></td>
@@ -51,50 +75,34 @@ Switch seamlessly between **Focus** and **Relax** modes with smooth color transi
 
 ---
 
-### 🎬 Cinematic Entrance Animations
-
-Every element enters the screen with carefully orchestrated animations:
-
-| Element | Animation | Timing |
-|---------|-----------|--------|
-| 📍 Navigation | Slide down | 100ms |
-| 🏷️ Badge | Pop in with rotation | 300ms |
-| 🔤 Ransom Letters | Staggered scatter | 400ms |
-| ⏱️ Timer | Elastic scale | 600ms |
-| 🎛️ Controls | Staggered fade | 800ms |
-| 💬 Quote | Slide up | 900ms |
-| 🖼️ Collage | Toss-in effect | 1000ms |
-| 📻 Radio | Slide from right | 1200ms |
+### 🎬 Entrance as an Experience
+Startups load fast; Art arrives.
+I didn't want elements to just "appear." I wanted them to *enter*.
+Every button, every letter, every pixel slides in with a cinematic delay because the start of a session should feel like the opening credits of a movie.
 
 ---
 
-### 🖼️ Living Collage Background
-
-Floating polaroid-style images with:
-- **Slow, dreamy movement** — Multi-axis floating animation
-- **Interactive hover effects** — Scale and rotation on interaction
-- **Torn paper aesthetics** — Custom clip-paths for authentic look
-- **Realistic tape & pushpins** — Vision board details
-
----
-
-### 📻 Lo-Fi Radio Widget
-
-Built-in cassette tape-styled music player with:
-- 🎵 4 YouTube live streams (Lofi Girl, Chillhop, etc.)
-- 🎚️ Volume control
-- 🔄 Station switching
-- 📊 Audio visualization bars
+### 🖼️ Digital Nostalgia
+Why does software have to look like software?
+I brought in the things I love from the physical world:
+- **Floating Polaroids**: Memories drifting in the void.
+- **Ransom Notes**: Because perfection is boring.
+- **Tape & Texture**: It feels handmade because in a way, it is.
 
 ---
 
-### 🎯 Core Functionality
+### 📻 The Soundtrack
+Silence is loud. The built-in radio isn't a feature; it's a necessity.
+Cassette tape visuals + curated Lofi streams = The only way I can focus.
 
-- ⏱️ **Customizable timers** — Set your own focus/break durations
-- 📜 **Session history** — Track your completed sessions
-- 🔔 **Sound notifications** — Audio alerts on timer completion
-- ⌨️ **Keyboard shortcuts** — Space/Enter to start/pause
-- 💾 **Local storage** — Settings persist across sessions
+---
+
+### 🎯 The Essentials
+Underneath the aesthetic, it still does the job.
+- **Custom Timers**: Set it to your own rhythm.
+- **History**: Proof that you showed up today.
+- **Sound**: Subtle cues, not jarring alarms.
+- **Shortcuts**: Keep your hands on the keyboard, keep the flow.
 
 ---
 
