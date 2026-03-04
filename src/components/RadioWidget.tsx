@@ -90,12 +90,32 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
         }
     }, [volume]);
 
+    // Track latest audio state
+    const audioStateRef = useRef({ volume, isMuted, isPlaying });
+    useEffect(() => {
+        audioStateRef.current = { volume, isMuted, isPlaying };
+    }, [volume, isMuted, isPlaying]);
+
+    // Resync complete state whenever station changes, making sure the new iframe applies latest settings
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (iframeRef.current && iframeRef.current.contentWindow) {
+                const state = audioStateRef.current;
+                const cw = iframeRef.current.contentWindow;
+                cw.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [state.volume] }), '*');
+                cw.postMessage(JSON.stringify({ event: 'command', func: state.isMuted || state.volume === 0 ? 'mute' : 'unMute' }), '*');
+                if (state.isPlaying) {
+                    cw.postMessage(JSON.stringify({ event: 'command', func: 'playVideo' }), '*');
+                } else {
+                    cw.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo' }), '*');
+                }
+            }
+        }, 1500);
+        return () => clearTimeout(timer);
+    }, [currentStation]);
+
     const nextStation = () => {
         setCurrentStation((prev) => (prev + 1) % STATIONS.length);
-        if (isPlaying) {
-            setIsPlaying(false);
-            setTimeout(() => setIsPlaying(true), 100);
-        }
     };
 
     const togglePlay = () => {
@@ -124,7 +144,7 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
                     ref={iframeRef}
                     width="1"
                     height="1"
-                    src={`https://www.youtube.com/embed/${station.youtubeId}?enablejsapi=1&autoplay=${isPlaying ? 1 : 0}&loop=1&playlist=${station.youtubeId}`}
+                    src={`https://www.youtube.com/embed/${station.youtubeId}?enablejsapi=1&autoplay=0&loop=1&playlist=${station.youtubeId}`}
                     allow="autoplay; encrypted-media"
                     title="Radio Player"
                 />
