@@ -27,7 +27,10 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [currentStation, setCurrentStation] = useState(0);
     const [isMuted, setIsMuted] = useState(false);
-    const [volume, setVolume] = useState(50);
+    const [volume, setVolume] = useState(() => {
+        const saved = localStorage.getItem('keshi_radio_volume');
+        return saved ? parseInt(saved, 10) : 50;
+    });
     const [showVolumeSlider, setShowVolumeSlider] = useState(false);
     const [showTooltip, setShowTooltip] = useState(false);
     const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -129,6 +132,7 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
     const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newVolume = parseInt(e.target.value);
         setVolume(newVolume);
+        localStorage.setItem('keshi_radio_volume', newVolume.toString());
         if (newVolume === 0) {
             setIsMuted(true);
         } else if (isMuted) {
@@ -176,7 +180,7 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
 
             {/* Radio Widget */}
             <motion.div
-                className={`fixed bottom-16 right-4 z-50 transition-all duration-500 ${isExpanded ? 'w-72' : 'w-20'}`}
+                className={`fixed bottom-16 right-4 z-50 transition-all duration-500 ${isExpanded ? 'w-72' : 'w-24'}`}
                 variants={slideInRight}
                 initial="initial"
                 animate="animate"
@@ -184,19 +188,18 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
             >
                 {/* Main Container - Cassette Tape Style with Glow */}
                 <div
-                    className={`relative bg-[#1a1a1a] border-2 rounded-lg shadow-2xl overflow-hidden transition-all duration-500`}
+                    className={`relative bg-[#1a1a1a] border-2 border-white/20 shadow-2xl overflow-hidden transition-all duration-500`}
                     style={{
                         borderColor: isPlaying ? bgAccent : 'rgba(255,255,255,0.2)',
-                        boxShadow: `0 0 ${isPlaying ? '20px' : '15px'} ${isPlaying ? glowColor : 'rgba(255,255,255,0.1)'}`,
-                        animation: !isPlaying ? 'pulse-radio 3s ease-in-out infinite' : 'none'
+                        boxShadow: `4px 4px 0 ${isPlaying ? glowColor : 'rgba(0,0,0,1)'}`,
                     }}
                 >
                     {/* Cassette Top Label */}
-                    <div className="bg-[#222] px-3 py-1.5 border-b border-white/10 flex items-center justify-between">
+                    <div className="bg-[#222] px-3 py-1.5 border-b-2 border-black flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <Radio className={`w-4 h-4 transition-colors duration-300`}
-                                style={{ color: isPlaying ? bgAccent : 'rgba(255,255,255,0.5)' }} />
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-white/60">
+                                style={{ color: isPlaying ? bgAccent : 'rgba(255,255,255,0.5)' }} strokeWidth={3} />
+                            <span className="text-[12px] font-marker uppercase tracking-widest text-white/80">
                                 {isExpanded ? 'LOFI RADIO' : 'RADIO'}
                             </span>
                         </div>
@@ -262,8 +265,8 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
                         {/* Station Info (Expanded) */}
                         {isExpanded && (
                             <div className="text-center mb-3">
-                                <div className="text-xs font-mono text-white/80 tracking-wider">{station.name}</div>
-                                <div className="text-[10px] font-mono text-white/40 uppercase">YouTube Live</div>
+                                <div className="text-sm font-marker text-white tracking-widest uppercase">{station.name}</div>
+                                <div className="text-[10px] font-grotesk font-black text-white/50 uppercase">YouTube Live</div>
                             </div>
                         )}
 
@@ -274,12 +277,12 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
                                 <button
                                     onClick={() => setShowVolumeSlider(!showVolumeSlider)}
                                     onMouseEnter={() => setShowVolumeSlider(true)}
-                                    className="p-1.5 rounded-full bg-[#0a0a0a] border border-white/10 hover:border-white/30 transition-colors"
+                                    className="p-1.5 rounded-none bg-[#0a0a0a] border-2 border-white/20 hover:border-white/50 transition-colors"
                                 >
                                     {isMuted || volume === 0 ? (
-                                        <VolumeX className="w-3 h-3 text-white/50" />
+                                        <VolumeX className="w-4 h-4 text-white/50" strokeWidth={3} />
                                     ) : (
-                                        <Volume2 className="w-3 h-3 text-white/50" />
+                                        <Volume2 className="w-4 h-4 text-white/50" strokeWidth={3} />
                                     )}
                                 </button>
 
@@ -308,25 +311,26 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
                             {/* Play/Pause - Main Button */}
                             <button
                                 onClick={togglePlay}
-                                className="p-2.5 rounded-full border-2 transition-all duration-300 hover:scale-110"
+                                className="p-2.5 rounded-none border-2 transition-transform hover:-translate-y-0.5 active:translate-y-0.5"
                                 style={{
                                     backgroundColor: isPlaying ? bgAccent : 'transparent',
-                                    borderColor: bgAccent
+                                    borderColor: bgAccent,
+                                    boxShadow: isPlaying ? 'inset 2px 2px 0 rgba(0,0,0,0.5)' : '2px 2px 0 rgba(0,0,0,1)'
                                 }}
                             >
                                 {isPlaying ? (
-                                    <Pause className="w-4 h-4" style={{ color: mode === 'focus' ? '#fff' : '#000' }} />
+                                    <Pause className="w-5 h-5" style={{ color: mode === 'focus' ? '#fff' : '#000' }} strokeWidth={3} />
                                 ) : (
-                                    <Play className="w-4 h-4" style={{ color: bgAccent }} />
+                                    <Play className="w-5 h-5" style={{ color: bgAccent }} strokeWidth={3} />
                                 )}
                             </button>
 
                             {/* Next Station */}
                             <button
                                 onClick={nextStation}
-                                className="p-1.5 rounded-full bg-[#0a0a0a] border border-white/10 hover:border-white/30 transition-colors"
+                                className="p-1.5 rounded-none bg-[#0a0a0a] border-2 border-white/20 hover:border-white/50 transition-colors"
                             >
-                                <SkipForward className="w-3 h-3 text-white/50" />
+                                <SkipForward className="w-4 h-4 text-white/50" strokeWidth={3} />
                             </button>
                         </div>
 

@@ -296,16 +296,15 @@ function App() {
         <div className="flex flex-col gap-2 items-end">
           <motion.button
             onClick={() => { setShowSettings(true); playClick(); }}
-            className={`text-sm tracking-widest uppercase transition-colors font-bold flex items-center gap-2 group ${mode === 'focus' ? 'hover:text-accent-red' : 'hover:text-accent-green'}`}
+            className={`text-sm tracking-widest uppercase transition-all font-bold flex items-center gap-2 group p-2 border-2 border-transparent hover:border-current rounded-sm ${mode === 'focus' ? 'hover:text-accent-red hover:bg-accent-red/10' : 'hover:text-accent-green hover:bg-accent-green/10'}`}
             variants={fadeDown}
             initial="initial"
             animate="animate"
             transition={{ delay: entranceDelays.menu }}
-            whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
           >
             <span>Menu</span>
-            <Menu className="w-5 h-5 group-hover:rotate-90 transition-transform" />
+            <Menu className="w-5 h-5 group-hover:rotate-90 transition-transform" strokeWidth={3} />
           </motion.button>
           <motion.div
             className={`${mode === 'focus' ? 'bg-accent-red' : 'bg-accent-green'} ${mode === 'focus' ? 'text-white' : 'text-black'} text-[10px] px-2 py-0.5 font-bold shadow-sm transition-colors duration-500`}
@@ -459,30 +458,26 @@ function App() {
           initial="initial"
           animate="animate"
         >
-          {/* Start/Pause Button (Centered) */}
           <motion.button
             onClick={() => { setIsRunning(!isRunning); playClick(); }}
-            className={`group relative px-6 py-3 sm:px-8 sm:py-3 md:px-10 md:py-4 bg-transparent border border-white/30 transition-colors overflow-hidden ${mode === 'focus' ? 'hover:border-accent-red' : 'hover:border-accent-green'}`}
+            className={`group relative px-6 py-3 sm:px-8 sm:py-3 md:px-10 md:py-4 bg-paper-cream transition-all overflow-hidden border-2 border-black hover:-translate-y-1 active:translate-y-1 active:shadow-none`}
+            style={{ boxShadow: '6px 6px 0 rgba(0,0,0,1)' }}
             variants={staggerItem}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
           >
-            <span className="relative z-10 font-grotesk text-sm sm:text-base md:text-lg tracking-widest uppercase font-bold group-hover:text-white flex items-center gap-2 sm:gap-3">
-              {isRunning ? <Pause className="w-4 h-4 sm:w-5 sm:h-5 fill-current" /> : <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-current" />}
+            <span className={`relative z-10 font-grotesk text-sm sm:text-base md:text-lg tracking-widest uppercase font-black flex items-center gap-2 sm:gap-3 ${mode === 'focus' ? 'text-accent-red group-hover:text-white' : 'text-accent-green group-hover:text-white'}`}>
+              {isRunning ? <Pause className="w-4 h-4 sm:w-5 sm:h-5 fill-current" strokeWidth={3} /> : <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-current" strokeWidth={3} />}
               {isRunning ? 'Pause' : 'Start'}
             </span>
             <div className={`absolute inset-0 transform translate-y-full group-hover:translate-y-0 transition-transform duration-300 ${mode === 'focus' ? 'bg-accent-red' : 'bg-accent-green'}`}></div>
           </motion.button>
 
-          {/* Reset Button (Right Side) */}
           <motion.button
             onClick={() => { resetTimer(); playClick(); }}
-            className="absolute right-0 p-3 sm:p-4 rounded-full border border-white/10 hover:border-white/50 hover:bg-white/5 transition-all group"
+            className="absolute right-0 p-3 sm:p-4 rounded-none border-2 border-white/20 hover:border-white transition-all group bg-white/5 hover:bg-white/10 hover:-translate-y-1 active:translate-y-0"
+            style={{ boxShadow: '4px 4px 0 rgba(0,0,0,0.5)' }}
             variants={staggerItem}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
           >
-            <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6 text-white/50 group-hover:text-white group-hover:-rotate-180 transition-all duration-500" />
+            <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6 text-white/50 group-hover:text-white group-hover:-rotate-180 transition-all duration-500" strokeWidth={3} />
           </motion.button>
         </motion.div>
       </main>
@@ -506,18 +501,19 @@ function App() {
       {/* Marquee Tape (Bottom Fixed) */}
       <RadioWidget mode={mode} />
       <motion.div
-        className={`fixed bottom-0 left-0 w-full overflow-hidden py-1 transform rotate-0 z-30 border-t-2 border-black mix-blend-normal transition-colors duration-1000 ${mode === 'focus' ? 'bg-accent-red' : 'bg-accent-green'}`}
+        className={`fixed bottom-0 left-0 w-full overflow-hidden py-2 transform rotate-0 z-30 border-t-4 border-black mix-blend-normal transition-colors duration-1000 ${mode === 'focus' ? 'bg-accent-red' : 'bg-accent-green'}`}
         initial={{ y: 50, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: entranceDelays.ticker, duration: 0.5 }}
+        style={{ boxShadow: '0 -4px 20px rgba(0,0,0,0.5)' }}
       >
         <div className="whitespace-nowrap flex animate-ticker">
-          <span className="mx-4 font-bold text-black uppercase tracking-widest text-xs">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
-          <span className="mx-4 font-bold text-black uppercase tracking-widest text-xs">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
-          <span className="mx-4 font-bold text-black uppercase tracking-widest text-xs">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
-          <span className="mx-4 font-bold text-black uppercase tracking-widest text-xs">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
-          <span className="mx-4 font-bold text-black uppercase tracking-widest text-xs">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
-          <span className="mx-4 font-bold text-black uppercase tracking-widest text-xs">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
+          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
+          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
+          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
+          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
+          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
+          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
         </div>
       </motion.div>
 

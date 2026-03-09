@@ -43,66 +43,66 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose,
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 transition-all duration-500">
             <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={onClose}></div>
 
-            <div className="relative glass-panel w-full max-w-lg p-8 transform transition-transform duration-500 border-b-4 border-accent-green animate-in fade-in zoom-in-95">
+            <div className="relative bg-paper-cream text-black w-full max-w-lg p-8 transform transition-transform duration-500 animate-in fade-in zoom-in-95 torn-paper-1" style={{ boxShadow: '12px 12px 0 rgba(0,0,0,1)' }}>
                 {/* Header Controls */}
-                <button onClick={onBack} className="absolute top-6 left-6 text-gray-500 hover:text-white transition-colors flex items-center gap-1 group">
-                    <ChevronLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
+                <button onClick={onBack} className="absolute top-6 left-6 text-black/50 hover:text-black transition-colors flex items-center gap-1 group">
+                    <ChevronLeft size={24} strokeWidth={3} className="group-hover:-translate-x-1 transition-transform" />
                     <span className="text-xs font-bold uppercase tracking-widest hidden sm:inline">Back</span>
                 </button>
-                <button onClick={onClose} className="absolute top-6 right-6 text-gray-500 hover:text-accent-red transition-colors">
-                    <X size={24} />
+                <button onClick={onClose} className="absolute top-6 right-6 text-black/50 hover:text-accent-red transition-all hover:scale-110">
+                    <X size={24} strokeWidth={3} />
                 </button>
 
-                <div className="mt-8 mb-8 flex items-end justify-between border-b border-white/10 pb-4">
+                <div className="mt-8 mb-8 flex items-end justify-between border-b-2 border-black/10 pb-4">
                     <div>
-                        <h2 className="font-display font-black text-3xl uppercase tracking-tighter mb-1">Insights</h2>
-                        <p className="font-serif italic text-gray-500">Performance report</p>
+                        <h2 className="font-marker text-4xl uppercase tracking-wider mb-1 text-black">Insights</h2>
+                        <p className="font-serif italic text-black/60 font-bold">Performance report</p>
                     </div>
                 </div>
 
                 {/* Stats Grid */}
                 <div className="grid grid-cols-2 gap-4 mb-8">
-                    <div className="p-4 bg-white/5 border border-white/10 rounded-sm">
-                        <div className="flex items-center gap-2 mb-2 text-gray-400">
-                            <Clock size={14} />
-                            <span className="text-[10px] font-bold uppercase tracking-widest">Total Focus</span>
+                    <div className="p-4 bg-transparent border-2 border-black rounded-none group hover:-translate-y-1 transition-transform" style={{ boxShadow: '4px 4px 0 rgba(0,0,0,1)' }}>
+                        <div className="flex items-center gap-2 mb-2 text-black/50">
+                            <Clock size={16} strokeWidth={3} />
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-black">Total Focus</span>
                         </div>
-                        <div className="text-2xl sm:text-3xl font-grotesk font-bold text-white">
-                            {Math.floor(stats.minutes / 60)}<span className="text-sm text-gray-500 ml-1">h</span> {stats.minutes % 60}<span className="text-sm text-gray-500 ml-1">m</span>
+                        <div className="text-2xl sm:text-3xl font-grotesk font-black text-black">
+                            {Math.floor(stats.minutes / 60)}<span className="text-sm text-black/50 ml-1">h</span> {stats.minutes % 60}<span className="text-sm text-black/50 ml-1">m</span>
                         </div>
                     </div>
-                    <div className="p-4 bg-white/5 border border-white/10 rounded-sm">
-                        <div className="flex items-center gap-2 mb-2 text-gray-400">
-                            <TrendingUp size={14} />
-                            <span className="text-[10px] font-bold uppercase tracking-widest">Sessions</span>
+                    <div className="p-4 bg-transparent border-2 border-black rounded-none group hover:-translate-y-1 transition-transform" style={{ boxShadow: '4px 4px 0 rgba(0,0,0,1)' }}>
+                        <div className="flex items-center gap-2 mb-2 text-black/50">
+                            <TrendingUp size={16} strokeWidth={3} />
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-black">Sessions</span>
                         </div>
-                        <div className="text-2xl sm:text-3xl font-grotesk font-bold text-white">
+                        <div className="text-2xl sm:text-3xl font-grotesk font-black text-black">
                             {stats.sessions}
                         </div>
                     </div>
-                    <div className="p-4 bg-white/5 border border-white/10 rounded-sm">
-                        <div className="flex items-center gap-2 mb-2 text-gray-400">
-                            <Calendar size={14} />
-                            <span className="text-[10px] font-bold uppercase tracking-widest">Peak Time</span>
+                    <div className="p-4 bg-transparent border-2 border-black rounded-none group hover:-translate-y-1 transition-transform" style={{ boxShadow: '4px 4px 0 rgba(0,0,0,1)' }}>
+                        <div className="flex items-center gap-2 mb-2 text-black/50">
+                            <Calendar size={16} strokeWidth={3} />
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-black">Peak Time</span>
                         </div>
-                        <div className="text-xl font-grotesk font-bold uppercase text-white">
+                        <div className="text-xl font-grotesk font-black uppercase text-black">
                             {stats.bestTime}
                         </div>
                     </div>
-                    <div className="p-4 bg-white/5 border border-white/10 rounded-sm">
-                        <div className="flex items-center gap-2 mb-2 text-gray-400">
-                            <Zap size={14} />
-                            <span className="text-[10px] font-bold uppercase tracking-widest">Vibe</span>
+                    <div className="p-4 bg-transparent border-2 border-black rounded-none group hover:-translate-y-1 transition-transform" style={{ boxShadow: '4px 4px 0 rgba(0,0,0,1)' }}>
+                        <div className="flex items-center gap-2 mb-2 text-black/50">
+                            <Zap size={16} strokeWidth={3} />
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-black">Vibe</span>
                         </div>
-                        <div className="text-xl font-grotesk font-bold uppercase text-accent-green">
+                        <div className="text-xl font-grotesk font-black uppercase text-accent-green">
                             {stats.sessions > 5 ? 'Flowing' : 'Building'}
                         </div>
                     </div>
                 </div>
 
                 {/* Report Summary */}
-                <div className="relative p-6 border-l-2 border-accent-green/50 bg-white/5 font-serif-custom italic text-lg leading-relaxed text-gray-300">
-                    <span className="absolute -left-2 -top-2 text-2xl text-white/10">"</span>
+                <div className="relative p-6 border-l-4 border-accent-green bg-black/5 font-serif-custom italic text-lg leading-relaxed text-black/80 font-bold" style={{ boxShadow: '4px 4px 0 rgba(0,0,0,0.1)' }}>
+                    <span className="absolute -left-3 -top-3 text-4xl text-black/20 font-serif">"</span>
                     {getInsight()}
                 </div>
             </div>
