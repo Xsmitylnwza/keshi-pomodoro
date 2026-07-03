@@ -1,12 +1,6 @@
 import React, { useMemo } from 'react';
 import { X, TrendingUp, Clock, Calendar, Zap, ChevronLeft } from 'lucide-react';
-
-interface HistoryItem {
-    id: string;
-    mode: string;
-    duration: number;
-    date: string;
-}
+import type { HistoryItem } from '../types';
 
 interface AnalyticsModalProps {
     isOpen: boolean;
@@ -24,11 +18,17 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose,
         const totalMinutes = focusSessions.reduce((acc, curr) => acc + curr.duration, 0);
         const totalSessions = focusSessions.length;
         const streak = totalSessions > 0 ? 'Active' : 'N/A';
+        const taskTotals = focusSessions.reduce<Record<string, number>>((acc, curr) => {
+            const task = curr.taskTitle ?? 'Unassigned';
+            acc[task] = (acc[task] ?? 0) + curr.duration;
+            return acc;
+        }, {});
+        const topTask = Object.entries(taskTotals).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'TBD';
 
         // Simplified best time logic for stability
         const bestTime = totalSessions > 0 ? 'Evening' : 'TBD';
 
-        return { minutes: totalMinutes, sessions: totalSessions, bestTime, streak };
+        return { minutes: totalMinutes, sessions: totalSessions, bestTime, streak, topTask };
     }, [history]);
 
     // Generate Insights
@@ -83,10 +83,10 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose,
                     <div className="p-4 bg-transparent border-2 border-black rounded-none group hover:-translate-y-1 transition-transform" style={{ boxShadow: '4px 4px 0 rgba(0,0,0,1)' }}>
                         <div className="flex items-center gap-2 mb-2 text-black/50">
                             <Calendar size={16} strokeWidth={3} />
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-black">Peak Time</span>
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-black">Top Task</span>
                         </div>
-                        <div className="text-xl font-grotesk font-black uppercase text-black">
-                            {stats.bestTime}
+                        <div className="text-xl font-grotesk font-black uppercase text-black truncate">
+                            {stats.topTask}
                         </div>
                     </div>
                     <div className="p-4 bg-transparent border-2 border-black rounded-none group hover:-translate-y-1 transition-transform" style={{ boxShadow: '4px 4px 0 rgba(0,0,0,1)' }}>

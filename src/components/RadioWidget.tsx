@@ -180,7 +180,7 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
 
             {/* Radio Widget */}
             <motion.div
-                className={`fixed bottom-16 right-4 z-50 transition-all duration-500 ${isExpanded ? 'w-72' : 'w-24'}`}
+                className={`fixed bottom-16 right-4 z-50 transition-all duration-500 ${isExpanded ? 'w-[21rem]' : 'w-[16rem]'}`}
                 variants={slideInRight}
                 initial="initial"
                 animate="animate"
@@ -188,19 +188,19 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
             >
                 {/* Main Container - Cassette Tape Style with Glow */}
                 <div
-                    className={`relative bg-[#1a1a1a] border-2 border-white/20 shadow-2xl overflow-hidden transition-all duration-500`}
+                    className="relative overflow-visible border-2 border-white/20 bg-[#1a1a1a] shadow-2xl transition-all duration-500"
                     style={{
                         borderColor: isPlaying ? bgAccent : 'rgba(255,255,255,0.2)',
                         boxShadow: `4px 4px 0 ${isPlaying ? glowColor : 'rgba(0,0,0,1)'}`,
                     }}
                 >
                     {/* Cassette Top Label */}
-                    <div className="bg-[#222] px-3 py-1.5 border-b-2 border-black flex items-center justify-between">
+                    <div className="flex items-center justify-between border-b-2 border-black bg-[#222] px-3 py-2">
                         <div className="flex items-center gap-2">
-                            <Radio className={`w-4 h-4 transition-colors duration-300`}
+                            <Radio className="h-4 w-4 transition-colors duration-300"
                                 style={{ color: isPlaying ? bgAccent : 'rgba(255,255,255,0.5)' }} strokeWidth={3} />
                             <span className="text-[12px] font-marker uppercase tracking-widest text-white/80">
-                                {isExpanded ? 'LOFI RADIO' : 'RADIO'}
+                                RADIO
                             </span>
                         </div>
                         {isPlaying && (
@@ -352,10 +352,9 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
                     </div>
                 </div>
 
-                {/* Expand/Collapse Toggle - Full Circle (Outside overflow container) */}
                 <button
                     onClick={() => setIsExpanded(!isExpanded)}
-                    className="absolute top-1/2 -translate-y-1/2 -left-5 w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all duration-300 hover:scale-110 hover:bg-white/10 z-10"
+                    className="absolute -left-4 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border-2 transition-all duration-300 hover:scale-110 hover:bg-white/10"
                     style={{
                         backgroundColor: '#2a2a2a',
                         borderColor: '#444'

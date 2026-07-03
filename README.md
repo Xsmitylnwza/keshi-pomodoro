@@ -113,7 +113,7 @@ Underneath the aesthetic, it still does the job.
 - **Styling:** TailwindCSS 3.4
 - **Animations:** Framer Motion
 - **Icons:** Lucide React
-- **Deployment:** Vercel
+- **Deployment:** GitHub Actions self-hosted runner on VPS
 
 ---
 
@@ -135,6 +135,13 @@ npm run dev
 # Build for production
 npm run build
 ```
+
+---
+
+## Deploy
+
+Push to `main` and GitHub Actions will build and deploy on the VPS runner.
+The workflow uses the `pomodoro` self-hosted runner label and restarts the `pomodoro` service after syncing the release files.
 
 ---
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Volume2, VolumeX, ChevronLeft } from 'lucide-react';
 import { ThemeSettings } from './ThemeSettings';
+import type { HistoryItem } from '../types';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -118,13 +119,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     );
 };
 
-interface HistoryItem {
-    id: string;
-    mode: string;
-    duration: number;
-    date: string;
-}
-
 interface HistoryModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -163,6 +157,16 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({ isOpen, onClose, his
                                         {item.mode}
                                     </span>
                                     <div className="mt-2 font-mono text-sm text-black/60 font-bold">{item.date}</div>
+                                    {item.taskTitle && (
+                                        <div className="mt-1 font-grotesk text-xs text-black font-black truncate max-w-[190px]">
+                                            {item.taskTitle}
+                                        </div>
+                                    )}
+                                    {item.syncError && (
+                                        <div className="mt-1 font-mono text-[10px] text-accent-red font-bold">
+                                            Sync pending
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="font-grotesk font-black text-2xl text-black">
                                     {item.duration} <span className="text-xs text-black/50 font-bold">min</span>

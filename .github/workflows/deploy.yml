@@ -1,0 +1,46 @@
+name: Deploy Pomodoro
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: pomodoro-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, X64, pomodoro]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build
+
+      - name: Sync release files
+        run: |
+          mkdir -p /opt/pomodoro/releases/current/dist
+          mkdir -p /opt/pomodoro/releases/current/server
+          mkdir -p /opt/pomodoro/releases/current/docs
+          rsync -az --delete dist/ /opt/pomodoro/releases/current/dist/
+          rsync -az --delete server/ /opt/pomodoro/releases/current/server/
+          rsync -az --delete docs/ /opt/pomodoro/releases/current/docs/
+          rsync -az package.json /opt/pomodoro/releases/current/package.json
+
+      - name: Restart service
+        run: systemctl restart pomodoro
