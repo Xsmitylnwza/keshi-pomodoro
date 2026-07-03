@@ -4,6 +4,15 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  server: {
+    proxy: {
+      '/api/discipline': {
+        target: 'https://pomodoro.xsmity.cloud',
+        changeOrigin: true,
+        secure: true,
+      },
+    },
+  },
   build: {
     // Optimize chunk splitting for better caching
     rollupOptions: {

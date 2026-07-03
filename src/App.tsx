@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Clock3, GripVertical, ListTodo, Menu, Pause, Play, Plus, RotateCcw, Trash2, Wifi, WifiOff, X } from 'lucide-react';
+import { BarChart3, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Clock3, GripVertical, ListTodo, Menu, Pause, Play, Plus, RotateCcw, Trash2, Wifi, WifiOff, X } from 'lucide-react';
 import { CustomCursor } from './components/CustomCursor';
 import Background from './components/Background';
+import { DisciplineDashboard } from './components/DisciplineDashboard';
 
 // Lazy load modals for smaller initial bundle
 const SettingsModal = lazy(() => import('./components/Modals').then(m => ({ default: m.SettingsModal })));
@@ -73,6 +74,7 @@ const formatDayLabel = (dateKey: string) => {
 const TASK_STATUS_ORDER: SprintTask['status'][] = ['todo', 'doing', 'done'];
 
 function App() {
+  const [pathname, setPathname] = useState(() => (typeof window !== 'undefined' ? window.location.pathname : '/'));
   // State
   const [mode, setMode] = useState<TimerMode>('focus');
   const [timeLeft, setTimeLeft] = useState(25 * 60);
@@ -106,6 +108,20 @@ function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const clickSoundRef = useRef<HTMLAudioElement | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const isDisciplineRoute = pathname.startsWith('/discipline');
+
+  const navigateTo = (nextPath: string) => {
+    if (typeof window === 'undefined' || window.location.pathname === nextPath) return;
+    window.history.pushState({}, '', nextPath);
+    setPathname(nextPath);
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  };
+
+  useEffect(() => {
+    const handlePopState = () => setPathname(window.location.pathname);
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Sound Utility
   const playClick = () => {
@@ -219,15 +235,15 @@ function App() {
   useEffect(() => {
     const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
     const s = (timeLeft % 60).toString().padStart(2, '0');
-    document.title = `${m}:${s} • ${mode.toUpperCase()}`;
-  }, [timeLeft, mode]);
+    document.title = isDisciplineRoute ? `Discipline • ${m}:${s}` : `${m}:${s} • ${mode.toUpperCase()}`;
+  }, [timeLeft, mode, isDisciplineRoute]);
 
   // Keyboard Shortcuts (Enter / Spacebar to toggle timer)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger if user is typing in an input or modal is open
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (showSettings || showHistory || taskPendingDelete) return;
+      if (isDisciplineRoute || showSettings || showHistory || taskPendingDelete) return;
 
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
@@ -238,7 +254,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showSettings, showHistory, soundEnabled, taskPendingDelete]);
+  }, [isDisciplineRoute, showSettings, showHistory, soundEnabled, taskPendingDelete]);
 
   const handleComplete = () => {
     setIsRunning(false);
@@ -250,7 +266,7 @@ function App() {
 
     // Browser notification for users on other tabs
     if ('Notification' in window && Notification.permission === 'granted') {
-      const notifTitle = mode === 'focus' ? '🍅 Focus Complete!' : '☕ Break Over!';
+      const notifTitle = mode === 'focus' ? 'Focus Complete!' : 'Break Over!';
       const notifBody = mode === 'focus'
         ? `Great work! ${focusTime} minute focus session complete. Time for a break.`
         : `Break's over! Ready to focus for ${focusTime} minutes?`;
@@ -668,6 +684,10 @@ function App() {
     ? '#080808'
     : `color-mix(in srgb, ${colors.break} 10%, #050505)`;
 
+  if (isDisciplineRoute) {
+    return <DisciplineDashboard onNavigateHome={() => navigateTo('/')} />;
+  }
+
   return (
     <div
       className={`min-h-screen text-paper-cream relative overflow-hidden flex flex-col font-grotesk transition-[background-color] duration-1000 ease-in-out`}
@@ -703,18 +723,33 @@ function App() {
         </motion.div>
 
         <div className="flex flex-col gap-2 items-end">
-          <motion.button
-            onClick={() => { setShowSettings(true); playClick(); }}
-            className={`text-sm tracking-widest uppercase transition-all font-bold flex items-center gap-2 group p-2 border-2 border-transparent hover:border-current rounded-sm ${mode === 'focus' ? 'hover:text-accent-red hover:bg-accent-red/10' : 'hover:text-accent-green hover:bg-accent-green/10'}`}
-            variants={fadeDown}
-            initial="initial"
-            animate="animate"
-            transition={{ delay: entranceDelays.menu }}
-            whileTap={{ scale: 0.95 }}
-          >
-            <span>Menu</span>
-            <Menu className="w-5 h-5 group-hover:rotate-90 transition-transform" strokeWidth={3} />
-          </motion.button>
+          <div className="flex items-center gap-2">
+            <motion.button
+              onClick={() => { setShowSettings(true); playClick(); }}
+              className={`text-sm tracking-widest uppercase transition-all font-bold flex items-center gap-2 group p-2 border-2 border-transparent hover:border-current rounded-sm ${mode === 'focus' ? 'hover:text-accent-red hover:bg-accent-red/10' : 'hover:text-accent-green hover:bg-accent-green/10'}`}
+              variants={fadeDown}
+              initial="initial"
+              animate="animate"
+              transition={{ delay: entranceDelays.menu }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <span>Menu</span>
+              <Menu className="w-5 h-5 group-hover:rotate-90 transition-transform" strokeWidth={3} />
+            </motion.button>
+            <motion.button
+              onClick={() => { playClick(); navigateTo('/discipline'); }}
+              className="inline-flex items-center gap-2 border-2 border-transparent px-3 py-2 text-sm font-black uppercase tracking-widest text-white/65 transition-all hover:border-accent-green/40 hover:bg-accent-green/10 hover:text-accent-green"
+              variants={fadeDown}
+              initial="initial"
+              animate="animate"
+              transition={{ delay: entranceDelays.menu + 0.05 }}
+              whileTap={{ scale: 0.95 }}
+              aria-label="Open discipline dashboard"
+              title="Discipline dashboard"
+            >
+              <BarChart3 className="w-5 h-5" strokeWidth={3} />
+            </motion.button>
+          </div>
           <motion.div
             className={`${mode === 'focus' ? 'bg-accent-red' : 'bg-accent-green'} ${mode === 'focus' ? 'text-white' : 'text-black'} text-[10px] px-2 py-0.5 font-bold shadow-sm transition-colors duration-500`}
             variants={popIn}
@@ -1214,12 +1249,12 @@ function App() {
         style={{ boxShadow: '0 -4px 20px rgba(0,0,0,0.5)' }}
       >
         <div className="whitespace-nowrap flex animate-ticker">
-          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
-          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
-          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
-          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
-          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
-          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">• FOCUS • CREATE • BREATHE • KESHI MODE •</span>
+          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">FOCUS / CREATE / BREATHE / KESHI MODE /</span>
+          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">FOCUS / CREATE / BREATHE / KESHI MODE /</span>
+          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">FOCUS / CREATE / BREATHE / KESHI MODE /</span>
+          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">FOCUS / CREATE / BREATHE / KESHI MODE /</span>
+          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">FOCUS / CREATE / BREATHE / KESHI MODE /</span>
+          <span className="mx-4 font-black font-marker text-black text-sm tracking-widest leading-none">FOCUS / CREATE / BREATHE / KESHI MODE /</span>
         </div>
       </motion.div>
 
