@@ -942,7 +942,14 @@ function App() {
                     className={`relative overflow-hidden border-2 p-2.5 transition-all ${statusMeta.border} ${isExpanded
                       ? (isSelected ? 'bg-paper-cream text-black' : statusMeta.surface)
                       : 'bg-black/55 text-white/75 hover:bg-black/65 hover:text-white'
-                      } ${draggedTaskId === task.id ? 'opacity-50' : ''} ${dropTarget?.taskId === task.id ? `ring-2 ${statusMeta.ring}` : ''}`}
+                      } ${isExpanded ? 'cursor-pointer' : ''} ${draggedTaskId === task.id ? 'opacity-50' : ''} ${dropTarget?.taskId === task.id ? `ring-2 ${statusMeta.ring}` : ''}`}
+                    onClick={(event) => {
+                      if (!isExpanded) return;
+                      if (!(event.target instanceof Element)) return;
+                      if (event.target.closest('button, input, textarea, select, a, label')) return;
+                      toggleTaskExpanded(task.id);
+                      playClick();
+                    }}
                     onDragOver={(event) => {
                       if (!draggedTaskId || draggedTaskId === task.id) return;
                       event.preventDefault();
