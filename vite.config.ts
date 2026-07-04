@@ -6,10 +6,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api/discipline': {
-        target: 'https://pomodoro.xsmity.cloud',
+      '/api': {
+        target: 'http://127.0.0.1:4177',
         changeOrigin: true,
-        secure: true,
+        secure: false,
       },
     },
   },

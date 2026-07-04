@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Radio, Play, Pause, SkipForward, Volume2, VolumeX, ChevronLeft, ChevronRight } from 'lucide-react';
 import { slideInRight, entranceDelays } from '../utils/animations';
 import { useTheme } from '../context/ThemeContext';
+import { fetchAppSettings, updateAppSettings } from '../lib/appSettingsApi';
 
 interface RadioStation {
     id: string;
@@ -27,13 +28,13 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [currentStation, setCurrentStation] = useState(0);
     const [isMuted, setIsMuted] = useState(false);
-    const [volume, setVolume] = useState(() => {
-        const saved = localStorage.getItem('keshi_radio_volume');
-        return saved ? parseInt(saved, 10) : 50;
-    });
+    const [volume, setVolume] = useState(50);
     const [showVolumeSlider, setShowVolumeSlider] = useState(false);
     const [showTooltip, setShowTooltip] = useState(false);
     const iframeRef = useRef<HTMLIFrameElement>(null);
+    const hasHydratedRef = useRef(false);
+    const tooltipTimerRef = useRef<number | null>(null);
+    const syncTimerRef = useRef<number | null>(null);
 
     const { colors } = useTheme();
     const station = STATIONS[currentStation];
@@ -49,18 +50,55 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
 
     const glowColor = getGlowColor(bgAccent, 0.4);
 
-    // Show tooltip on first visit
     useEffect(() => {
-        const hasSeenTooltip = localStorage.getItem('keshi_radio_tooltip_seen');
-        if (!hasSeenTooltip) {
-            setShowTooltip(true);
-            const timer = setTimeout(() => {
-                setShowTooltip(false);
-                localStorage.setItem('keshi_radio_tooltip_seen', 'true');
-            }, 4000);
-            return () => clearTimeout(timer);
-        }
+        let active = true;
+
+        void fetchAppSettings()
+            .then(({ settings }) => {
+                if (!active) return;
+                setVolume(settings.radio?.volume ?? 50);
+                setShowTooltip(!settings.radio?.tooltipSeen);
+            })
+            .catch(error => {
+                console.warn('Radio settings sync failed', error);
+                if (!active) return;
+                setShowTooltip(true);
+            })
+            .finally(() => {
+                if (active) hasHydratedRef.current = true;
+            });
+
+        return () => {
+            active = false;
+            if (tooltipTimerRef.current !== null) window.clearTimeout(tooltipTimerRef.current);
+            if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
+        };
     }, []);
+
+    useEffect(() => {
+        if (!showTooltip) {
+            if (tooltipTimerRef.current !== null) {
+                window.clearTimeout(tooltipTimerRef.current);
+                tooltipTimerRef.current = null;
+            }
+            return;
+        }
+
+        if (tooltipTimerRef.current !== null) {
+            window.clearTimeout(tooltipTimerRef.current);
+        }
+
+        tooltipTimerRef.current = window.setTimeout(() => {
+            setShowTooltip(false);
+        }, 4000);
+
+        return () => {
+            if (tooltipTimerRef.current !== null) {
+                window.clearTimeout(tooltipTimerRef.current);
+                tooltipTimerRef.current = null;
+            }
+        };
+    }, [showTooltip]);
 
     // YouTube Player API control
     useEffect(() => {
@@ -125,20 +163,38 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
         setIsPlaying(!isPlaying);
         if (showTooltip) {
             setShowTooltip(false);
-            localStorage.setItem('keshi_radio_tooltip_seen', 'true');
         }
     };
 
     const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newVolume = parseInt(e.target.value);
         setVolume(newVolume);
-        localStorage.setItem('keshi_radio_volume', newVolume.toString());
         if (newVolume === 0) {
             setIsMuted(true);
         } else if (isMuted) {
             setIsMuted(false);
         }
     };
+
+    useEffect(() => {
+        if (!hasHydratedRef.current) return;
+        if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
+
+        syncTimerRef.current = window.setTimeout(() => {
+            void updateAppSettings({
+                radio: {
+                    volume,
+                    tooltipSeen: !showTooltip,
+                },
+            }).catch(error => {
+                console.warn('Radio settings save failed', error);
+            });
+        }, 160);
+
+        return () => {
+            if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
+        };
+    }, [volume, showTooltip]);
 
     return (
         <>
@@ -161,7 +217,6 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
                     style={{ animation: 'float 3s ease-in-out infinite' }}
                     onClick={() => {
                         setShowTooltip(false);
-                        localStorage.setItem('keshi_radio_tooltip_seen', 'true');
                     }}
                 >
                     <div className="bg-paper-cream text-black px-4 py-2 font-mono text-sm relative transform -rotate-2 border border-black shadow-lg group-hover:scale-105 transition-transform"

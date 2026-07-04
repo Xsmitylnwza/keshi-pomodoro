@@ -16,8 +16,13 @@ const host = process.env.HOST || '127.0.0.1';
 const tasksFile = path.join(dataDir, 'tasks.json');
 const sessionsFile = path.join(dataDir, 'pomodoros.json');
 const eventsFile = path.join(dataDir, 'events.json');
+const appSettingsFile = path.join(dataDir, 'app-settings.json');
+const historyFile = path.join(dataDir, 'history.json');
 const disciplineDbFile = process.env.DISCIPLINE_DB_FILE || path.join(dataDir, 'discipline.sqlite');
 let disciplineDb;
+const legacyScoreKeys = ['deep_work', 'reading', 'exercise', 'sleep', 'nutrition', 'discipline'];
+const specScoreKeys = ['BUILD', 'JOB_APPS', 'FLEX', 'EXERCISE', 'FOCUS', 'SLEEP'];
+const goodDayThreshold = 35;
 const defaultTasks = [
   {
     id: 'inbox',
@@ -30,6 +35,22 @@ const defaultTasks = [
     subtasks: [],
   },
 ];
+const defaultAppSettings = {
+  focusTime: 25,
+  breakTime: 5,
+  soundEnabled: true,
+  selectedTaskId: 'inbox',
+  theme: {
+    focus: '#b91c1c',
+    break: '#34d399',
+    leftImage: null,
+    rightImage: null,
+  },
+  radio: {
+    volume: 50,
+    tooltipSeen: false,
+  },
+};
 
 const contentTypes = new Map([
   ['.css', 'text/css; charset=utf-8'],
@@ -60,6 +81,83 @@ async function writeJson(file, value) {
   await writeFile(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 }
 
+function normalizeThemeSettings(value) {
+  return {
+    focus: typeof value?.focus === 'string' && value.focus.trim() ? value.focus.trim() : defaultAppSettings.theme.focus,
+    break: typeof value?.break === 'string' && value.break.trim() ? value.break.trim() : defaultAppSettings.theme.break,
+    leftImage: typeof value?.leftImage === 'string' ? value.leftImage : null,
+    rightImage: typeof value?.rightImage === 'string' ? value.rightImage : null,
+  };
+}
+
+function normalizeRadioSettings(value) {
+  const volume = Number(value?.volume);
+  return {
+    volume: Number.isFinite(volume) ? Math.min(100, Math.max(0, Math.trunc(volume))) : defaultAppSettings.radio.volume,
+    tooltipSeen: Boolean(value?.tooltipSeen),
+  };
+}
+
+function normalizeAppSettings(value) {
+  const focusTime = Number(value?.focusTime);
+  const breakTime = Number(value?.breakTime);
+
+  return {
+    focusTime: Number.isFinite(focusTime) && focusTime > 0 ? Math.trunc(focusTime) : defaultAppSettings.focusTime,
+    breakTime: Number.isFinite(breakTime) && breakTime > 0 ? Math.trunc(breakTime) : defaultAppSettings.breakTime,
+    soundEnabled: typeof value?.soundEnabled === 'boolean' ? value.soundEnabled : defaultAppSettings.soundEnabled,
+    selectedTaskId: typeof value?.selectedTaskId === 'string' && value.selectedTaskId.trim() ? value.selectedTaskId : defaultAppSettings.selectedTaskId,
+    theme: normalizeThemeSettings(value?.theme),
+    radio: normalizeRadioSettings(value?.radio),
+    updatedAt: typeof value?.updatedAt === 'string' ? value.updatedAt : new Date().toISOString(),
+  };
+}
+
+async function readAppSettings() {
+  return normalizeAppSettings(await readJson(appSettingsFile, defaultAppSettings));
+}
+
+async function writeAppSettings(nextSettings) {
+  const normalized = normalizeAppSettings(nextSettings);
+  await writeJson(appSettingsFile, normalized);
+  return normalized;
+}
+
+function mergeAppSettings(current, patch) {
+  return normalizeAppSettings({
+    ...current,
+    ...patch,
+    theme: patch?.theme ? { ...current.theme, ...patch.theme } : current.theme,
+    radio: patch?.radio ? { ...current.radio, ...patch.radio } : current.radio,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+function normalizeHistoryItem(item) {
+  const duration = Number(item?.duration);
+  return {
+    id: typeof item?.id === 'string' && item.id ? item.id : randomUUID(),
+    mode: typeof item?.mode === 'string' ? item.mode : 'focus',
+    duration: Number.isFinite(duration) && duration > 0 ? Math.trunc(duration) : 0,
+    date: typeof item?.date === 'string' ? item.date : new Date().toISOString(),
+    taskId: typeof item?.taskId === 'string' ? item.taskId : undefined,
+    taskTitle: typeof item?.taskTitle === 'string' ? item.taskTitle : undefined,
+    syncedAt: typeof item?.syncedAt === 'string' ? item.syncedAt : new Date().toISOString(),
+    syncError: typeof item?.syncError === 'string' ? item.syncError : undefined,
+  };
+}
+
+async function readHistory() {
+  const history = await readJson(historyFile, []);
+  return Array.isArray(history) ? history.map(normalizeHistoryItem) : [];
+}
+
+async function writeHistory(history) {
+  const normalized = Array.isArray(history) ? history.map(normalizeHistoryItem) : [];
+  await writeJson(historyFile, normalized);
+  return normalized;
+}
+
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -68,20 +166,126 @@ function isDateKey(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
-function requireDateKey(value, fallback = todayKey()) {
-  const date = value || fallback;
-  if (!isDateKey(date)) {
+function requireDateKey(value, fieldName = 'date') {
+  if (!value) {
+    const error = new Error(`${fieldName}_required`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!isDateKey(value)) {
     const error = new Error('invalid_date');
     error.statusCode = 400;
     throw error;
   }
-  return date;
+
+  return value;
 }
 
 function clampTrendDays(value) {
   const days = Number(value || 7);
   if (!Number.isFinite(days)) return 7;
   return Math.min(30, Math.max(7, Math.trunc(days)));
+}
+
+function isExactKeySet(source, allowedKeys) {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return false;
+  const keys = Object.keys(source);
+  return keys.length === allowedKeys.length && allowedKeys.every(key => Object.hasOwn(source, key));
+}
+
+function normalizeScoreValue(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0 || number > 10) {
+    const error = new Error('invalid_score_value');
+    error.statusCode = 400;
+    throw error;
+  }
+  return number;
+}
+
+function validateScoresPayload(scores) {
+  if (!scores || typeof scores !== 'object' || Array.isArray(scores)) {
+    const error = new Error('scores_required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const currentShape = isExactKeySet(scores, legacyScoreKeys);
+  const specShape = isExactKeySet(scores, specScoreKeys);
+
+  if (!currentShape && !specShape) {
+    const error = new Error('scores_invalid_schema');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const normalized = {};
+  for (const [key, value] of Object.entries(scores)) {
+    normalized[key] = normalizeScoreValue(value);
+  }
+  return normalized;
+}
+
+function taskMatchesDate(task, dateKey) {
+  const dateSource = task.createdAt ?? task.updatedAt;
+  if (!dateSource) return dateKey === todayKey();
+  const parsed = new Date(dateSource);
+  if (Number.isNaN(parsed.getTime())) return false;
+  return parsed.toISOString().slice(0, 10) === dateKey;
+}
+
+function addScoreAliases(score) {
+  if (!score) return null;
+  const isGoodDay = score.total >= goodDayThreshold;
+  return {
+    ...score,
+    isGoodDay,
+    is_good_day: isGoodDay,
+    created_at: score.createdAt,
+    updated_at: score.updatedAt,
+  };
+}
+
+function addStreakAliases(streak) {
+  if (!streak) return streak;
+  return {
+    ...streak,
+    current_streak: streak.current,
+    longest_streak: streak.longest,
+    last_score_date: streak.lastScoreDate,
+    updated_at: streak.updatedAt,
+  };
+}
+
+function buildTrendRange(url) {
+  const from = url.searchParams.get('from');
+  const to = url.searchParams.get('to');
+
+  if (from || to) {
+    const startDate = requireDateKey(from, 'from');
+    const endDate = requireDateKey(to, 'to');
+    if (startDate > endDate) {
+      const error = new Error('invalid_trend_range');
+      error.statusCode = 400;
+      throw error;
+    }
+    const start = new Date(`${startDate}T00:00:00.000Z`);
+    const end = new Date(`${endDate}T00:00:00.000Z`);
+    const days = Math.floor((end - start) / 86400000) + 1;
+    return { from: startDate, to: endDate, days, startDate, endDate };
+  }
+
+  const days = clampTrendDays(url.searchParams.get('days'));
+  const endDate = requireDateKey(url.searchParams.get('endDate'), 'endDate');
+  const start = new Date(`${endDate}T00:00:00.000Z`);
+  start.setUTCDate(start.getUTCDate() - (days - 1));
+  const startDate = start.toISOString().slice(0, 10);
+  return { days, startDate, endDate, from: startDate, to: endDate };
+}
+
+function buildReviewTasks(tasks, dateKey) {
+  return tasks.filter(task => taskMatchesDate(task, dateKey));
 }
 
 async function getDisciplineDb() {
@@ -140,7 +344,7 @@ async function getDisciplineDb() {
 
 function parseScores(row) {
   if (!row) return null;
-  return {
+  return addScoreAliases({
     date: row.date,
     scores: JSON.parse(row.scores_json),
     notes: row.notes || '',
@@ -148,7 +352,7 @@ function parseScores(row) {
     average: row.average,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  };
+  });
 }
 
 function scoreStats(scores) {
@@ -285,6 +489,50 @@ async function handleApi(req, res, url) {
   const pathname = url.pathname;
   if (pathname === '/api/health') {
     sendJson(res, 200, { ok: true, service: 'keshi-pomodoro' });
+    return;
+  }
+
+  if (pathname === '/api/settings' && req.method === 'GET') {
+    sendJson(res, 200, { settings: await readAppSettings() });
+    return;
+  }
+
+  if (pathname === '/api/settings' && (req.method === 'PATCH' || req.method === 'PUT')) {
+    const body = await readBody(req);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      sendJson(res, 400, { error: 'settings_required' });
+      return;
+    }
+
+    const current = await readAppSettings();
+    const nextSettings = await writeAppSettings(mergeAppSettings(current, body));
+    sendJson(res, 200, { settings: nextSettings });
+    return;
+  }
+
+  if (pathname === '/api/history' && req.method === 'GET') {
+    sendJson(res, 200, { history: await readHistory() });
+    return;
+  }
+
+  if (pathname === '/api/history' && req.method === 'POST') {
+    const body = await readBody(req);
+    const entry = normalizeHistoryItem(body);
+    if (!entry.duration || entry.duration < 0) {
+      sendJson(res, 400, { error: 'duration_required' });
+      return;
+    }
+
+    const history = await readHistory();
+    const nextHistory = [entry, ...history];
+    await writeHistory(nextHistory);
+    sendJson(res, 201, { history: nextHistory, item: entry });
+    return;
+  }
+
+  if (pathname === '/api/history' && req.method === 'DELETE') {
+    await writeHistory([]);
+    sendJson(res, 200, { ok: true });
     return;
   }
 
@@ -425,11 +673,7 @@ async function handleApi(req, res, url) {
   if (pathname === '/api/discipline/scores' && req.method === 'POST') {
     const body = await readBody(req);
     const date = requireDateKey(body?.date);
-    const scores = body?.scores && typeof body.scores === 'object' && !Array.isArray(body.scores) ? body.scores : null;
-    if (!scores || Object.keys(scores).length === 0) {
-      sendJson(res, 400, { error: 'scores_required' });
-      return;
-    }
+    const scores = validateScoresPayload(body?.scores);
 
     const stats = scoreStats(scores);
     const now = new Date().toISOString();
@@ -455,20 +699,20 @@ async function handleApi(req, res, url) {
     const date = requireDateKey(url.searchParams.get('date'));
     const db = await getDisciplineDb();
     const score = parseScores(db.prepare('SELECT * FROM daily_scores WHERE date = ?').get(date));
+    if (!score) {
+      sendJson(res, 404, { error: 'score_not_found' });
+      return;
+    }
     sendJson(res, 200, { score });
     return;
   }
 
   if (pathname === '/api/discipline/scores/trend' && req.method === 'GET') {
-    const days = clampTrendDays(url.searchParams.get('days'));
-    const endDate = requireDateKey(url.searchParams.get('endDate'));
-    const start = new Date(`${endDate}T00:00:00.000Z`);
-    start.setUTCDate(start.getUTCDate() - (days - 1));
-    const startDate = start.toISOString().slice(0, 10);
+    const range = buildTrendRange(url);
     const db = await getDisciplineDb();
-    const rows = db.prepare('SELECT * FROM daily_scores WHERE date BETWEEN ? AND ? ORDER BY date ASC').all(startDate, endDate);
+    const rows = db.prepare('SELECT * FROM daily_scores WHERE date BETWEEN ? AND ? ORDER BY date ASC').all(range.startDate, range.endDate);
     const byDate = new Map(rows.map(row => [row.date, parseScores(row)]));
-    const trend = datesBetween(startDate, endDate).map(date => byDate.get(date) || {
+    const trend = datesBetween(range.startDate, range.endDate).map(date => byDate.get(date) || {
       date,
       scores: null,
       notes: '',
@@ -477,12 +721,19 @@ async function handleApi(req, res, url) {
       createdAt: null,
       updatedAt: null,
     });
-    sendJson(res, 200, { days, startDate, endDate, trend });
+    sendJson(res, 200, {
+      days: range.days,
+      from: range.from,
+      to: range.to,
+      startDate: range.startDate,
+      endDate: range.endDate,
+      trend,
+    });
     return;
   }
 
   if (pathname === '/api/discipline/streak' && req.method === 'GET') {
-    const streak = await recomputeStreak();
+    const streak = addStreakAliases(await recomputeStreak());
     sendJson(res, 200, { streak });
     return;
   }
@@ -551,11 +802,12 @@ async function handleApi(req, res, url) {
     const date = requireDateKey(url.searchParams.get('date'));
     const db = await getDisciplineDb();
     const score = parseScores(db.prepare('SELECT * FROM daily_scores WHERE date = ?').get(date));
-    const streak = await recomputeStreak();
+    const streak = addStreakAliases(await recomputeStreak());
     const reading = db.prepare('SELECT * FROM reading_log WHERE date = ? ORDER BY created_at DESC').all(date).map(normalizeLogRow);
     const exercise = db.prepare('SELECT * FROM exercise_log WHERE date = ? ORDER BY created_at DESC').all(date).map(normalizeLogRow);
     const pomodoros = (await readJson(sessionsFile, [])).filter(session => String(session.completedAt || session.storedAt || '').startsWith(date));
     const events = (await readJson(eventsFile, [])).filter(event => String(event.createdAt || '').startsWith(date));
+    const tasks = buildReviewTasks(normalizeTasks(await readJson(tasksFile, defaultTasks)), date);
 
     sendJson(res, 200, {
       date,
@@ -563,6 +815,7 @@ async function handleApi(req, res, url) {
       streak,
       reading,
       exercise,
+      tasks,
       pomodoros,
       events,
       generatedAt: new Date().toISOString(),
@@ -598,7 +851,11 @@ const server = createServer(async (req, res) => {
       .pipe(res);
   } catch (error) {
     console.error(error);
-    sendJson(res, error.statusCode || 500, { error: error.message === 'invalid_json' ? 'invalid_json' : 'internal_error' });
+    const statusCode = error.statusCode || 500;
+    const errorBody = statusCode >= 500
+      ? { error: 'internal_error' }
+      : { error: error.message || 'bad_request' };
+    sendJson(res, statusCode, errorBody);
   }
 });
 

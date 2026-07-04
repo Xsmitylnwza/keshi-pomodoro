@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { fetchAppSettings, updateAppSettings } from '../lib/appSettingsApi';
 
 interface ThemeColors {
     focus: string;
@@ -16,45 +17,71 @@ interface ThemeContextType {
 }
 
 const DEFAULT_THEME: ThemeColors = {
-    focus: '#b91c1c', // accent-red
-    break: '#34d399', // accent-green (Emerald 400)
+    focus: '#b91c1c',
+    break: '#34d399',
 };
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [colors, setColors] = useState<ThemeColors>(() => {
-        const saved = localStorage.getItem('keshi-theme');
-        return saved ? JSON.parse(saved) : DEFAULT_THEME;
-    });
-
-    const [leftImage, setLeftImage] = useState<string | null>(() => {
-        return localStorage.getItem('keshi-bg-left');
-    });
-
-    const [rightImage, setRightImage] = useState<string | null>(() => {
-        return localStorage.getItem('keshi-bg-right');
-    });
+    const [colors, setColors] = useState<ThemeColors>(DEFAULT_THEME);
+    const [leftImage, setLeftImage] = useState<string | null>(null);
+    const [rightImage, setRightImage] = useState<string | null>(null);
+    const hasHydratedRef = useRef(false);
+    const syncTimerRef = useRef<number | null>(null);
 
     useEffect(() => {
-        // Update CSS variables whenever colors change
+        let active = true;
+
+        void fetchAppSettings()
+            .then(({ settings }) => {
+                if (!active) return;
+                setColors({
+                    focus: settings.theme?.focus ?? DEFAULT_THEME.focus,
+                    break: settings.theme?.break ?? DEFAULT_THEME.break,
+                });
+                setLeftImage(settings.theme?.leftImage ?? null);
+                setRightImage(settings.theme?.rightImage ?? null);
+            })
+            .catch(error => {
+                console.warn('Theme sync failed', error);
+            })
+            .finally(() => {
+                if (active) hasHydratedRef.current = true;
+            });
+
+        return () => {
+            active = false;
+        };
+    }, []);
+
+    useEffect(() => {
         const root = document.documentElement;
         root.style.setProperty('--accent-red', colors.focus);
         root.style.setProperty('--accent-green', colors.break);
-
-        // Save to storage
-        localStorage.setItem('keshi-theme', JSON.stringify(colors));
     }, [colors]);
 
     useEffect(() => {
-        if (leftImage) localStorage.setItem('keshi-bg-left', leftImage);
-        else localStorage.removeItem('keshi-bg-left');
-    }, [leftImage]);
+        if (!hasHydratedRef.current) return;
+        if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
 
-    useEffect(() => {
-        if (rightImage) localStorage.setItem('keshi-bg-right', rightImage);
-        else localStorage.removeItem('keshi-bg-right');
-    }, [rightImage]);
+        syncTimerRef.current = window.setTimeout(() => {
+            void updateAppSettings({
+                theme: {
+                    focus: colors.focus,
+                    break: colors.break,
+                    leftImage,
+                    rightImage,
+                },
+            }).catch(error => {
+                console.warn('Theme save failed', error);
+            });
+        }, 180);
+
+        return () => {
+            if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
+        };
+    }, [colors, leftImage, rightImage]);
 
     const updateColor = (mode: keyof ThemeColors, color: string) => {
         setColors(prev => ({ ...prev, [mode]: color }));

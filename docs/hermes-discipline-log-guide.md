@@ -15,7 +15,7 @@ Prefer the API over direct file access. Use files only if the API is unavailable
 - Daily discipline scores, keyed by date
 - Reading logs, appended per entry
 - Exercise logs, appended per entry
-- Daily review snapshots that combine score, streak, reading, exercise, pomodoros, and events
+- Daily review snapshots that combine score, streak, reading, exercise, tasks, pomodoros, and events
 
 Pomodoro session logs and timer events are written by the main Pomodoro API:
 
@@ -34,7 +34,7 @@ Example:
 2026-07-04
 ```
 
-Use the exact date string you intend to log against.
+Use the exact date string you intend to log against. If a required date is missing or invalid, the API returns `400`.
 
 ## Score Blocks
 
@@ -49,6 +49,17 @@ Default score keys:
 
 Each score value should be a number from `0` to `10`.
 
+The API also accepts the spec score set used by Hermes:
+
+- `BUILD`
+- `JOB_APPS`
+- `FLEX`
+- `EXERCISE`
+- `FOCUS`
+- `SLEEP`
+
+Only send one complete set per request.
+
 ## Recommended Hermes Flow
 
 1. Read the day first with `GET /review?date=YYYY-MM-DD`.
@@ -62,6 +73,8 @@ Important:
 - `POST /scores` is an upsert for that date.
 - `POST /reading` and `POST /exercise` are append-only.
 - There are no edit/delete endpoints for reading or exercise yet.
+- `GET /scores?date=YYYY-MM-DD` returns `404` if no score exists for that date.
+- `GET /scores?date=` or any missing required date returns `400`.
 
 ## Endpoints
 
@@ -90,14 +103,22 @@ Response returns:
 
 - saved `score`
 - updated `streak`
+- `score.is_good_day` and `score.isGoodDay` are both returned
+- `streak.current_streak`, `streak.longest_streak`, and `streak.last_score_date` are also returned
 
 ### 2. Read daily scores
 
 `GET /api/discipline/scores?date=YYYY-MM-DD`
 
-Returns the saved score object for that date, or `null` if none exists.
+Returns the saved score object for that date. If no row exists, the API returns `404`.
 
 ### 3. Read score trend
+
+Preferred:
+
+`GET /api/discipline/scores/trend?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+Legacy compatibility is still accepted:
 
 `GET /api/discipline/scores/trend?days=7|30&endDate=YYYY-MM-DD`
 
@@ -113,6 +134,7 @@ Returns:
 - `longest`
 - `lastScoreDate`
 - `updatedAt`
+- plus snake_case aliases: `current_streak`, `longest_streak`, `last_score_date`, `updated_at`
 
 ### 5. Save a reading log
 
@@ -165,6 +187,7 @@ This is the best endpoint for Hermes to inspect a day. It returns:
 - `streak`
 - `reading`
 - `exercise`
+- `tasks` (daily sprint task snapshot)
 - `pomodoros`
 - `events`
 - `generatedAt`

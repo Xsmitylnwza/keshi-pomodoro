@@ -129,7 +129,10 @@ cd pomodoro-keshi
 # Install dependencies
 npm install
 
-# Start development server
+# Start API server in one terminal
+npm run api
+
+# Start development server in another terminal
 npm run dev
 
 # Build for production

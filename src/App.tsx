@@ -15,15 +15,20 @@ import {
   createSprintTask,
   deleteSprintTask,
   fetchSprintTasks,
-  loadLocalTasks,
-  loadSelectedTaskId,
+  defaultSprintTasks,
   pushPomodoroEvent,
   pushPomodoroSession,
-  saveLocalTasks,
-  saveSelectedTaskId,
   sprintApiBaseUrl,
   updateSprintTask,
 } from './lib/sprintApi';
+import {
+  appendAppHistory,
+  clearAppHistory,
+  fetchAppHistory,
+  fetchAppSettings,
+  updateAppSettings,
+  DEFAULT_APP_SETTINGS,
+} from './lib/appSettingsApi';
 import type { HistoryItem, PomodoroEventType, SprintTask } from './types';
 import {
   fadeDown,
@@ -133,24 +138,66 @@ function App() {
 
   // Initial Load
   useEffect(() => {
-    const savedHistory = localStorage.getItem('keshi_pomodoro_history');
-    if (savedHistory) setHistory(JSON.parse(savedHistory));
-    setTasks(loadLocalTasks());
-    const savedTaskId = loadSelectedTaskId();
-    setSelectedTaskId(savedTaskId);
-    setExpandedTaskId(savedTaskId);
+    let active = true;
 
-    const sFocus = localStorage.getItem('keshi-focus');
-    const sBreak = localStorage.getItem('keshi-break');
-    if (sFocus) setFocusTime(parseInt(sFocus));
-    if (sBreak) setBreakTime(parseInt(sBreak));
+    const loadInitialData = async () => {
+      setTaskSyncState('syncing');
+      let bootstrapHasError = false;
 
-    // Request notification permission
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
+      const [syncedTasksResult, settingsResult, historyResult] = await Promise.all([
+        fetchSprintTasks().catch(error => {
+          console.warn('Task sync failed', error);
+          bootstrapHasError = true;
+          return defaultSprintTasks;
+        }),
+        fetchAppSettings().catch(error => {
+          console.warn('Settings sync failed', error);
+          bootstrapHasError = true;
+          return null;
+        }),
+        fetchAppHistory().catch(error => {
+          console.warn('History sync failed', error);
+          bootstrapHasError = true;
+          return null;
+        }),
+      ]);
 
-    setHasMounted(true);
+      if (!active) return;
+
+      setTasks(syncedTasksResult);
+
+      const settings = settingsResult?.settings ?? DEFAULT_APP_SETTINGS;
+      setFocusTime(settings.focusTime);
+      setBreakTime(settings.breakTime);
+      setSoundEnabled(settings.soundEnabled);
+
+      const nextSelectedTaskId = syncedTasksResult.some(task => task.id === settings.selectedTaskId)
+        ? settings.selectedTaskId
+        : syncedTasksResult[0]?.id ?? DEFAULT_APP_SETTINGS.selectedTaskId;
+      setSelectedTaskId(nextSelectedTaskId);
+      setExpandedTaskId(nextSelectedTaskId);
+
+      if (nextSelectedTaskId !== settings.selectedTaskId) {
+        void updateAppSettings({ selectedTaskId: nextSelectedTaskId }).catch(error => {
+          console.warn('Selected task sync failed', error);
+        });
+      }
+
+      setHistory(historyResult?.history ?? []);
+      setTaskSyncState(bootstrapHasError ? 'offline' : 'online');
+
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+
+      setHasMounted(true);
+    };
+
+    void loadInitialData();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const refreshTasks = async () => {
@@ -159,17 +206,25 @@ function App() {
     try {
       const syncedTasks = await fetchSprintTasks();
       setTasks(syncedTasks);
-      setTaskSyncState(sprintApiBaseUrl ? 'online' : 'offline');
+
+      const fallbackSelectedTaskId = syncedTasks.some(task => task.id === selectedTaskId)
+        ? selectedTaskId
+        : syncedTasks[0]?.id ?? DEFAULT_APP_SETTINGS.selectedTaskId;
+
+      if (fallbackSelectedTaskId !== selectedTaskId) {
+        setSelectedTaskId(fallbackSelectedTaskId);
+        setExpandedTaskId(fallbackSelectedTaskId);
+        void updateAppSettings({ selectedTaskId: fallbackSelectedTaskId }).catch(error => {
+          console.warn('Selected task sync failed', error);
+        });
+      }
+
+      setTaskSyncState('online');
     } catch (error) {
-      console.warn('Task sync failed', error);
-      setTasks(loadLocalTasks());
+      console.warn('Task refresh failed', error);
       setTaskSyncState('offline');
     }
   };
-
-  useEffect(() => {
-    refreshTasks();
-  }, []);
 
   // Favicon Updater
   useEffect(() => {
@@ -291,25 +346,26 @@ function App() {
     };
     const newHistory = [newItem, ...history];
     setHistory(newHistory);
-    localStorage.setItem('keshi_pomodoro_history', JSON.stringify(newHistory));
+    void appendAppHistory(newItem)
+      .then(({ history: syncedHistory }) => {
+        setHistory(syncedHistory);
+      })
+      .catch((error) => {
+        console.warn('History sync failed', error);
+        const syncError = error instanceof Error ? error.message : 'Unable to sync history';
+        setHistory(prev => prev.map(item =>
+          item.id === newItem.id ? { ...item, syncError } : item
+        ));
+        setTaskSyncState('offline');
+      });
 
     if (mode === 'focus') {
       pushPomodoroSession(newItem)
         .then(() => {
-          const syncedHistory = newHistory.map(item =>
-            item.id === newItem.id ? { ...item, syncedAt: new Date().toISOString(), syncError: undefined } : item
-          );
-          setHistory(syncedHistory);
-          localStorage.setItem('keshi_pomodoro_history', JSON.stringify(syncedHistory));
           if (sprintApiBaseUrl) setTaskSyncState('online');
         })
         .catch((error) => {
-          const syncError = error instanceof Error ? error.message : 'Unable to sync session';
-          const failedHistory = newHistory.map(item =>
-            item.id === newItem.id ? { ...item, syncError } : item
-          );
-          setHistory(failedHistory);
-          localStorage.setItem('keshi_pomodoro_history', JSON.stringify(failedHistory));
+          console.warn('Session sync failed', error);
           setTaskSyncState('offline');
         });
     }
@@ -334,8 +390,14 @@ function App() {
   };
 
   const saveSettings = () => {
-    localStorage.setItem('keshi-focus', focusTime.toString());
-    localStorage.setItem('keshi-break', breakTime.toString());
+    void updateAppSettings({
+      focusTime,
+      breakTime,
+      soundEnabled,
+      selectedTaskId,
+    }).catch(error => {
+      console.warn('Settings save failed', error);
+    });
     // Only reset if not currently running to avoid disrupting active session
     if (!isRunning) {
       resetTimer();
@@ -344,13 +406,17 @@ function App() {
 
   const clearHistory = () => {
     setHistory([]);
-    localStorage.setItem('keshi_pomodoro_history', '[]');
+    void clearAppHistory().catch(error => {
+      console.warn('History clear failed', error);
+    });
   };
 
   const selectTask = (taskId: string) => {
     setSelectedTaskId(taskId);
-    saveSelectedTaskId(taskId);
     setExpandedTaskId(taskId);
+    void updateAppSettings({ selectedTaskId: taskId }).catch(error => {
+      console.warn('Selected task save failed', error);
+    });
   };
 
   const tasksForDay = (sourceTasks: SprintTask[], dateKey: string) => sourceTasks.filter(task => {
@@ -503,7 +569,6 @@ function App() {
     const nextTasks = [nextTask, ...tasks];
     const normalizedTasks = nextTasks.slice().sort((a, b) => (b.order ?? 0) - (a.order ?? 0));
     setTasks(normalizedTasks);
-    saveLocalTasks(normalizedTasks);
     selectTask(nextTask.id);
     setNewTaskTitle('');
 
@@ -519,7 +584,6 @@ function App() {
 
   const persistTask = (task: SprintTask, nextTasks: SprintTask[]) => {
     setTasks(nextTasks);
-    saveLocalTasks(nextTasks);
 
     updateSprintTask(task)
       .then(() => {
@@ -562,13 +626,10 @@ function App() {
   const removeTask = (taskId: string) => {
     const nextTasks = tasks.filter(task => task.id !== taskId);
     setTasks(nextTasks);
-    saveLocalTasks(nextTasks);
 
     if (selectedTaskId === taskId) {
       const fallbackId = nextTasks[0]?.id ?? 'inbox';
-      setSelectedTaskId(fallbackId);
-      saveSelectedTaskId(fallbackId);
-      setExpandedTaskId(fallbackId);
+      selectTask(fallbackId);
     }
 
     deleteSprintTask(taskId)
@@ -649,7 +710,6 @@ function App() {
     }).sort((a, b) => (b.order ?? 0) - (a.order ?? 0));
 
     setTasks(nextTasks);
-    saveLocalTasks(nextTasks);
     setDraggedTaskId(null);
     setDropTarget(null);
 

@@ -1,11 +1,10 @@
 # Sprint Task And Pomodoro Sync
 
-Keshi can tag each focus Pomodoro with a sprint task. By default, tasks and
-session history stay in `localStorage`, so the timer works offline. When the
-app is built with the VPS API URL, Hermes can read and write sprint tasks,
-completed Pomodoro sessions, and timer event logs.
+Keshi uses the API as the source of truth for sprint tasks, Pomodoro history,
+selected task, timer preferences, theme, and radio state. `localStorage` is no
+longer the default data store for these flows.
 
-To sync with a VPS/Hermes-controlled service, set this build-time environment
+To point the app at a different VPS or service, set this build-time environment
 variable:
 
 ```bash
@@ -20,29 +19,48 @@ The deployed API is mounted at:
 https://pomodoro.xsmity.cloud/api
 ```
 
+### App Settings
+
+```http
+GET /settings
+PATCH /settings
+```
+
+Returns and updates persisted UI settings:
+
+```json
+{
+  "focusTime": 25,
+  "breakTime": 5,
+  "soundEnabled": true,
+  "selectedTaskId": "inbox",
+  "theme": {
+    "focus": "#b91c1c",
+    "break": "#34d399",
+    "leftImage": null,
+    "rightImage": null
+  },
+  "radio": {
+    "volume": 50,
+    "tooltipSeen": false
+  }
+}
+```
+
+### History
+
+```http
+GET /history
+POST /history
+DELETE /history
+```
+
+History entries are stored server-side and replace the old localStorage log.
+
 ### Tasks
 
 ```http
 GET /tasks
-```
-
-Returns either an array or `{ "tasks": [...] }`:
-
-```json
-[
-  {
-    "id": "task-1",
-    "title": "Build sprint tracker",
-    "status": "doing",
-    "sprint": "Today",
-    "createdAt": "2026-07-03T00:00:00.000Z",
-    "updatedAt": "2026-07-03T00:00:00.000Z",
-    "subtasks": []
-  }
-]
-```
-
-```http
 POST /tasks
 PUT /tasks/:id
 DELETE /tasks/:id
@@ -109,6 +127,8 @@ pomodoro_completed
 Hermes can also read the JSON files directly on the VPS:
 
 ```txt
+/opt/pomodoro/data/app-settings.json
+/opt/pomodoro/data/history.json
 /opt/pomodoro/data/tasks.json
 /opt/pomodoro/data/pomodoros.json
 /opt/pomodoro/data/events.json

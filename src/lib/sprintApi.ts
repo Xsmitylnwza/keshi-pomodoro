@@ -1,9 +1,7 @@
 import type { HistoryItem, PomodoroEvent, SprintTask } from '../types';
+import { apiBaseUrl, buildApiUrl } from './apiBase';
 
-const TASKS_KEY = 'keshi_sprint_tasks';
-const SELECTED_TASK_KEY = 'keshi_selected_task_id';
-
-const defaultTasks: SprintTask[] = [
+export const defaultSprintTasks: SprintTask[] = [
   {
     id: 'inbox',
     title: 'Inbox / planning',
@@ -16,23 +14,7 @@ const defaultTasks: SprintTask[] = [
   },
 ];
 
-export const sprintApiBaseUrl = import.meta.env.VITE_HERMES_TASKS_API_URL?.replace(/\/$/, '') ?? '';
-
-export function loadLocalTasks(): SprintTask[] {
-  const raw = localStorage.getItem(TASKS_KEY);
-  if (!raw) return defaultTasks;
-
-  try {
-    const parsed = JSON.parse(raw) as SprintTask[];
-    return Array.isArray(parsed) && parsed.length > 0 ? normalizeTasks(parsed) : defaultTasks;
-  } catch {
-    return defaultTasks;
-  }
-}
-
-export function saveLocalTasks(tasks: SprintTask[]) {
-  localStorage.setItem(TASKS_KEY, JSON.stringify(normalizeTasks(tasks)));
-}
+export const sprintApiBaseUrl = apiBaseUrl;
 
 export function normalizeTask(task: SprintTask, fallbackOrder = 0): SprintTask {
   const now = new Date().toISOString();
@@ -54,18 +36,8 @@ export function normalizeTasks(tasks: SprintTask[]): SprintTask[] {
     .sort((a, b) => (b.order ?? 0) - (a.order ?? 0));
 }
 
-export function loadSelectedTaskId() {
-  return localStorage.getItem(SELECTED_TASK_KEY) ?? 'inbox';
-}
-
-export function saveSelectedTaskId(taskId: string) {
-  localStorage.setItem(SELECTED_TASK_KEY, taskId);
-}
-
 export async function fetchSprintTasks(): Promise<SprintTask[]> {
-  if (!sprintApiBaseUrl) return loadLocalTasks();
-
-  const response = await fetch(`${sprintApiBaseUrl}/tasks`, {
+  const response = await fetch(buildApiUrl('/tasks'), {
     headers: { accept: 'application/json' },
   });
 
@@ -75,15 +47,11 @@ export async function fetchSprintTasks(): Promise<SprintTask[]> {
   const tasks = Array.isArray(data) ? data : data.tasks;
   if (!Array.isArray(tasks)) throw new Error('Task sync returned an invalid shape');
 
-  const normalized = normalizeTasks(tasks);
-  saveLocalTasks(normalized);
-  return normalized;
+  return normalizeTasks(tasks);
 }
 
 export async function createSprintTask(task: SprintTask) {
-  if (!sprintApiBaseUrl) return task;
-
-  const response = await fetch(`${sprintApiBaseUrl}/tasks`, {
+  const response = await fetch(buildApiUrl('/tasks'), {
     method: 'POST',
     headers: {
       accept: 'application/json',
@@ -98,9 +66,7 @@ export async function createSprintTask(task: SprintTask) {
 }
 
 export async function updateSprintTask(task: SprintTask) {
-  if (!sprintApiBaseUrl) return task;
-
-  const response = await fetch(`${sprintApiBaseUrl}/tasks/${encodeURIComponent(task.id)}`, {
+  const response = await fetch(buildApiUrl(`/tasks/${encodeURIComponent(task.id)}`), {
     method: 'PUT',
     headers: {
       accept: 'application/json',
@@ -115,9 +81,7 @@ export async function updateSprintTask(task: SprintTask) {
 }
 
 export async function deleteSprintTask(taskId: string) {
-  if (!sprintApiBaseUrl) return null;
-
-  const response = await fetch(`${sprintApiBaseUrl}/tasks/${encodeURIComponent(taskId)}`, {
+  const response = await fetch(buildApiUrl(`/tasks/${encodeURIComponent(taskId)}`), {
     method: 'DELETE',
     headers: { accept: 'application/json' },
   });
@@ -127,9 +91,9 @@ export async function deleteSprintTask(taskId: string) {
 }
 
 export async function pushPomodoroSession(item: HistoryItem) {
-  if (!sprintApiBaseUrl || item.mode !== 'focus') return null;
+  if (item.mode !== 'focus') return null;
 
-  const response = await fetch(`${sprintApiBaseUrl}/pomodoros`, {
+  const response = await fetch(buildApiUrl('/pomodoros'), {
     method: 'POST',
     headers: {
       accept: 'application/json',
@@ -150,9 +114,7 @@ export async function pushPomodoroSession(item: HistoryItem) {
 }
 
 export async function pushPomodoroEvent(event: PomodoroEvent) {
-  if (!sprintApiBaseUrl) return null;
-
-  const response = await fetch(`${sprintApiBaseUrl}/events`, {
+  const response = await fetch(buildApiUrl('/events'), {
     method: 'POST',
     headers: {
       accept: 'application/json',

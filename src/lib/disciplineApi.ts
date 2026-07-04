@@ -1,3 +1,5 @@
+import type { SprintTask } from '../types';
+
 export const DISCIPLINE_SCORE_BLOCKS = [
   { key: 'deep_work', label: 'Deep work' },
   { key: 'reading', label: 'Reading' },
@@ -18,6 +20,10 @@ export interface DisciplineScoreRecord {
   average: number;
   createdAt: string | null;
   updatedAt: string | null;
+  isGoodDay?: boolean;
+  is_good_day?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface DisciplineStreak {
@@ -25,6 +31,10 @@ export interface DisciplineStreak {
   longest: number;
   lastScoreDate: string | null;
   updatedAt: string;
+  current_streak?: number;
+  longest_streak?: number;
+  last_score_date?: string | null;
+  updated_at?: string;
 }
 
 export interface DisciplineReadingEntry {
@@ -77,6 +87,7 @@ export interface DisciplineReviewPayload {
   streak: DisciplineStreak;
   reading: DisciplineReadingEntry[];
   exercise: DisciplineExerciseEntry[];
+  tasks: SprintTask[];
   pomodoros: DisciplinePomodoroSession[];
   events: DisciplineEvent[];
   generatedAt: string;
@@ -94,6 +105,8 @@ export interface DisciplineTrendPoint {
 
 export interface DisciplineTrendResponse {
   days: number;
+  from?: string;
+  to?: string;
   startDate: string;
   endDate: string;
   trend: DisciplineTrendPoint[];
@@ -140,7 +153,11 @@ export async function fetchDisciplineScores(date: string) {
 }
 
 export async function fetchDisciplineTrend(days: 7 | 30, endDate: string) {
-  return disciplineRequest<DisciplineTrendResponse>(`/scores/trend?days=${days}&endDate=${encodeURIComponent(endDate)}`);
+  const end = new Date(`${endDate}T12:00:00`);
+  const start = new Date(end);
+  start.setDate(start.getDate() - (days - 1));
+  const from = start.toISOString().slice(0, 10);
+  return disciplineRequest<DisciplineTrendResponse>(`/scores/trend?from=${encodeURIComponent(from)}&to=${encodeURIComponent(endDate)}`);
 }
 
 export async function fetchDisciplineStreak() {
