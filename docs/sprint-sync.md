@@ -113,3 +113,7 @@ Hermes can also read the JSON files directly on the VPS:
 /opt/pomodoro/data/pomodoros.json
 /opt/pomodoro/data/events.json
 ```
+
+## Related Guide
+
+- [Hermes Discipline Log Guide](./hermes-discipline-log-guide.md)
