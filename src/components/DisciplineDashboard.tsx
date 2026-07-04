@@ -24,7 +24,6 @@ import type { LucideIcon } from 'lucide-react';
 import { CustomCursor } from './CustomCursor';
 import {
   DISCIPLINE_SCORE_BLOCKS,
-  type DisciplineExerciseEntry,
   type DisciplineReviewPayload,
   type DisciplineScoreKey,
   type DisciplineTrendPoint,
@@ -106,10 +105,6 @@ const shiftDateKey = (dateKey: string, days: number) => {
   const date = new Date(`${dateKey}T12:00:00`);
   date.setDate(date.getDate() + days);
   return toDateKey(date);
-};
-const formatDateLabel = (dateKey: string) => {
-  if (dateKey === todayKey()) return 'Today';
-  return new Date(`${dateKey}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 const formatLongDate = (dateKey: string) => new Date(`${dateKey}T12:00:00`).toLocaleDateString('en-US', {
   weekday: 'short',
