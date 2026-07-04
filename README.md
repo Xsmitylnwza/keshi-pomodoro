@@ -16,8 +16,8 @@
 </p>
 
 <p align="center">
-  <a href="https://keshi-pomodoro.vercel.app/">
-    <img src="https://img.shields.io/badge/🌐_Live_Demo-keshi--pomodoro.vercel.app-b91c1c?style=for-the-badge" alt="Live Demo" />
+  <a href="https://pomodoro.xsmity.cloud/">
+    <img src="https://img.shields.io/badge/🌐_Live_Demo-pomodoro.xsmity.cloud-b91c1c?style=for-the-badge" alt="Live Demo" />
   </a>
 </p>
 
