@@ -27,7 +27,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   focusTime: 25,
   breakTime: 5,
   soundEnabled: true,
-  selectedTaskId: 'inbox',
+  selectedTaskId: '',
   theme: {
     focus: '#b91c1c',
     break: '#34d399',

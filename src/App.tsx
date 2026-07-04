@@ -15,7 +15,6 @@ import {
   createSprintTask,
   deleteSprintTask,
   fetchSprintTasks,
-  defaultSprintTasks,
   pushPomodoroEvent,
   pushPomodoroSession,
   sprintApiBaseUrl,
@@ -89,12 +88,12 @@ function App() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [tasks, setTasks] = useState<SprintTask[]>([]);
-  const [selectedTaskId, setSelectedTaskId] = useState('inbox');
+  const [selectedTaskId, setSelectedTaskId] = useState('');
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [taskDay, setTaskDay] = useState(todayKey());
   const [isTaskPanelOpen, setIsTaskPanelOpen] = useState(false);
-  const [expandedTaskId, setExpandedTaskId] = useState<string | null>('inbox');
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [taskSyncState, setTaskSyncState] = useState<'idle' | 'syncing' | 'online' | 'offline'>('idle');
   const [taskPendingDelete, setTaskPendingDelete] = useState<SprintTask | null>(null);
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
@@ -148,7 +147,7 @@ function App() {
         fetchSprintTasks().catch(error => {
           console.warn('Task sync failed', error);
           bootstrapHasError = true;
-          return defaultSprintTasks;
+          return [];
         }),
         fetchAppSettings().catch(error => {
           console.warn('Settings sync failed', error);
@@ -173,7 +172,7 @@ function App() {
 
       const nextSelectedTaskId = syncedTasksResult.some(task => task.id === settings.selectedTaskId)
         ? settings.selectedTaskId
-        : syncedTasksResult[0]?.id ?? DEFAULT_APP_SETTINGS.selectedTaskId;
+        : syncedTasksResult[0]?.id ?? '';
       setSelectedTaskId(nextSelectedTaskId);
       setExpandedTaskId(nextSelectedTaskId);
 
@@ -209,7 +208,7 @@ function App() {
 
       const fallbackSelectedTaskId = syncedTasks.some(task => task.id === selectedTaskId)
         ? selectedTaskId
-        : syncedTasks[0]?.id ?? DEFAULT_APP_SETTINGS.selectedTaskId;
+        : syncedTasks[0]?.id ?? '';
 
       if (fallbackSelectedTaskId !== selectedTaskId) {
         setSelectedTaskId(fallbackSelectedTaskId);
@@ -628,7 +627,7 @@ function App() {
     setTasks(nextTasks);
 
     if (selectedTaskId === taskId) {
-      const fallbackId = nextTasks[0]?.id ?? 'inbox';
+      const fallbackId = nextTasks[0]?.id ?? '';
       selectTask(fallbackId);
     }
 
@@ -735,7 +734,7 @@ function App() {
   const progress = totalTime > 0 ? ((totalTime - timeLeft) / totalTime) * 100 : 0;
 
   const { colors } = useTheme();
-  const selectedTask = tasks.find(task => task.id === selectedTaskId) ?? tasks[0];
+  const selectedTask = tasks.find(task => task.id === selectedTaskId) ?? null;
   const visibleTasks = tasksForDay(tasks, taskDay).slice().sort((a, b) => (b.order ?? 0) - (a.order ?? 0));
 
   // Calculate dynamic background color - Only tint background in Relax mode

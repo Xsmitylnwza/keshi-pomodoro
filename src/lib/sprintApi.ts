@@ -1,19 +1,6 @@
 import type { HistoryItem, PomodoroEvent, SprintTask } from '../types';
 import { apiBaseUrl, buildApiUrl } from './apiBase';
 
-export const defaultSprintTasks: SprintTask[] = [
-  {
-    id: 'inbox',
-    title: 'Inbox / planning',
-    status: 'doing',
-    sprint: 'Today',
-    order: 1,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    subtasks: [],
-  },
-];
-
 export const sprintApiBaseUrl = apiBaseUrl;
 
 export function normalizeTask(task: SprintTask, fallbackOrder = 0): SprintTask {

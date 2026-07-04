@@ -33,7 +33,7 @@ Returns and updates persisted UI settings:
   "focusTime": 25,
   "breakTime": 5,
   "soundEnabled": true,
-  "selectedTaskId": "inbox",
+  "selectedTaskId": "",
   "theme": {
     "focus": "#b91c1c",
     "break": "#34d399",

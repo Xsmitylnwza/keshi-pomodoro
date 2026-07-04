@@ -12,6 +12,7 @@ const distDir = process.env.POMODORO_DIST_DIR || path.join(rootDir, 'dist');
 const dataDir = process.env.POMODORO_DATA_DIR || path.join(rootDir, 'data');
 const port = Number(process.env.PORT || 4177);
 const host = process.env.HOST || '127.0.0.1';
+const legacyDefaultTaskId = 'inbox';
 
 const tasksFile = path.join(dataDir, 'tasks.json');
 const sessionsFile = path.join(dataDir, 'pomodoros.json');
@@ -23,23 +24,11 @@ let disciplineDb;
 const legacyScoreKeys = ['deep_work', 'reading', 'exercise', 'sleep', 'nutrition', 'discipline'];
 const specScoreKeys = ['BUILD', 'JOB_APPS', 'FLEX', 'EXERCISE', 'FOCUS', 'SLEEP'];
 const goodDayThreshold = 35;
-const defaultTasks = [
-  {
-    id: 'inbox',
-    title: 'Inbox / planning',
-    status: 'doing',
-    sprint: 'Today',
-    order: 1,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    subtasks: [],
-  },
-];
 const defaultAppSettings = {
   focusTime: 25,
   breakTime: 5,
   soundEnabled: true,
-  selectedTaskId: 'inbox',
+  selectedTaskId: '',
   theme: {
     focus: '#b91c1c',
     break: '#34d399',
@@ -469,11 +458,25 @@ function normalizeTask(task, fallbackOrder = 0) {
   };
 }
 
+function stripLegacyDefaultTasks(tasks) {
+  if (!Array.isArray(tasks)) return [];
+  return tasks.filter(task => task?.id !== legacyDefaultTaskId);
+}
+
 function normalizeTasks(tasks) {
   const total = tasks.length;
   return tasks
     .map((task, index) => normalizeTask(task, total - index))
     .sort((a, b) => (b.order || 0) - (a.order || 0));
+}
+
+async function readTasks() {
+  const rawTasks = await readJson(tasksFile, []);
+  const cleanedTasks = normalizeTasks(stripLegacyDefaultTasks(rawTasks));
+  if (Array.isArray(rawTasks) && rawTasks.length !== cleanedTasks.length) {
+    await writeJson(tasksFile, cleanedTasks);
+  }
+  return cleanedTasks;
 }
 
 function safeStaticPath(urlPath) {
@@ -537,7 +540,7 @@ async function handleApi(req, res, url) {
   }
 
   if (pathname === '/api/tasks' && req.method === 'GET') {
-    const tasks = normalizeTasks(await readJson(tasksFile, defaultTasks));
+    const tasks = await readTasks();
     sendJson(res, 200, { tasks });
     return;
   }
@@ -549,7 +552,7 @@ async function handleApi(req, res, url) {
       return;
     }
 
-    const tasks = normalizeTasks(await readJson(tasksFile, []));
+    const tasks = await readTasks();
     const nextOrder = tasks.length > 0 ? Math.max(...tasks.map(task => task.order || 0)) + 1 : 1;
     const task = {
       id: body.id || randomUUID(),
@@ -570,7 +573,7 @@ async function handleApi(req, res, url) {
   if (taskMatch && req.method === 'PUT') {
     const taskId = decodeURIComponent(taskMatch[1]);
     const body = await readBody(req);
-    const tasks = normalizeTasks(await readJson(tasksFile, defaultTasks));
+    const tasks = await readTasks();
     const index = tasks.findIndex(task => task.id === taskId);
 
     if (index === -1) {
@@ -593,7 +596,7 @@ async function handleApi(req, res, url) {
 
   if (taskMatch && req.method === 'DELETE') {
     const taskId = decodeURIComponent(taskMatch[1]);
-    const tasks = normalizeTasks(await readJson(tasksFile, defaultTasks));
+    const tasks = await readTasks();
     const nextTasks = tasks.filter(task => task.id !== taskId);
 
     if (nextTasks.length === tasks.length) {
@@ -807,7 +810,7 @@ async function handleApi(req, res, url) {
     const exercise = db.prepare('SELECT * FROM exercise_log WHERE date = ? ORDER BY created_at DESC').all(date).map(normalizeLogRow);
     const pomodoros = (await readJson(sessionsFile, [])).filter(session => String(session.completedAt || session.storedAt || '').startsWith(date));
     const events = (await readJson(eventsFile, [])).filter(event => String(event.createdAt || '').startsWith(date));
-    const tasks = buildReviewTasks(normalizeTasks(await readJson(tasksFile, defaultTasks)), date);
+    const tasks = buildReviewTasks(await readTasks(), date);
 
     sendJson(res, 200, {
       date,
