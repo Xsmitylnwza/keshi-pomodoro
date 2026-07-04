@@ -93,11 +93,11 @@ const EVENT_ICON: Record<DisciplineReviewPayload['events'][number]['type'], Luci
 };
 
 const EVENT_STYLES: Record<DisciplineReviewPayload['events'][number]['type'], string> = {
-  pomodoro_started: 'border-accent-green/30 bg-accent-green/10 text-accent-green',
-  pomodoro_paused: 'border-amber-400/30 bg-amber-400/10 text-amber-300',
-  pomodoro_resumed: 'border-sky-400/30 bg-sky-400/10 text-sky-300',
-  pomodoro_cancelled: 'border-white/20 bg-white/5 text-white/70',
-  pomodoro_completed: 'border-accent-red/30 bg-accent-red/10 text-accent-red',
+  pomodoro_started: 'border-accent-green/20 bg-accent-green/5 text-accent-green',
+  pomodoro_paused: 'border-amber-400/20 bg-amber-400/5 text-amber-400',
+  pomodoro_resumed: 'border-sky-400/20 bg-sky-400/5 text-sky-400',
+  pomodoro_cancelled: 'border-white/10 bg-white/5 text-white/60',
+  pomodoro_completed: 'border-accent-red/20 bg-accent-red/5 text-accent-red',
 };
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
@@ -148,14 +148,21 @@ export function DisciplineDashboard({ onNavigateHome }: DisciplineDashboardProps
   const [scoreDraft, setScoreDraft] = useState<ScoreDraft>(createEmptyScores());
   const [scoreNotes, setScoreNotes] = useState('');
   const [isSavingScores, setIsSavingScores] = useState(false);
+  
+  // UI States for Expandable Forms
+  const [isAddingReading, setIsAddingReading] = useState(false);
+  const [isAddingExercise, setIsAddingExercise] = useState(false);
+
   const [readingTitle, setReadingTitle] = useState('');
   const [readingPages, setReadingPages] = useState('');
   const [readingMinutes, setReadingMinutes] = useState('');
   const [readingNotes, setReadingNotes] = useState('');
+  
   const [exerciseType, setExerciseType] = useState('');
   const [exerciseDuration, setExerciseDuration] = useState('');
   const [exerciseIntensity, setExerciseIntensity] = useState('');
   const [exerciseNotes, setExerciseNotes] = useState('');
+  
   const [savingReading, setSavingReading] = useState(false);
   const [savingExercise, setSavingExercise] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -281,6 +288,7 @@ export function DisciplineDashboard({ onNavigateHome }: DisciplineDashboardProps
       setReadingPages('');
       setReadingMinutes('');
       setReadingNotes('');
+      setIsAddingReading(false);
       setStatusTone('success');
       setStatusMessage('Reading logged');
       await loadData(selectedDate, rangeDays);
@@ -314,6 +322,7 @@ export function DisciplineDashboard({ onNavigateHome }: DisciplineDashboardProps
       setExerciseDuration('');
       setExerciseIntensity('');
       setExerciseNotes('');
+      setIsAddingExercise(false);
       setStatusTone('success');
       setStatusMessage('Exercise logged');
       await loadData(selectedDate, rangeDays);
@@ -331,80 +340,74 @@ export function DisciplineDashboard({ onNavigateHome }: DisciplineDashboardProps
     <div className="relative min-h-screen overflow-hidden bg-bg-dark text-paper-cream">
       <CustomCursor />
       <div className="noise-overlay" />
+      
+      {/* Background gradients for premium feel */}
+      <div className="absolute top-0 left-1/4 h-[500px] w-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent-green/10 blur-[120px]" />
+      <div className="absolute bottom-0 right-1/4 h-[500px] w-[500px] translate-x-1/2 translate-y-1/2 rounded-full bg-amber-400/5 blur-[120px]" />
 
-      <header className="sticky top-0 z-20 border-b-2 border-white/10 bg-bg-dark/95 backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-white/5 bg-bg-dark/80 backdrop-blur-xl">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={onNavigateHome}
-                className="inline-flex items-center gap-2 border-2 border-white/15 bg-white/[0.04] px-3 py-2 text-[10px] font-black uppercase tracking-[0.24em] text-white/75 transition-colors hover:border-white/50 hover:text-white"
+                className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold tracking-wider text-white/70 transition-all hover:bg-white/10 hover:text-white"
               >
                 <ChevronLeft className="h-4 w-4" strokeWidth={3} />
                 Pomodoro
               </button>
-              <span className="inline-flex items-center gap-2 border-2 border-accent-green/30 bg-accent-green/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.24em] text-accent-green">
+              <span className="inline-flex items-center gap-2 rounded-lg border border-accent-green/20 bg-accent-green/10 px-4 py-2 text-xs font-semibold tracking-wider text-accent-green">
                 <BarChart3 className="h-4 w-4" strokeWidth={3} />
                 Discipline
               </span>
             </div>
             <div className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h1 className="font-grotesk text-3xl font-black uppercase tracking-tight sm:text-4xl">Dashboard</h1>
-              <span className="text-xs font-mono uppercase tracking-[0.25em] text-white/35">
+              <h1 className="font-grotesk text-3xl font-black tracking-tight sm:text-4xl text-transparent bg-clip-text bg-gradient-to-r from-white to-white/70">
+                Dashboard
+              </h1>
+              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
                 {selectedDateLabel}
               </span>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center border-2 border-white/12 bg-white/[0.04]">
+            <div className="flex items-center rounded-lg border border-white/10 bg-white/5 p-1 backdrop-blur-sm">
               <button
                 onClick={() => setSelectedDate(prev => shiftDateKey(prev, -1))}
-                className="grid h-10 w-10 place-items-center border-r border-white/10 text-white/55 transition-colors hover:text-white"
+                className="grid h-8 w-8 place-items-center rounded-md text-white/55 transition-all hover:bg-white/10 hover:text-white"
                 aria-label="Previous day"
               >
                 <ChevronLeft className="h-4 w-4" strokeWidth={3} />
               </button>
               <button
                 onClick={() => setSelectedDate(todayKey())}
-                className={`px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] transition-colors ${selectedDate === todayKey() ? 'text-accent-green' : 'text-white/65 hover:text-white'}`}
+                className={`rounded-md px-4 py-1.5 text-xs font-bold tracking-wider transition-all ${selectedDate === todayKey() ? 'bg-accent-green/20 text-accent-green' : 'text-white/65 hover:bg-white/10 hover:text-white'}`}
               >
                 Today
               </button>
               <button
                 onClick={() => setSelectedDate(prev => shiftDateKey(prev, 1))}
-                className="grid h-10 w-10 place-items-center border-l border-white/10 text-white/55 transition-colors hover:text-white"
+                className="grid h-8 w-8 place-items-center rounded-md text-white/55 transition-all hover:bg-white/10 hover:text-white"
                 aria-label="Next day"
               >
                 <ChevronRight className="h-4 w-4" strokeWidth={3} />
               </button>
             </div>
 
-            <label className="flex h-10 items-center border-2 border-white/12 bg-white/[0.04] px-3">
+            <label className="flex h-10 items-center rounded-lg border border-white/10 bg-white/5 px-3 transition-colors hover:border-white/20 backdrop-blur-sm">
               <CalendarDays className="mr-2 h-4 w-4 text-white/45" strokeWidth={3} />
               <input
                 type="date"
                 value={selectedDate}
                 onChange={event => setSelectedDate(event.target.value)}
-                className="bg-transparent text-xs font-mono uppercase tracking-[0.18em] text-white/80 outline-none"
+                className="bg-transparent text-xs font-semibold uppercase tracking-wider text-white/80 outline-none"
               />
             </label>
 
-            <div className="flex items-center border-2 border-white/12 bg-white/[0.04]">
-              {TREND_OPTIONS.map(days => (
-                <button
-                  key={days}
-                  onClick={() => setRangeDays(days)}
-                  className={`px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] transition-colors ${rangeDays === days ? 'bg-white text-black' : 'text-white/55 hover:text-white'}`}
-                >
-                  {days}d
-                </button>
-              ))}
-            </div>
-
             <button
               onClick={() => void loadData()}
-              className="inline-flex h-10 items-center gap-2 border-2 border-white/15 bg-white/[0.04] px-3 text-[10px] font-black uppercase tracking-[0.24em] text-white/65 transition-colors hover:border-white/45 hover:text-white"
+              className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 text-xs font-semibold tracking-wider text-white/70 transition-all hover:bg-white/10 hover:text-white backdrop-blur-sm"
             >
               <RotateCcw className="h-4 w-4" strokeWidth={3} />
               Refresh
@@ -413,358 +416,454 @@ export function DisciplineDashboard({ onNavigateHome }: DisciplineDashboardProps
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl px-4 py-5 pb-10">
+      <main className="mx-auto w-full max-w-7xl px-4 py-8 pb-20">
         <AnimatePresence>
           {(statusMessage || error) && (
             <motion.div
-              className={`mb-5 border-2 px-4 py-3 text-sm font-medium ${error ? 'border-accent-red/40 bg-accent-red/10 text-accent-red' : statusTone === 'success' ? 'border-accent-green/40 bg-accent-green/10 text-accent-green' : 'border-white/15 bg-white/[0.04] text-white/70'}`}
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
+              className={`mb-6 rounded-xl border p-4 text-sm font-medium shadow-lg backdrop-blur-md ${error ? 'border-accent-red/40 bg-accent-red/10 text-accent-red' : statusTone === 'success' ? 'border-accent-green/40 bg-accent-green/10 text-accent-green' : 'border-white/15 bg-white/[0.04] text-white/70'}`}
+              initial={{ opacity: 0, y: -10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.98 }}
             >
-              {error || statusMessage}
+              <div className="flex items-center gap-2">
+                {error ? <X className="h-4 w-4" /> : <BadgeCheck className="h-4 w-4" />}
+                {error || statusMessage}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        <section className="border-y-2 border-white/10 py-5">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard icon={TrendingUp} label="Average" value={`${scoreStats.average.toFixed(1)}/10`} tone="text-accent-green" />
-            <StatCard icon={Flame} label="Streak" value={`${review?.streak.current ?? 0}`} tone="text-accent-red" />
+        {/* TOP SECTION: Stats & Trend Overview */}
+        <section className="mb-10 grid gap-6 lg:grid-cols-[1fr_400px] xl:grid-cols-[1fr_500px]">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
+            <StatCard icon={TrendingUp} label="Average Score" value={`${scoreStats.average.toFixed(1)}/10`} tone="text-accent-green" />
+            <StatCard icon={Flame} label="Current Streak" value={`${review?.streak.current ?? 0} days`} tone="text-accent-red" />
             <StatCard icon={Clock3} label="Pomodoros" value={`${summary.pomodoroCount}`} tone="text-white" />
-            <StatCard icon={BarChart3} label="Total" value={`${scoreStats.total}/${scoreStats.max}`} tone="text-amber-300" />
+            <StatCard icon={BarChart3} label="Total Points" value={`${scoreStats.total}/${scoreStats.max}`} tone="text-amber-400" />
+          </div>
+          
+          <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02] p-5 backdrop-blur-md flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="bg-gradient-to-r from-white to-white/50 bg-clip-text text-sm font-bold tracking-widest text-transparent">
+                SCORE TREND
+              </h2>
+              <div className="flex items-center rounded-lg border border-white/10 bg-white/5 p-1">
+                {TREND_OPTIONS.map(days => (
+                  <button
+                    key={days}
+                    onClick={() => setRangeDays(days)}
+                    className={`rounded-md px-3 py-1 text-xs font-bold transition-all ${rangeDays === days ? 'bg-white text-black shadow-sm' : 'text-white/55 hover:bg-white/10 hover:text-white'}`}
+                  >
+                    {days}D
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            <div className="flex h-40 items-end justify-between gap-2 overflow-x-auto pb-1 hide-scrollbar">
+              {trend.map(point => {
+                const height = trendMax > 0 ? Math.max(12, Math.round((point.average / trendMax) * 140)) : 12;
+                return (
+                  <div key={point.date} className="group relative flex w-full min-w-[24px] flex-col items-center justify-end">
+                    {/* Tooltip */}
+                    <div className="absolute -top-10 scale-0 opacity-0 transition-all group-hover:scale-100 group-hover:opacity-100 bg-white text-black text-xs font-bold px-2 py-1 rounded-md z-10 whitespace-nowrap">
+                      {point.average.toFixed(1)}
+                    </div>
+                    <div
+                      className={`w-full rounded-md transition-all duration-500 ${point.date === selectedDate ? 'bg-accent-green shadow-[0_0_15px_rgba(52,211,153,0.5)]' : 'bg-white/20 group-hover:bg-white/40'}`}
+                      style={{ height }}
+                    />
+                    <div className={`mt-2 text-[10px] font-semibold tracking-wider ${point.date === selectedDate ? 'text-white' : 'text-white/40'}`}>
+                      {new Date(`${point.date}T12:00:00`).getDate()}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </section>
 
-        <section className="border-b-2 border-white/10 py-6">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-xs font-black uppercase tracking-[0.28em] text-white/45">Scores</h2>
-            </div>
+        {/* MIDDLE SECTION: Daily Reflection (Scores) */}
+        <section className="mb-10">
+          <div className="mb-5 flex items-center justify-between">
+            <h2 className="bg-gradient-to-r from-white to-white/50 bg-clip-text text-sm font-bold tracking-widest text-transparent uppercase">
+              Daily Reflection
+            </h2>
             <button
               onClick={() => void handleSaveScores()}
               disabled={isSavingScores}
-              className="inline-flex items-center gap-2 border-2 border-accent-green/40 bg-accent-green px-4 py-2 text-[10px] font-black uppercase tracking-[0.24em] text-black transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
-              style={{ boxShadow: '4px 4px 0 rgba(0,0,0,1)' }}
+              className="group inline-flex items-center gap-2 rounded-xl bg-accent-green px-5 py-2.5 text-xs font-bold tracking-wider text-black shadow-[0_0_20px_rgba(52,211,153,0.3)] transition-all hover:-translate-y-0.5 hover:shadow-[0_0_25px_rgba(52,211,153,0.5)] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isSavingScores ? <RotateCcw className="h-4 w-4 animate-spin" strokeWidth={3} /> : <Plus className="h-4 w-4" strokeWidth={3} />}
+              {isSavingScores ? <RotateCcw className="h-4 w-4 animate-spin" strokeWidth={2.5} /> : <BadgeCheck className="h-4 w-4" strokeWidth={2.5} />}
               Save Scores
             </button>
           </div>
-
-          <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-            {DISCIPLINE_SCORE_BLOCKS.map(block => {
-              const meta = SCORE_META[block.key];
-              const Icon = meta.icon;
-              const value = scoreDraft[block.key];
-              return (
-                <div key={block.key} className={`border-2 ${meta.accent} bg-black/[0.18] p-4 shadow-[5px_5px_0_rgba(0,0,0,0.8)]`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Icon className="h-4 w-4 shrink-0" strokeWidth={3} />
-                        <span className="text-[10px] font-black uppercase tracking-[0.24em]">{block.label}</span>
-                      </div>
-                      <div className="mt-2 text-[11px] uppercase tracking-[0.18em] text-white/35">0 to {SCORE_MAX}</div>
-                    </div>
-                    <div className="text-3xl font-black leading-none text-white">{value}</div>
-                  </div>
-
-                  <div className={`mt-4 h-2 w-full overflow-hidden border border-white/10 ${meta.track}`}>
-                    <div
-                      className={`h-full ${meta.fill}`}
-                      style={{ width: `${(value / SCORE_MAX) * 100}%` }}
-                    />
-                  </div>
-
-                  <input
-                    type="range"
-                    min="0"
-                    max={SCORE_MAX}
-                    step="1"
-                    value={value}
-                    onChange={event => setScoreDraft(prev => ({ ...prev, [block.key]: Number(event.target.value) }))}
-                    className="mt-4 w-full accent-current"
-                    style={{ accentColor: 'currentColor' }}
+          
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-1 backdrop-blur-md">
+            <div className="grid lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-white/5">
+              <div className="p-5 flex flex-col gap-5">
+                {DISCIPLINE_SCORE_BLOCKS.slice(0, 3).map(block => (
+                  <ScoreRow 
+                    key={block.key} 
+                    block={block} 
+                    value={scoreDraft[block.key]} 
+                    onChange={(val) => setScoreDraft(prev => ({ ...prev, [block.key]: val }))} 
                   />
-                </div>
-              );
-            })}
+                ))}
+              </div>
+              <div className="p-5 flex flex-col gap-5">
+                {DISCIPLINE_SCORE_BLOCKS.slice(3, 6).map(block => (
+                  <ScoreRow 
+                    key={block.key} 
+                    block={block} 
+                    value={scoreDraft[block.key]} 
+                    onChange={(val) => setScoreDraft(prev => ({ ...prev, [block.key]: val }))} 
+                  />
+                ))}
+              </div>
+            </div>
+            
+            <div className="border-t border-white/5 p-5">
+              <textarea
+                value={scoreNotes}
+                onChange={event => setScoreNotes(event.target.value)}
+                rows={2}
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/90 outline-none backdrop-blur-sm transition-colors placeholder:text-white/30 focus:border-white/30 focus:bg-white/10"
+                placeholder="Write any thoughts, blockers, or reflection for today..."
+              />
+            </div>
           </div>
-
-          <label className="mt-4 block">
-            <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.24em] text-white/45">Score notes</span>
-            <textarea
-              value={scoreNotes}
-              onChange={event => setScoreNotes(event.target.value)}
-              rows={3}
-              className="w-full border-2 border-white/12 bg-white/[0.04] px-4 py-3 text-sm text-white/80 outline-none placeholder:text-white/25 focus:border-white/35"
-              placeholder="Notes..."
-            />
-          </label>
         </section>
 
-        <section className="border-b-2 border-white/10 py-6">
-          <div className="mb-4 flex items-center justify-between gap-3">
+        {/* BOTTOM SECTION: Activities Grid */}
+        <section className="grid gap-8 lg:grid-cols-2">
+          
+          {/* Left Column: Reading & Exercise Logs */}
+          <div className="space-y-8">
+            {/* Reading Block */}
             <div>
-              <h2 className="text-xs font-black uppercase tracking-[0.28em] text-white/45">Trend</h2>
-            </div>
-            <div className="text-xs font-mono uppercase tracking-[0.24em] text-white/35">
-              {trend.length} days
-            </div>
-          </div>
-
-          <div className="overflow-x-auto pb-2">
-            <div className="flex min-w-max items-end gap-3">
-              {trend.map(point => {
-                const height = trendMax > 0 ? Math.max(12, Math.round((point.average / trendMax) * 160)) : 12;
-                return (
-                  <div key={point.date} className="flex w-16 flex-col items-center gap-2">
-                    <div className="flex h-44 w-full items-end border-2 border-white/10 bg-white/[0.03] p-1">
-                      <div
-                        className={`w-full ${point.date === selectedDate ? 'bg-accent-green' : 'bg-white/45'}`}
-                        style={{ height }}
-                        title={`${point.date} · ${point.average.toFixed(1)}`}
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="bg-gradient-to-r from-white to-white/50 bg-clip-text text-sm font-bold tracking-widest text-transparent uppercase">
+                  Reading Log
+                </h2>
+                {!isAddingReading && (
+                  <button 
+                    onClick={() => setIsAddingReading(true)}
+                    className="inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold text-amber-400 hover:text-amber-300 transition-colors"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add
+                  </button>
+                )}
+              </div>
+              
+              <AnimatePresence>
+                {isAddingReading && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0, overflow: 'hidden' }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mb-4 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 backdrop-blur-md"
+                  >
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <input
+                        value={readingTitle}
+                        onChange={event => setReadingTitle(event.target.value)}
+                        className="col-span-1 sm:col-span-2 rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                        placeholder="Book Title or Article"
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        value={readingPages}
+                        onChange={event => setReadingPages(event.target.value)}
+                        className="rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                        placeholder="Pages read"
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        value={readingMinutes}
+                        onChange={event => setReadingMinutes(event.target.value)}
+                        className="rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                        placeholder="Minutes spent"
+                      />
+                      <input
+                        value={readingNotes}
+                        onChange={event => setReadingNotes(event.target.value)}
+                        className="col-span-1 sm:col-span-2 rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
+                        placeholder="Key takeaways..."
                       />
                     </div>
-                    <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
-                      {formatDateLabel(point.date)}
+                    <div className="mt-4 flex justify-end gap-3">
+                      <button 
+                        onClick={() => setIsAddingReading(false)}
+                        className="px-4 py-2 text-xs font-semibold text-white/50 hover:text-white"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => void handleSaveReading()}
+                        disabled={savingReading}
+                        className="group inline-flex items-center gap-2 rounded-xl bg-amber-400 px-5 py-2 text-xs font-bold tracking-wider text-black shadow-[0_0_15px_rgba(251,191,36,0.3)] transition-all hover:shadow-[0_0_20px_rgba(251,191,36,0.5)] disabled:opacity-50"
+                      >
+                        {savingReading ? <RotateCcw className="h-4 w-4 animate-spin" /> : 'Save Reading'}
+                      </button>
                     </div>
-                    <div className="text-[10px] font-mono text-white/35">
-                      {point.average.toFixed(1)}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div className="space-y-3">
+                {(review?.reading ?? []).slice(0, 5).map(entry => (
+                  <div key={entry.id} className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.02] p-4 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.04]">
+                    <div className="flex items-start justify-between gap-3 relative z-10">
+                      <div className="min-w-0">
+                        <div className="truncate text-base font-semibold tracking-wide text-white/90">{entry.title || 'Untitled'}</div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-medium text-white/40">
+                          <span className="rounded-md bg-white/[0.05] px-2 py-1 text-amber-400/70">{entry.pages} pages</span>
+                          <span className="rounded-md bg-white/[0.05] px-2 py-1 text-amber-400/70">{entry.minutes} min</span>
+                          <span className="opacity-50">·</span>
+                          <span className="opacity-70">{formatDateTime(entry.createdAt)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {entry.notes && (
+                      <div className="relative z-10 mt-3 rounded-lg bg-black/20 p-3 text-sm leading-relaxed text-white/70">
+                        {entry.notes}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {(review?.reading?.length ?? 0) === 0 && !loading && !isAddingReading && (
+                  <EmptyState icon={BookOpen} message="No reading logged today." onAction={() => setIsAddingReading(true)} actionText="Log Reading" tone="hover:text-amber-400 hover:border-amber-400/30" />
+                )}
+              </div>
+            </div>
+
+            {/* Exercise Block */}
+            <div>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="bg-gradient-to-r from-white to-white/50 bg-clip-text text-sm font-bold tracking-widest text-transparent uppercase">
+                  Exercise Log
+                </h2>
+                {!isAddingExercise && (
+                  <button 
+                    onClick={() => setIsAddingExercise(true)}
+                    className="inline-flex items-center gap-1.5 rounded-lg text-xs font-semibold text-accent-green hover:text-green-400 transition-colors"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add
+                  </button>
+                )}
+              </div>
+              
+              <AnimatePresence>
+                {isAddingExercise && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0, overflow: 'hidden' }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mb-4 rounded-2xl border border-accent-green/20 bg-accent-green/5 p-4 backdrop-blur-md"
+                  >
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <input
+                        value={exerciseType}
+                        onChange={event => setExerciseType(event.target.value)}
+                        className="rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-accent-green/50"
+                        placeholder="Workout type (e.g. Cardio)"
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        value={exerciseDuration}
+                        onChange={event => setExerciseDuration(event.target.value)}
+                        className="rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-accent-green/50"
+                        placeholder="Duration (minutes)"
+                      />
+                      <input
+                        value={exerciseIntensity}
+                        onChange={event => setExerciseIntensity(event.target.value)}
+                        className="col-span-1 sm:col-span-2 rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-accent-green/50"
+                        placeholder="Intensity (Low, Medium, High)"
+                      />
+                      <input
+                        value={exerciseNotes}
+                        onChange={event => setExerciseNotes(event.target.value)}
+                        className="col-span-1 sm:col-span-2 rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-accent-green/50"
+                        placeholder="Workout notes..."
+                      />
+                    </div>
+                    <div className="mt-4 flex justify-end gap-3">
+                      <button 
+                        onClick={() => setIsAddingExercise(false)}
+                        className="px-4 py-2 text-xs font-semibold text-white/50 hover:text-white"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => void handleSaveExercise()}
+                        disabled={savingExercise}
+                        className="group inline-flex items-center gap-2 rounded-xl bg-accent-green px-5 py-2 text-xs font-bold tracking-wider text-black shadow-[0_0_15px_rgba(52,211,153,0.3)] transition-all hover:shadow-[0_0_20px_rgba(52,211,153,0.5)] disabled:opacity-50"
+                      >
+                        {savingExercise ? <RotateCcw className="h-4 w-4 animate-spin" /> : 'Save Exercise'}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div className="space-y-3">
+                {(review?.exercise ?? []).slice(0, 5).map(entry => (
+                  <div key={entry.id} className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.02] p-4 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.04]">
+                    <div className="relative z-10 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-base font-semibold tracking-wide text-white/90">{entry.type || 'Exercise'}</div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-medium text-white/40">
+                          <span className="rounded-md bg-white/[0.05] px-2 py-1 text-accent-green/70">{entry.durationMinutes} min</span>
+                          {entry.intensity && <span className="rounded-md bg-white/[0.05] px-2 py-1 text-white/60">{entry.intensity}</span>}
+                          <span className="opacity-50">·</span>
+                          <span className="opacity-70">{formatDateTime(entry.createdAt)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {entry.notes && (
+                      <div className="relative z-10 mt-3 rounded-lg bg-black/20 p-3 text-sm leading-relaxed text-white/70">
+                        {entry.notes}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {(review?.exercise?.length ?? 0) === 0 && !loading && !isAddingExercise && (
+                  <EmptyState icon={Dumbbell} message="No exercise logged today." onAction={() => setIsAddingExercise(true)} actionText="Log Exercise" tone="hover:text-accent-green hover:border-accent-green/30" />
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column: Pomodoros & Events Timeline */}
+          <div className="space-y-8">
+            {/* Pomodoros */}
+            <div>
+              <div className="mb-4">
+                <h2 className="bg-gradient-to-r from-white to-white/50 bg-clip-text text-sm font-bold tracking-widest text-transparent uppercase">
+                  Pomodoro Sessions
+                </h2>
+              </div>
+              
+              <div className="space-y-3">
+                {(review?.pomodoros ?? []).slice(0, 5).map(session => (
+                  <div key={session.id} className="group relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.02] p-4 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.04]">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="rounded-full bg-white/5 p-2 text-white/40">
+                          <Clock3 className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold tracking-wide text-white/90">
+                            {session.taskTitle || 'Deep Work Session'}
+                          </div>
+                          <div className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-white/40">
+                            {formatDateTime(session.completedAt)}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end">
+                        <div className="text-xl font-bold text-white">{session.durationMinutes}<span className="text-[10px] text-white/40 ml-1">min</span></div>
+                      </div>
                     </div>
                   </div>
-                );
-              })}
+                ))}
+                {(review?.pomodoros?.length ?? 0) === 0 && !loading && (
+                  <EmptyState icon={Clock3} message="No pomodoro sessions completed yet." />
+                )}
+              </div>
+            </div>
+
+            {/* Events Timeline */}
+            <div>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="bg-gradient-to-r from-white to-white/50 bg-clip-text text-sm font-bold tracking-widest text-transparent uppercase">
+                  Events Timeline
+                </h2>
+                <div className="flex gap-2">
+                  {Object.entries(summary.eventCounts).slice(0,3).map(([type, count]) => {
+                    const EventIcon = EVENT_ICON[type as keyof typeof EVENT_ICON] ?? Play;
+                    return (
+                      <div key={type} className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[10px] font-semibold tracking-wider ${EVENT_STYLES[type as keyof typeof EVENT_STYLES] ?? 'border-white/10 bg-white/[0.03] text-white/70'}`}>
+                        <EventIcon className="h-3 w-3" strokeWidth={2.5} />
+                        {count}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              
+              <div className="space-y-3">
+                {(review?.events ?? []).slice(0, 8).map(event => {
+                  const EventIcon = EVENT_ICON[event.type] || Play;
+                  const tagText = event.type.replace('pomodoro_', '');
+                  return (
+                    <div key={event.id} className={`group relative flex items-center justify-between gap-3 overflow-hidden rounded-xl border px-4 py-3 transition-all duration-300 hover:bg-white/[0.04] ${EVENT_STYLES[event.type]}`}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <EventIcon className="h-4 w-4 shrink-0" strokeWidth={2.5} />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider opacity-70">
+                              {tagText}
+                            </span>
+                            <span className="text-[10px] opacity-40">· {formatDateTime(event.createdAt)}</span>
+                          </div>
+                          <div className="truncate text-sm font-semibold tracking-wide mt-0.5 text-white/90">
+                            {event.taskTitle || 'Unassigned Session'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {(review?.events?.length ?? 0) === 0 && !loading && (
+                  <EmptyState icon={Activity} message="No timeline events captured." />
+                )}
+              </div>
             </div>
           </div>
         </section>
 
-        <section className="grid gap-6 border-b-2 border-white/10 py-6 xl:grid-cols-2">
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-xs font-black uppercase tracking-[0.28em] text-white/45">Reading</h2>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <input
-                value={readingTitle}
-                onChange={event => setReadingTitle(event.target.value)}
-                className="border-2 border-white/12 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/25 focus:border-white/35"
-                placeholder="Title"
-              />
-              <input
-                type="number"
-                min="0"
-                value={readingPages}
-                onChange={event => setReadingPages(event.target.value)}
-                className="border-2 border-white/12 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/25 focus:border-white/35"
-                placeholder="Pages"
-              />
-              <input
-                type="number"
-                min="0"
-                value={readingMinutes}
-                onChange={event => setReadingMinutes(event.target.value)}
-                className="border-2 border-white/12 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/25 focus:border-white/35"
-                placeholder="Minutes"
-              />
-              <input
-                value={readingNotes}
-                onChange={event => setReadingNotes(event.target.value)}
-                className="border-2 border-white/12 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/25 focus:border-white/35"
-                placeholder="Notes"
-              />
-            </div>
-
-            <button
-              onClick={() => void handleSaveReading()}
-              disabled={savingReading}
-              className="inline-flex items-center gap-2 border-2 border-amber-400/40 bg-amber-400 px-4 py-2 text-[10px] font-black uppercase tracking-[0.24em] text-black transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
-              style={{ boxShadow: '4px 4px 0 rgba(0,0,0,1)' }}
-            >
-              {savingReading ? <RotateCcw className="h-4 w-4 animate-spin" strokeWidth={3} /> : <Plus className="h-4 w-4" strokeWidth={3} />}
-              Add Reading
-            </button>
-
-            <div className="space-y-2">
-              {(review?.reading ?? []).slice(0, 5).map(entry => (
-                <div key={entry.id} className="border-2 border-white/10 bg-white/[0.03] p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-black uppercase tracking-[0.18em]">{entry.title || 'Untitled'}</div>
-                      <div className="mt-1 text-[10px] font-mono uppercase tracking-[0.18em] text-white/35">
-                        {entry.pages} pages · {entry.minutes} min · {formatDateTime(entry.createdAt)}
-                      </div>
-                    </div>
-                  </div>
-                  {entry.notes && <div className="mt-2 text-sm text-white/65">{entry.notes}</div>}
-                </div>
-              ))}
-              {(review?.reading?.length ?? 0) === 0 && !loading && (
-                <div className="border-2 border-dashed border-white/10 px-4 py-6 text-sm text-white/35">
-                  No reading logged.
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-xs font-black uppercase tracking-[0.28em] text-white/45">Exercise</h2>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <input
-                value={exerciseType}
-                onChange={event => setExerciseType(event.target.value)}
-                className="border-2 border-white/12 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/25 focus:border-white/35"
-                placeholder="Type"
-              />
-              <input
-                type="number"
-                min="0"
-                value={exerciseDuration}
-                onChange={event => setExerciseDuration(event.target.value)}
-                className="border-2 border-white/12 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/25 focus:border-white/35"
-                placeholder="Minutes"
-              />
-              <input
-                value={exerciseIntensity}
-                onChange={event => setExerciseIntensity(event.target.value)}
-                className="border-2 border-white/12 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/25 focus:border-white/35"
-                placeholder="Intensity"
-              />
-              <input
-                value={exerciseNotes}
-                onChange={event => setExerciseNotes(event.target.value)}
-                className="border-2 border-white/12 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/25 focus:border-white/35"
-                placeholder="Notes"
-              />
-            </div>
-
-            <button
-              onClick={() => void handleSaveExercise()}
-              disabled={savingExercise}
-              className="inline-flex items-center gap-2 border-2 border-accent-green/40 bg-accent-green px-4 py-2 text-[10px] font-black uppercase tracking-[0.24em] text-black transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
-              style={{ boxShadow: '4px 4px 0 rgba(0,0,0,1)' }}
-            >
-              {savingExercise ? <RotateCcw className="h-4 w-4 animate-spin" strokeWidth={3} /> : <Plus className="h-4 w-4" strokeWidth={3} />}
-              Add Exercise
-            </button>
-
-            <div className="space-y-2">
-              {(review?.exercise ?? []).slice(0, 5).map(entry => (
-                <ExerciseRow key={entry.id} entry={entry} />
-              ))}
-              {(review?.exercise?.length ?? 0) === 0 && !loading && (
-                <div className="border-2 border-dashed border-white/10 px-4 py-6 text-sm text-white/35">
-                  No exercise logged.
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="grid gap-6 py-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-xs font-black uppercase tracking-[0.28em] text-white/45">Pomodoros</h2>
-            </div>
-
-            <div className="space-y-2">
-              {(review?.pomodoros ?? []).slice(0, 6).map(session => (
-                <div key={session.id} className="border-2 border-white/10 bg-white/[0.03] p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-black uppercase tracking-[0.18em]">
-                        {session.taskTitle || 'Unassigned'}
-                      </div>
-                      <div className="mt-1 text-[10px] font-mono uppercase tracking-[0.18em] text-white/35">
-                        {formatDateTime(session.completedAt)}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-lg font-black">{session.durationMinutes}</div>
-                      <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">min</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {(review?.pomodoros?.length ?? 0) === 0 && !loading && (
-                <div className="border-2 border-dashed border-white/10 px-4 py-6 text-sm text-white/35">
-                  No pomodoros for this day.
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-xs font-black uppercase tracking-[0.28em] text-white/45">Events</h2>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(summary.eventCounts).map(([type, count]) => {
-                const EventIcon = EVENT_ICON[type as keyof typeof EVENT_ICON] ?? Play;
-                return (
-                  <div key={type} className={`inline-flex items-center gap-2 border-2 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] ${EVENT_STYLES[type as keyof typeof EVENT_STYLES] ?? 'border-white/10 bg-white/[0.03] text-white/70'}`}>
-                    <EventIcon className="h-3.5 w-3.5" strokeWidth={3} />
-                    {type.replace('pomodoro_', '')}
-                    <span className="text-white/45">{count}</span>
-                  </div>
-                );
-              })}
-              {summary.eventCount === 0 && (
-                <div className="border-2 border-dashed border-white/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/35">
-                  No events
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              {(review?.events ?? []).slice(0, 8).map(event => {
-                const EventIcon = EVENT_ICON[event.type];
-                return (
-                  <div key={event.id} className={`flex items-start justify-between gap-3 border-2 px-3 py-3 ${EVENT_STYLES[event.type]}`}>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <EventIcon className="h-4 w-4 shrink-0" strokeWidth={3} />
-                        <span className="text-[10px] font-black uppercase tracking-[0.18em]">
-                          {event.type.replace('pomodoro_', '')}
-                        </span>
-                      </div>
-                      <div className="mt-1 truncate text-sm font-black uppercase tracking-[0.16em]">
-                        {event.taskTitle || 'Unassigned'}
-                      </div>
-                      <div className="mt-1 text-[10px] font-mono uppercase tracking-[0.18em] opacity-60">
-                        {formatDateTime(event.createdAt)}
-                      </div>
-                    </div>
-                    <div className="text-right text-[10px] font-mono uppercase tracking-[0.18em] opacity-80">
-                      <div>{event.elapsedSeconds}s</div>
-                      <div>{event.remainingSeconds}s left</div>
-                    </div>
-                  </div>
-                );
-              })}
-              {(review?.events?.length ?? 0) === 0 && !loading && (
-                <div className="border-2 border-dashed border-white/10 px-4 py-6 text-sm text-white/35">
-                  No events captured.
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="border-t-2 border-white/10 py-5 text-[10px] font-mono uppercase tracking-[0.24em] text-white/30">
-          <div className="flex flex-wrap items-center gap-3">
-            <span>Generated {review?.generatedAt ? formatDateTime(review.generatedAt) : '—'}</span>
-            <span>Review date {selectedDateLabel}</span>
-            <span>{loading ? 'Loading' : 'Ready'}</span>
-          </div>
-        </section>
       </main>
+    </div>
+  );
+}
+
+// Subcomponents
+
+function ScoreRow({ block, value, onChange }: { block: any, value: number, onChange: (val: number) => void }) {
+  const meta = SCORE_META[block.key as DisciplineScoreKey];
+  const Icon = meta.icon;
+  return (
+    <div className="group flex items-center gap-4">
+      <div className={`rounded-xl p-3 shadow-inner ${meta.accent.replace('text-', 'bg-').replace('border-', '')} bg-opacity-10`}>
+        <Icon className={`h-5 w-5 ${meta.accent.split(' ')[1]}`} strokeWidth={2.5} />
+      </div>
+      <div className="flex-1">
+        <div className="flex justify-between items-end mb-2">
+          <span className="text-sm font-semibold tracking-wider text-white/90">{block.label}</span>
+          <span className="text-lg font-bold leading-none text-white">{value}<span className="text-[10px] text-white/30 ml-1">/10</span></span>
+        </div>
+        <div className="relative h-2 w-full rounded-full bg-white/5 overflow-hidden">
+          <div 
+            className={`absolute left-0 top-0 h-full rounded-full transition-all duration-500 ${meta.fill}`}
+            style={{ width: `${(value / 10) * 100}%` }}
+          />
+          <input
+            type="range"
+            min="0"
+            max="10"
+            step="1"
+            value={value}
+            onChange={(e) => onChange(Number(e.target.value))}
+            className="absolute inset-0 w-full opacity-0 cursor-pointer"
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -781,32 +880,44 @@ function StatCard({
   tone: string;
 }) {
   return (
-    <div className="border-2 border-white/10 bg-white/[0.03] px-4 py-4 shadow-[4px_4px_0_rgba(0,0,0,0.75)]">
-      <div className="flex items-center gap-2 text-white/40">
-        <Icon className={`h-4 w-4 ${tone}`} strokeWidth={3} />
-        <span className="text-[10px] font-black uppercase tracking-[0.24em]">{label}</span>
+    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02] p-5 backdrop-blur-md transition-all duration-300 hover:border-white/20 hover:bg-white/[0.04] group">
+      <div className="absolute -right-4 -top-4 rounded-full bg-white/5 p-6 blur-3xl transition-all duration-500 group-hover:bg-white/10" />
+      <div className="relative z-10 flex items-center gap-3 text-white/50">
+        <div className={`rounded-xl bg-white/[0.05] p-2.5 ${tone} shadow-inner`}>
+          <Icon className="h-5 w-5" strokeWidth={2.5} />
+        </div>
+        <span className="text-[11px] font-semibold tracking-widest uppercase text-white/60">{label}</span>
       </div>
-      <div className={`mt-3 text-3xl font-black leading-none ${tone}`}>{value}</div>
+      <div className={`relative z-10 mt-5 text-3xl sm:text-4xl font-bold tracking-tight ${tone}`}>{value}</div>
     </div>
   );
 }
 
-function ExerciseRow({ entry }: { entry: DisciplineExerciseEntry }) {
+// Need Activity icon from lucide for EmptyState
+import { Activity } from 'lucide-react';
+
+function EmptyState({ 
+  icon: Icon, 
+  message, 
+  onAction, 
+  actionText,
+  tone = "hover:text-white hover:border-white/30"
+}: { 
+  icon: LucideIcon, 
+  message: string, 
+  onAction?: () => void, 
+  actionText?: string,
+  tone?: string
+}) {
   return (
-    <div className="border-2 border-white/10 bg-white/[0.03] p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-black uppercase tracking-[0.18em]">{entry.type || 'Exercise'}</div>
-          <div className="mt-1 text-[10px] font-mono uppercase tracking-[0.18em] text-white/35">
-            {entry.intensity || '—'} · {formatDateTime(entry.createdAt)}
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="text-lg font-black">{entry.durationMinutes}</div>
-          <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">min</div>
-        </div>
+    <div className={`flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.01] px-6 py-10 text-center transition-all ${onAction ? 'cursor-pointer ' + tone : ''}`} onClick={onAction}>
+      <div className="rounded-full bg-white/5 p-3 mb-3 text-white/20">
+        <Icon className="h-6 w-6" />
       </div>
-      {entry.notes && <div className="mt-2 text-sm text-white/65">{entry.notes}</div>}
+      <p className="text-sm font-medium text-white/40">{message}</p>
+      {onAction && actionText && (
+        <span className="mt-2 text-xs font-semibold tracking-wider opacity-80">{actionText}</span>
+      )}
     </div>
   );
 }
