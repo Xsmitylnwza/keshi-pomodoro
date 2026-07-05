@@ -173,7 +173,12 @@ const EVENT_STYLES: Record<DisciplineReviewPayload['events'][number]['type'], st
   pomodoro_completed: 'border-accent-red/20 bg-accent-red/5 text-accent-red',
 };
 
-const toDateKey = (date: Date) => date.toISOString().slice(0, 10);
+const toDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const shiftDateKey = (dateKey: string, days: number) => {
   const date = new Date(`${dateKey}T12:00:00`);

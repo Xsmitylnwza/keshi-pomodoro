@@ -65,6 +65,7 @@ const toDateKey = (date: Date) => {
   const day = `${date.getDate()}`.padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
+const isDateKey = (value?: string | null) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 const todayKey = () => toDateKey(new Date());
 const shiftDateKey = (dateKey: string, days: number) => {
   const date = new Date(`${dateKey}T12:00:00`);
@@ -74,6 +75,14 @@ const shiftDateKey = (dateKey: string, days: number) => {
 const formatDayLabel = (dateKey: string) => {
   if (dateKey === todayKey()) return 'Today';
   return new Date(`${dateKey}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+const taskBusinessDate = (task?: SprintTask | null) => {
+  const explicitBusinessDate = task?.businessDate;
+  if (isDateKey(explicitBusinessDate)) return explicitBusinessDate;
+  const dateSource = task?.createdAt ?? task?.updatedAt;
+  if (!dateSource) return null;
+  const parsed = new Date(dateSource);
+  return Number.isNaN(parsed.getTime()) ? null : toDateKey(parsed);
 };
 const TASK_STATUS_ORDER: SprintTask['status'][] = ['todo', 'doing', 'done'];
 
@@ -335,13 +344,17 @@ function App() {
 
     // Add to history with unique ID
     const selectedTask = tasks.find(task => task.id === selectedTaskId);
+    const completedBusinessDate = taskBusinessDate(selectedTask) ?? todayKey();
+    const historyId = crypto.randomUUID();
     const newItem: HistoryItem = {
       mode: mode,
       duration: mode === 'focus' ? focusTime : breakTime,
       date: new Date().toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', month: 'short', day: 'numeric' }),
-      id: crypto.randomUUID(),
+      id: historyId,
       taskId: selectedTask?.id,
       taskTitle: selectedTask?.title,
+      businessDate: completedBusinessDate,
+      idempotencyKey: `keshi:history:${historyId}`,
     };
     const newHistory = [newItem, ...history];
     setHistory(newHistory);
@@ -419,9 +432,9 @@ function App() {
   };
 
   const tasksForDay = (sourceTasks: SprintTask[], dateKey: string) => sourceTasks.filter(task => {
-    const dateSource = task.createdAt ?? task.updatedAt;
-    if (!dateSource) return dateKey === todayKey();
-    return toDateKey(new Date(dateSource)) === dateKey;
+    const businessDate = taskBusinessDate(task);
+    if (!businessDate) return dateKey === todayKey();
+    return businessDate === dateKey;
   });
 
   const getNextTaskOrder = (dateKey: string) => {
@@ -501,11 +514,13 @@ function App() {
     const remainingSeconds = overrides?.remainingSeconds ?? timeLeft;
     const elapsedSeconds = overrides?.elapsedSeconds ?? Math.max(0, plannedSeconds - remainingSeconds);
     const sessionId = overrides?.sessionId ?? sessionIdRef.current ?? crypto.randomUUID();
+    const eventId = crypto.randomUUID();
+    const businessDate = taskBusinessDate(selectedTask) ?? todayKey();
 
     sessionIdRef.current = sessionId;
 
     pushPomodoroEvent({
-      id: crypto.randomUUID(),
+      id: eventId,
       sessionId,
       type,
       mode,
@@ -515,7 +530,9 @@ function App() {
       elapsedSeconds,
       remainingSeconds,
       createdAt: new Date().toISOString(),
+      businessDate,
       source: 'keshi-pomodoro',
+      idempotencyKey: `keshi:event:${eventId}`,
     })
       .then(() => {
         if (sprintApiBaseUrl) setTaskSyncState('online');
@@ -554,15 +571,18 @@ function App() {
     const title = newTaskTitle.trim();
     if (!title) return;
     const createdAt = new Date(`${taskDay}T${new Date().toTimeString().slice(0, 8)}`).toISOString();
+    const taskId = crypto.randomUUID();
 
     const nextTask: SprintTask = {
-      id: crypto.randomUUID(),
+      id: taskId,
       title,
       status: 'doing',
       sprint: formatDayLabel(taskDay),
       order: getNextTaskOrder(taskDay),
       createdAt,
       updatedAt: createdAt,
+      businessDate: taskDay,
+      idempotencyKey: `keshi:task:${taskDay}:${taskId}`,
       subtasks: [],
     };
     const nextTasks = [nextTask, ...tasks];

@@ -13,6 +13,8 @@ export interface SprintTask {
   order?: number;
   createdAt?: string;
   updatedAt: string;
+  businessDate?: string;
+  idempotencyKey?: string;
   subtasks?: SprintSubtask[];
 }
 
@@ -25,6 +27,8 @@ export interface HistoryItem {
   taskTitle?: string;
   syncedAt?: string;
   syncError?: string;
+  businessDate?: string;
+  idempotencyKey?: string;
 }
 
 export type PomodoroEventType =
@@ -45,5 +49,7 @@ export interface PomodoroEvent {
   elapsedSeconds: number;
   remainingSeconds: number;
   createdAt: string;
+  businessDate?: string;
   source: string;
+  idempotencyKey?: string;
 }

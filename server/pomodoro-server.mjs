@@ -19,11 +19,22 @@ const sessionsFile = path.join(dataDir, 'pomodoros.json');
 const eventsFile = path.join(dataDir, 'events.json');
 const appSettingsFile = path.join(dataDir, 'app-settings.json');
 const historyFile = path.join(dataDir, 'history.json');
+const taskSnapshotsFile = path.join(dataDir, 'task-snapshots.json');
+const cronRunsFile = path.join(dataDir, 'cron-runs.json');
 const disciplineDbFile = process.env.DISCIPLINE_DB_FILE || path.join(dataDir, 'discipline.sqlite');
 let disciplineDb;
 const legacyScoreKeys = ['deep_work', 'reading', 'exercise', 'sleep', 'nutrition', 'discipline'];
 const specScoreKeys = ['BUILD', 'JOB_APPS', 'FLEX', 'EXERCISE', 'FOCUS', 'SLEEP'];
+const specScoreKeyMap = {
+  BUILD: 'deep_work',
+  JOB_APPS: 'reading',
+  FLEX: 'nutrition',
+  EXERCISE: 'exercise',
+  FOCUS: 'discipline',
+  SLEEP: 'sleep',
+};
 const goodDayThreshold = 35;
+const businessTimeZone = process.env.BUSINESS_TIME_ZONE || 'Asia/Bangkok';
 const defaultAppSettings = {
   focusTime: 25,
   breakTime: 5,
@@ -124,15 +135,19 @@ function mergeAppSettings(current, patch) {
 
 function normalizeHistoryItem(item) {
   const duration = Number(item?.duration);
+  const idempotencyKey = typeof item?.idempotencyKey === 'string' && item.idempotencyKey.trim() ? item.idempotencyKey.trim() : undefined;
+  const businessDate = resolveBusinessDate(item);
   return {
     id: typeof item?.id === 'string' && item.id ? item.id : randomUUID(),
     mode: typeof item?.mode === 'string' ? item.mode : 'focus',
     duration: Number.isFinite(duration) && duration > 0 ? Math.trunc(duration) : 0,
     date: typeof item?.date === 'string' ? item.date : new Date().toISOString(),
+    businessDate,
     taskId: typeof item?.taskId === 'string' ? item.taskId : undefined,
     taskTitle: typeof item?.taskTitle === 'string' ? item.taskTitle : undefined,
     syncedAt: typeof item?.syncedAt === 'string' ? item.syncedAt : new Date().toISOString(),
     syncError: typeof item?.syncError === 'string' ? item.syncError : undefined,
+    idempotencyKey,
   };
 }
 
@@ -148,11 +163,24 @@ async function writeHistory(history) {
 }
 
 function todayKey() {
-  return new Date().toISOString().slice(0, 10);
+  return toBusinessDateKey(new Date());
 }
 
 function isDateKey(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function toBusinessDateKey(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return todayKey();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: businessTimeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const byType = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${byType.year}-${byType.month}-${byType.day}`;
 }
 
 function requireDateKey(value, fieldName = 'date') {
@@ -169,6 +197,39 @@ function requireDateKey(value, fieldName = 'date') {
   }
 
   return value;
+}
+
+function optionalDateKey(value, fieldName = 'date') {
+  if (value === undefined || value === null || value === '') return null;
+  return requireDateKey(value, fieldName);
+}
+
+function resolveBusinessDate(source, fallbackValue = new Date()) {
+  const dateField = isDateKey(source?.date) ? source.date : null;
+  const explicit = optionalDateKey(source?.businessDate ?? source?.business_date ?? dateField, 'businessDate');
+  if (explicit) return explicit;
+  const timestamp = source?.createdAt ?? source?.completedAt ?? source?.updatedAt ?? source?.storedAt ?? source?.date ?? fallbackValue;
+  return toBusinessDateKey(timestamp);
+}
+
+function getIdempotencyKey(req, body) {
+  const headerValue = req.headers['idempotency-key'];
+  const headerKey = Array.isArray(headerValue) ? headerValue[0] : headerValue;
+  const key = headerKey ?? body?.idempotencyKey ?? body?.idempotency_key;
+  return typeof key === 'string' && key.trim() ? key.trim() : null;
+}
+
+function findIdempotentRecord(records, idempotencyKey, id) {
+  if (!Array.isArray(records)) return null;
+  if (idempotencyKey) {
+    const match = records.find(record => record?.idempotencyKey === idempotencyKey || record?.idempotency_key === idempotencyKey);
+    if (match) return match;
+  }
+  if (id) {
+    const match = records.find(record => record?.id === id);
+    if (match) return match;
+  }
+  return null;
 }
 
 function clampTrendDays(value) {
@@ -210,18 +271,21 @@ function validateScoresPayload(scores) {
   }
 
   const normalized = {};
-  for (const [key, value] of Object.entries(scores)) {
-    normalized[key] = normalizeScoreValue(value);
+  const sourceKeys = currentShape ? legacyScoreKeys : specScoreKeys;
+  for (const key of sourceKeys) {
+    const targetKey = currentShape ? key : specScoreKeyMap[key];
+    normalized[targetKey] = normalizeScoreValue(scores[key]);
   }
   return normalized;
 }
 
 function taskMatchesDate(task, dateKey) {
+  if (isDateKey(task?.businessDate)) return task.businessDate === dateKey;
   const dateSource = task.createdAt ?? task.updatedAt;
   if (!dateSource) return dateKey === todayKey();
   const parsed = new Date(dateSource);
   if (Number.isNaN(parsed.getTime())) return false;
-  return parsed.toISOString().slice(0, 10) === dateKey;
+  return toBusinessDateKey(parsed) === dateKey;
 }
 
 function addScoreAliases(score) {
@@ -277,6 +341,91 @@ function buildReviewTasks(tasks, dateKey) {
   return tasks.filter(task => taskMatchesDate(task, dateKey));
 }
 
+function normalizePomodoroSession(session = {}) {
+  const now = new Date().toISOString();
+  const completedAt = typeof session.completedAt === 'string' ? session.completedAt : now;
+  const storedAt = typeof session.storedAt === 'string' ? session.storedAt : now;
+  const idempotencyKey = typeof session.idempotencyKey === 'string' && session.idempotencyKey.trim() ? session.idempotencyKey.trim() : undefined;
+  return {
+    id: typeof session.id === 'string' && session.id ? session.id : randomUUID(),
+    taskId: typeof session.taskId === 'string' && session.taskId ? session.taskId : null,
+    taskTitle: typeof session.taskTitle === 'string' && session.taskTitle ? session.taskTitle : null,
+    durationMinutes: Number(session.durationMinutes || 0),
+    completedAt,
+    businessDate: resolveBusinessDate(session, completedAt || storedAt),
+    source: typeof session.source === 'string' && session.source ? session.source : 'keshi-pomodoro',
+    storedAt,
+    idempotencyKey,
+  };
+}
+
+async function readPomodoros() {
+  const sessions = await readJson(sessionsFile, []);
+  return Array.isArray(sessions) ? sessions.map(normalizePomodoroSession) : [];
+}
+
+async function writePomodoros(sessions) {
+  const normalized = Array.isArray(sessions) ? sessions.map(normalizePomodoroSession) : [];
+  await writeJson(sessionsFile, normalized);
+  return normalized;
+}
+
+function pomodoroMatchesDate(session, dateKey) {
+  if (isDateKey(session?.businessDate)) return session.businessDate === dateKey;
+  const dateSource = session?.completedAt ?? session?.storedAt;
+  return dateSource ? toBusinessDateKey(dateSource) === dateKey : false;
+}
+
+function normalizePomodoroEvent(event = {}) {
+  const now = new Date().toISOString();
+  const createdAt = typeof event.createdAt === 'string' ? event.createdAt : now;
+  const idempotencyKey = typeof event.idempotencyKey === 'string' && event.idempotencyKey.trim() ? event.idempotencyKey.trim() : undefined;
+  return {
+    id: typeof event.id === 'string' && event.id ? event.id : randomUUID(),
+    sessionId: typeof event.sessionId === 'string' && event.sessionId ? event.sessionId : randomUUID(),
+    type: typeof event.type === 'string' && event.type ? event.type : 'unknown',
+    mode: typeof event.mode === 'string' && event.mode ? event.mode : 'focus',
+    taskId: typeof event.taskId === 'string' && event.taskId ? event.taskId : null,
+    taskTitle: typeof event.taskTitle === 'string' && event.taskTitle ? event.taskTitle : null,
+    plannedSeconds: Number(event.plannedSeconds || 0),
+    elapsedSeconds: Number(event.elapsedSeconds || 0),
+    remainingSeconds: Number(event.remainingSeconds || 0),
+    createdAt,
+    businessDate: resolveBusinessDate(event, createdAt),
+    source: typeof event.source === 'string' && event.source ? event.source : 'keshi-pomodoro',
+    idempotencyKey,
+  };
+}
+
+async function readPomodoroEvents() {
+  const events = await readJson(eventsFile, []);
+  return Array.isArray(events) ? events.map(normalizePomodoroEvent) : [];
+}
+
+async function writePomodoroEvents(events) {
+  const normalized = Array.isArray(events) ? events.map(normalizePomodoroEvent) : [];
+  await writeJson(eventsFile, normalized);
+  return normalized;
+}
+
+function eventMatchesDate(event, dateKey) {
+  if (isDateKey(event?.businessDate)) return event.businessDate === dateKey;
+  return event?.createdAt ? toBusinessDateKey(event.createdAt) === dateKey : false;
+}
+
+function resolveLogDate(body) {
+  const date = body?.date ? requireDateKey(body.date, 'date') : null;
+  const businessDate = body?.businessDate || body?.business_date
+    ? requireDateKey(body.businessDate || body.business_date, 'businessDate')
+    : null;
+  if (date && businessDate && date !== businessDate) {
+    const error = new Error('date_business_date_mismatch');
+    error.statusCode = 400;
+    throw error;
+  }
+  return date || businessDate || requireDateKey(null, 'date');
+}
+
 async function getDisciplineDb() {
   if (disciplineDb) return disciplineDb;
 
@@ -328,6 +477,23 @@ async function getDisciplineDb() {
     CREATE INDEX IF NOT EXISTS idx_exercise_log_date ON exercise_log(date);
   `);
 
+  const readingColumns = new Set(disciplineDb.prepare('PRAGMA table_info(reading_log)').all().map(column => column.name));
+  if (!readingColumns.has('idempotency_key')) {
+    disciplineDb.exec('ALTER TABLE reading_log ADD COLUMN idempotency_key TEXT');
+  }
+  const exerciseColumns = new Set(disciplineDb.prepare('PRAGMA table_info(exercise_log)').all().map(column => column.name));
+  if (!exerciseColumns.has('idempotency_key')) {
+    disciplineDb.exec('ALTER TABLE exercise_log ADD COLUMN idempotency_key TEXT');
+  }
+  disciplineDb.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_reading_log_idempotency_key
+      ON reading_log(idempotency_key)
+      WHERE idempotency_key IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_exercise_log_idempotency_key
+      ON exercise_log(idempotency_key)
+      WHERE idempotency_key IS NOT NULL;
+  `);
+
   return disciplineDb;
 }
 
@@ -356,10 +522,14 @@ function scoreStats(scores) {
 }
 
 function normalizeLogRow(row) {
-  return Object.fromEntries(Object.entries(row).map(([key, value]) => {
+  const normalized = Object.fromEntries(Object.entries(row).map(([key, value]) => {
     const nextKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
     return [nextKey, value];
   }));
+  return {
+    ...normalized,
+    businessDate: normalized.date,
+  };
 }
 
 function datesBetween(startDate, endDate) {
@@ -454,6 +624,8 @@ function normalizeTask(task, fallbackOrder = 0) {
     order: task.order ?? fallbackOrder,
     createdAt: task.createdAt || task.updatedAt || now,
     updatedAt: task.updatedAt || now,
+    businessDate: resolveBusinessDate(task, task.createdAt || task.updatedAt || now),
+    idempotencyKey: typeof task.idempotencyKey === 'string' && task.idempotencyKey.trim() ? task.idempotencyKey.trim() : undefined,
     subtasks: Array.isArray(task.subtasks) ? task.subtasks : [],
   };
 }
@@ -477,6 +649,63 @@ async function readTasks() {
     await writeJson(tasksFile, cleanedTasks);
   }
   return cleanedTasks;
+}
+
+async function readTaskSnapshots() {
+  const snapshots = await readJson(taskSnapshotsFile, {});
+  return snapshots && typeof snapshots === 'object' && !Array.isArray(snapshots) ? snapshots : {};
+}
+
+async function writeTaskSnapshots(snapshots) {
+  await writeJson(taskSnapshotsFile, snapshots);
+  return snapshots;
+}
+
+function normalizeTaskSnapshot(date, value = {}) {
+  const now = new Date().toISOString();
+  const tasks = Array.isArray(value.tasks) ? normalizeTasks(value.tasks).map(task => ({
+    ...task,
+    businessDate: date,
+  })) : [];
+  return {
+    date,
+    tasks,
+    source: typeof value.source === 'string' && value.source.trim() ? value.source.trim() : 'pomodoro-api',
+    generatedAt: typeof value.generatedAt === 'string' ? value.generatedAt : now,
+    idempotencyKey: typeof value.idempotencyKey === 'string' && value.idempotencyKey.trim() ? value.idempotencyKey.trim() : undefined,
+  };
+}
+
+async function readCronRuns() {
+  const runs = await readJson(cronRunsFile, []);
+  return Array.isArray(runs) ? runs.map(normalizeCronRun) : [];
+}
+
+async function writeCronRuns(runs) {
+  const normalized = Array.isArray(runs) ? runs.map(normalizeCronRun) : [];
+  await writeJson(cronRunsFile, normalized);
+  return normalized;
+}
+
+function normalizeCronRun(run = {}) {
+  const now = new Date().toISOString();
+  const allowedStatuses = new Set(['running', 'success', 'failed', 'partial']);
+  const status = allowedStatuses.has(run.status) ? run.status : 'running';
+  const startedAt = typeof run.startedAt === 'string' ? run.startedAt : now;
+  const businessDate = resolveBusinessDate(run, startedAt);
+  const idempotencyKey = typeof run.idempotencyKey === 'string' && run.idempotencyKey.trim() ? run.idempotencyKey.trim() : undefined;
+  return {
+    id: typeof run.id === 'string' && run.id ? run.id : randomUUID(),
+    job: typeof run.job === 'string' && run.job.trim() ? run.job.trim() : 'unknown',
+    status,
+    businessDate,
+    startedAt,
+    finishedAt: typeof run.finishedAt === 'string' ? run.finishedAt : null,
+    summary: typeof run.summary === 'string' ? run.summary : '',
+    source: typeof run.source === 'string' && run.source.trim() ? run.source.trim() : 'sebastian',
+    idempotencyKey,
+    updatedAt: now,
+  };
 }
 
 function safeStaticPath(urlPath) {
@@ -520,13 +749,19 @@ async function handleApi(req, res, url) {
 
   if (pathname === '/api/history' && req.method === 'POST') {
     const body = await readBody(req);
-    const entry = normalizeHistoryItem(body);
+    const idempotencyKey = getIdempotencyKey(req, body);
+    const entry = normalizeHistoryItem({ ...body, idempotencyKey: idempotencyKey ?? body?.idempotencyKey });
     if (!entry.duration || entry.duration < 0) {
       sendJson(res, 400, { error: 'duration_required' });
       return;
     }
 
     const history = await readHistory();
+    const existing = findIdempotentRecord(history, entry.idempotencyKey, entry.id);
+    if (existing) {
+      sendJson(res, 200, { history, item: existing, idempotent: true });
+      return;
+    }
     const nextHistory = [entry, ...history];
     await writeHistory(nextHistory);
     sendJson(res, 201, { history: nextHistory, item: entry });
@@ -547,14 +782,20 @@ async function handleApi(req, res, url) {
 
   if (pathname === '/api/tasks' && req.method === 'POST') {
     const body = await readBody(req);
+    const idempotencyKey = getIdempotencyKey(req, body);
     if (!body?.title || typeof body.title !== 'string') {
       sendJson(res, 400, { error: 'title_required' });
       return;
     }
 
     const tasks = await readTasks();
+    const existing = findIdempotentRecord(tasks, idempotencyKey, body?.id);
+    if (existing) {
+      sendJson(res, 200, { task: existing, idempotent: true });
+      return;
+    }
     const nextOrder = tasks.length > 0 ? Math.max(...tasks.map(task => task.order || 0)) + 1 : 1;
-    const task = {
+    const task = normalizeTask({
       id: body.id || randomUUID(),
       title: body.title.trim(),
       status: body.status || 'doing',
@@ -562,9 +803,11 @@ async function handleApi(req, res, url) {
       order: body.order ?? nextOrder,
       createdAt: body.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      businessDate: resolveBusinessDate(body, body.createdAt || new Date()),
+      idempotencyKey: idempotencyKey ?? undefined,
       subtasks: Array.isArray(body.subtasks) ? body.subtasks : [],
-    };
-    await writeJson(tasksFile, normalizeTasks([normalizeTask(task), ...tasks]));
+    });
+    await writeJson(tasksFile, normalizeTasks([task, ...tasks]));
     sendJson(res, 201, { task });
     return;
   }
@@ -609,66 +852,118 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (pathname === '/api/task-snapshots' && req.method === 'GET') {
+    const date = requireDateKey(url.searchParams.get('date'));
+    const snapshots = await readTaskSnapshots();
+    const snapshot = snapshots[date] ? normalizeTaskSnapshot(date, snapshots[date]) : null;
+    sendJson(res, 200, { date, snapshot });
+    return;
+  }
+
+  if (pathname === '/api/task-snapshots' && (req.method === 'PUT' || req.method === 'POST')) {
+    const date = requireDateKey(url.searchParams.get('date'));
+    const body = await readBody(req);
+    const idempotencyKey = getIdempotencyKey(req, body);
+    const snapshots = await readTaskSnapshots();
+    const current = snapshots[date] ? normalizeTaskSnapshot(date, snapshots[date]) : null;
+    if (current && idempotencyKey && current.idempotencyKey === idempotencyKey) {
+      sendJson(res, 200, { date, snapshot: current, idempotent: true });
+      return;
+    }
+    const snapshot = normalizeTaskSnapshot(date, {
+      tasks: Array.isArray(body?.tasks) ? body.tasks : buildReviewTasks(await readTasks(), date),
+      source: body?.source,
+      idempotencyKey: idempotencyKey ?? body?.idempotencyKey,
+    });
+    snapshots[date] = snapshot;
+    await writeTaskSnapshots(snapshots);
+    sendJson(res, current ? 200 : 201, { date, snapshot });
+    return;
+  }
+
+  if (pathname === '/api/cron-runs' && req.method === 'GET') {
+    const date = url.searchParams.has('date') ? requireDateKey(url.searchParams.get('date')) : null;
+    const runs = await readCronRuns();
+    const filteredRuns = date ? runs.filter(run => run.businessDate === date) : runs;
+    sendJson(res, 200, { runs: filteredRuns });
+    return;
+  }
+
+  if (pathname === '/api/cron-runs' && req.method === 'POST') {
+    const body = await readBody(req);
+    const idempotencyKey = getIdempotencyKey(req, body);
+    const runs = await readCronRuns();
+    const existing = findIdempotentRecord(runs, idempotencyKey, body?.id);
+    const run = normalizeCronRun({ ...body, idempotencyKey: idempotencyKey ?? body?.idempotencyKey });
+    if (existing) {
+      sendJson(res, 200, { run: existing, idempotent: true });
+      return;
+    }
+    const nextRuns = [run, ...runs].slice(0, 500);
+    await writeCronRuns(nextRuns);
+    sendJson(res, 201, { run });
+    return;
+  }
+
   if (pathname === '/api/pomodoros' && req.method === 'GET') {
-    const sessions = await readJson(sessionsFile, []);
+    const sessions = await readPomodoros();
     sendJson(res, 200, { pomodoros: sessions });
     return;
   }
 
   if (pathname === '/api/pomodoros' && req.method === 'POST') {
     const body = await readBody(req);
-    const session = {
-      id: body?.id || randomUUID(),
-      taskId: body?.taskId || null,
-      taskTitle: body?.taskTitle || null,
-      durationMinutes: Number(body?.durationMinutes || 0),
-      completedAt: body?.completedAt || new Date().toISOString(),
-      source: body?.source || 'keshi-pomodoro',
+    const idempotencyKey = getIdempotencyKey(req, body);
+    const session = normalizePomodoroSession({
+      ...body,
       storedAt: new Date().toISOString(),
-    };
+      idempotencyKey: idempotencyKey ?? body?.idempotencyKey,
+    });
 
     if (!session.durationMinutes || session.durationMinutes < 0) {
       sendJson(res, 400, { error: 'duration_required' });
       return;
     }
 
-    const sessions = await readJson(sessionsFile, []);
-    await writeJson(sessionsFile, [session, ...sessions]);
+    const sessions = await readPomodoros();
+    const existing = findIdempotentRecord(sessions, session.idempotencyKey, session.id);
+    if (existing) {
+      sendJson(res, 200, { pomodoro: existing, idempotent: true });
+      return;
+    }
+    await writePomodoros([session, ...sessions]);
     sendJson(res, 201, { pomodoro: session });
     return;
   }
 
   if (pathname === '/api/events' && req.method === 'GET') {
-    const date = url.searchParams.get('date');
-    const events = await readJson(eventsFile, []);
-    const filteredEvents = date ? events.filter(event => String(event.createdAt || '').startsWith(date)) : events;
+    const date = url.searchParams.has('date') ? requireDateKey(url.searchParams.get('date')) : null;
+    const events = await readPomodoroEvents();
+    const filteredEvents = date ? events.filter(event => eventMatchesDate(event, date)) : events;
     sendJson(res, 200, { events: filteredEvents });
     return;
   }
 
   if (pathname === '/api/events' && req.method === 'POST') {
     const body = await readBody(req);
+    const idempotencyKey = getIdempotencyKey(req, body);
     if (!body?.type || typeof body.type !== 'string') {
       sendJson(res, 400, { error: 'type_required' });
       return;
     }
 
-    const event = {
-      id: body.id || randomUUID(),
-      sessionId: body.sessionId || randomUUID(),
-      type: body.type,
-      mode: body.mode || 'focus',
-      taskId: body.taskId || null,
-      taskTitle: body.taskTitle || null,
-      plannedSeconds: Number(body.plannedSeconds || 0),
-      elapsedSeconds: Number(body.elapsedSeconds || 0),
-      remainingSeconds: Number(body.remainingSeconds || 0),
-      createdAt: body.createdAt || new Date().toISOString(),
-      source: body.source || 'keshi-pomodoro',
-    };
+    const event = normalizePomodoroEvent({
+      ...body,
+      idempotencyKey: idempotencyKey ?? body?.idempotencyKey,
+    });
 
-    const events = await readJson(eventsFile, []);
-    await writeJson(eventsFile, [event, ...events]);
+    const events = await readPomodoroEvents();
+    const existing = findIdempotentRecord(events, event.idempotencyKey, event.id);
+    if (existing) {
+      sendJson(res, 200, { event: existing, idempotent: true });
+      return;
+    }
+    await writePomodoroEvents([event, ...events]);
     sendJson(res, 201, { event });
     return;
   }
@@ -743,22 +1038,32 @@ async function handleApi(req, res, url) {
 
   if (pathname === '/api/discipline/reading' && req.method === 'POST') {
     const body = await readBody(req);
-    const date = requireDateKey(body?.date);
+    const date = resolveLogDate(body);
+    const idempotencyKey = getIdempotencyKey(req, body);
     const now = new Date().toISOString();
     const entry = {
       id: body?.id || randomUUID(),
       date,
+      businessDate: date,
       title: body?.title || '',
       pages: Math.max(0, Number(body?.pages || 0)),
       minutes: Math.max(0, Number(body?.minutes || 0)),
       notes: body?.notes || '',
       createdAt: now,
+      idempotencyKey: idempotencyKey ?? undefined,
     };
     const db = await getDisciplineDb();
+    const existing = entry.idempotencyKey
+      ? db.prepare('SELECT * FROM reading_log WHERE idempotency_key = ?').get(entry.idempotencyKey)
+      : db.prepare('SELECT * FROM reading_log WHERE id = ?').get(entry.id);
+    if (existing) {
+      sendJson(res, 200, { reading: normalizeLogRow(existing), idempotent: true });
+      return;
+    }
     db.prepare(`
-      INSERT INTO reading_log (id, date, title, pages, minutes, notes, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(entry.id, entry.date, entry.title, entry.pages, entry.minutes, entry.notes, entry.createdAt);
+      INSERT INTO reading_log (id, date, title, pages, minutes, notes, created_at, idempotency_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(entry.id, entry.date, entry.title, entry.pages, entry.minutes, entry.notes, entry.createdAt, entry.idempotencyKey || null);
     sendJson(res, 201, { reading: entry });
     return;
   }
@@ -773,22 +1078,32 @@ async function handleApi(req, res, url) {
 
   if (pathname === '/api/discipline/exercise' && req.method === 'POST') {
     const body = await readBody(req);
-    const date = requireDateKey(body?.date);
+    const date = resolveLogDate(body);
+    const idempotencyKey = getIdempotencyKey(req, body);
     const now = new Date().toISOString();
     const entry = {
       id: body?.id || randomUUID(),
       date,
+      businessDate: date,
       type: body?.type || '',
       durationMinutes: Math.max(0, Number(body?.durationMinutes || body?.minutes || 0)),
       intensity: body?.intensity || '',
       notes: body?.notes || '',
       createdAt: now,
+      idempotencyKey: idempotencyKey ?? undefined,
     };
     const db = await getDisciplineDb();
+    const existing = entry.idempotencyKey
+      ? db.prepare('SELECT * FROM exercise_log WHERE idempotency_key = ?').get(entry.idempotencyKey)
+      : db.prepare('SELECT * FROM exercise_log WHERE id = ?').get(entry.id);
+    if (existing) {
+      sendJson(res, 200, { exercise: normalizeLogRow(existing), idempotent: true });
+      return;
+    }
     db.prepare(`
-      INSERT INTO exercise_log (id, date, type, duration_minutes, intensity, notes, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(entry.id, entry.date, entry.type, entry.durationMinutes, entry.intensity, entry.notes, entry.createdAt);
+      INSERT INTO exercise_log (id, date, type, duration_minutes, intensity, notes, created_at, idempotency_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(entry.id, entry.date, entry.type, entry.durationMinutes, entry.intensity, entry.notes, entry.createdAt, entry.idempotencyKey || null);
     sendJson(res, 201, { exercise: entry });
     return;
   }
@@ -808,9 +1123,11 @@ async function handleApi(req, res, url) {
     const streak = addStreakAliases(await recomputeStreak());
     const reading = db.prepare('SELECT * FROM reading_log WHERE date = ? ORDER BY created_at DESC').all(date).map(normalizeLogRow);
     const exercise = db.prepare('SELECT * FROM exercise_log WHERE date = ? ORDER BY created_at DESC').all(date).map(normalizeLogRow);
-    const pomodoros = (await readJson(sessionsFile, [])).filter(session => String(session.completedAt || session.storedAt || '').startsWith(date));
-    const events = (await readJson(eventsFile, [])).filter(event => String(event.createdAt || '').startsWith(date));
-    const tasks = buildReviewTasks(await readTasks(), date);
+    const pomodoros = (await readPomodoros()).filter(session => pomodoroMatchesDate(session, date));
+    const events = (await readPomodoroEvents()).filter(event => eventMatchesDate(event, date));
+    const snapshots = await readTaskSnapshots();
+    const taskSnapshot = snapshots[date] ? normalizeTaskSnapshot(date, snapshots[date]) : null;
+    const tasks = taskSnapshot ? taskSnapshot.tasks : buildReviewTasks(await readTasks(), date);
 
     sendJson(res, 200, {
       date,
@@ -819,6 +1136,9 @@ async function handleApi(req, res, url) {
       reading,
       exercise,
       tasks,
+      taskSnapshot,
+      taskSnapshotSource: taskSnapshot?.source || 'live-tasks',
+      taskSnapshotGeneratedAt: taskSnapshot?.generatedAt || null,
       pomodoros,
       events,
       generatedAt: new Date().toISOString(),
@@ -853,8 +1173,12 @@ const server = createServer(async (req, res) => {
       .on('error', () => sendNotFound(res))
       .pipe(res);
   } catch (error) {
-    console.error(error);
     const statusCode = error.statusCode || 500;
+    if (statusCode >= 500) {
+      console.error(error);
+    } else {
+      console.warn(`[api:${statusCode}] ${error.message || 'bad_request'}`);
+    }
     const errorBody = statusCode >= 500
       ? { error: 'internal_error' }
       : { error: error.message || 'bad_request' };

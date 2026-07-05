@@ -45,6 +45,8 @@ export interface DisciplineReadingEntry {
   minutes: number;
   notes: string;
   createdAt: string;
+  businessDate?: string;
+  idempotencyKey?: string;
 }
 
 export interface DisciplineExerciseEntry {
@@ -55,6 +57,8 @@ export interface DisciplineExerciseEntry {
   intensity: string;
   notes: string;
   createdAt: string;
+  businessDate?: string;
+  idempotencyKey?: string;
 }
 
 export interface DisciplinePomodoroSession {
@@ -63,8 +67,10 @@ export interface DisciplinePomodoroSession {
   taskTitle: string | null;
   durationMinutes: number;
   completedAt: string;
+  businessDate?: string;
   source: string;
   storedAt?: string;
+  idempotencyKey?: string;
 }
 
 export interface DisciplineEvent {
@@ -78,7 +84,17 @@ export interface DisciplineEvent {
   elapsedSeconds: number;
   remainingSeconds: number;
   createdAt: string;
+  businessDate?: string;
   source: string;
+  idempotencyKey?: string;
+}
+
+export interface DisciplineTaskSnapshot {
+  date: string;
+  tasks: SprintTask[];
+  source: string;
+  generatedAt: string;
+  idempotencyKey?: string;
 }
 
 export interface DisciplineReviewPayload {
@@ -88,6 +104,9 @@ export interface DisciplineReviewPayload {
   reading: DisciplineReadingEntry[];
   exercise: DisciplineExerciseEntry[];
   tasks: SprintTask[];
+  taskSnapshot: DisciplineTaskSnapshot | null;
+  taskSnapshotSource: string;
+  taskSnapshotGeneratedAt: string | null;
   pomodoros: DisciplinePomodoroSession[];
   events: DisciplineEvent[];
   generatedAt: string;
@@ -124,6 +143,13 @@ export interface DisciplineLogSaveResponse {
 
 const disciplineApiBase = import.meta.env.VITE_HERMES_DISCIPLINE_API_URL?.replace(/\/$/, '') ?? '/api/discipline';
 
+const toDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 function buildDisciplineUrl(path = '') {
   if (!path) return disciplineApiBase;
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
@@ -156,7 +182,7 @@ export async function fetchDisciplineTrend(days: 7 | 30, endDate: string) {
   const end = new Date(`${endDate}T12:00:00`);
   const start = new Date(end);
   start.setDate(start.getDate() - (days - 1));
-  const from = start.toISOString().slice(0, 10);
+  const from = toDateKey(start);
   return disciplineRequest<DisciplineTrendResponse>(`/scores/trend?from=${encodeURIComponent(from)}&to=${encodeURIComponent(endDate)}`);
 }
 
@@ -185,26 +211,30 @@ export async function saveDisciplineScores(date: string, scores: DisciplineScore
 
 export async function addDisciplineReading(entry: {
   date: string;
+  businessDate?: string;
   title: string;
   pages: number;
   minutes: number;
   notes?: string;
+  idempotencyKey?: string;
 }) {
   return disciplineRequest<DisciplineLogSaveResponse>('/reading', {
     method: 'POST',
-    body: JSON.stringify(entry),
+    body: JSON.stringify({ ...entry, businessDate: entry.businessDate ?? entry.date }),
   });
 }
 
 export async function addDisciplineExercise(entry: {
   date: string;
+  businessDate?: string;
   type: string;
   durationMinutes: number;
   intensity?: string;
   notes?: string;
+  idempotencyKey?: string;
 }) {
   return disciplineRequest<DisciplineLogSaveResponse>('/exercise', {
     method: 'POST',
-    body: JSON.stringify(entry),
+    body: JSON.stringify({ ...entry, businessDate: entry.businessDate ?? entry.date }),
   });
 }

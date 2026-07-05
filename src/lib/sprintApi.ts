@@ -12,6 +12,8 @@ export function normalizeTask(task: SprintTask, fallbackOrder = 0): SprintTask {
     order: task.order ?? fallbackOrder,
     createdAt: task.createdAt ?? task.updatedAt ?? now,
     updatedAt: task.updatedAt ?? now,
+    businessDate: task.businessDate,
+    idempotencyKey: task.idempotencyKey,
     subtasks: Array.isArray(task.subtasks) ? task.subtasks : [],
   };
 }
@@ -92,7 +94,9 @@ export async function pushPomodoroSession(item: HistoryItem) {
       taskTitle: item.taskTitle,
       durationMinutes: item.duration,
       completedAt: new Date().toISOString(),
+      businessDate: item.businessDate,
       source: 'keshi-pomodoro',
+      idempotencyKey: item.idempotencyKey ? `${item.idempotencyKey}:pomodoro` : `keshi:pomodoro:${item.id}`,
     }),
   });
 
