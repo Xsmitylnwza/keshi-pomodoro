@@ -109,6 +109,29 @@ test('tasks are idempotent and carry businessDate', async () => {
   assert.equal(listed.body.tasks.length, 1);
 });
 
+test('history writes are idempotent via Idempotency-Key', async () => {
+  const payload = {
+    id: 'history-a',
+    mode: 'focus',
+    duration: 25,
+    date: 'Jul 5, 8:00 AM',
+    businessDate: '2026-07-05',
+    taskId: 'task-a',
+    taskTitle: 'Write reliability plan',
+  };
+  const headers = { 'Idempotency-Key': 'sebastian:history:2026-07-05:focus-1' };
+
+  const first = await post('/api/history', payload, headers);
+  assert.equal(first.response.status, 201);
+  assert.equal(first.body.item.businessDate, '2026-07-05');
+
+  const duplicate = await post('/api/history', { ...payload, id: 'history-b' }, headers);
+  assert.equal(duplicate.response.status, 200);
+  assert.equal(duplicate.body.idempotent, true);
+  assert.equal(duplicate.body.item.id, 'history-a');
+  assert.equal(duplicate.body.history.length, 1);
+});
+
 test('pomodoros and events are idempotent and review by businessDate', async () => {
   const pomodoro = {
     id: 'pomo-a',
