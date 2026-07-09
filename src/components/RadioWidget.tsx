@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Radio, Play, Pause, SkipForward, Volume2, VolumeX, ChevronLeft, ChevronRight } from 'lucide-react';
 import { slideInRight, entranceDelays } from '../utils/animations';
-import { useTheme } from '../context/ThemeContext';
+import { useTheme } from '../context/useTheme';
 import { fetchAppSettings, updateAppSettings } from '../lib/appSettingsApi';
 
 interface RadioStation {

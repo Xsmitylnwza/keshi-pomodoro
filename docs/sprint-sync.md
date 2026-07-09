@@ -19,6 +19,13 @@ The deployed API is mounted at:
 https://pomodoro.xsmity.cloud/api
 ```
 
+Hermes and other automation agents should use the central gateway documented in
+`C:\letmecook\xsmity-central\_docs\access-management.md`:
+
+```txt
+https://xsmity.cloud/api/agent/pomodoro
+```
+
 ### App Settings
 
 ```http
@@ -136,4 +143,5 @@ Hermes can also read the JSON files directly on the VPS:
 
 ## Related Guide
 
+- Central access management: `C:\letmecook\xsmity-central\_docs\access-management.md`
 - [Hermes Discipline Log Guide](./hermes-discipline-log-guide.md)

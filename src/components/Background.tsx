@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useTheme } from '../context/ThemeContext';
+import { useTheme } from '../context/useTheme';
 import { motion } from 'framer-motion';
 import { Star } from 'lucide-react';
 import {

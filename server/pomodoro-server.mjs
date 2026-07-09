@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { createReadStream, existsSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,15 +14,15 @@ const port = Number(process.env.PORT || 4177);
 const host = process.env.HOST || '127.0.0.1';
 const legacyDefaultTaskId = 'inbox';
 
-const tasksFile = path.join(dataDir, 'tasks.json');
-const sessionsFile = path.join(dataDir, 'pomodoros.json');
-const eventsFile = path.join(dataDir, 'events.json');
-const appSettingsFile = path.join(dataDir, 'app-settings.json');
-const historyFile = path.join(dataDir, 'history.json');
-const taskSnapshotsFile = path.join(dataDir, 'task-snapshots.json');
-const cronRunsFile = path.join(dataDir, 'cron-runs.json');
-const disciplineDbFile = process.env.DISCIPLINE_DB_FILE || path.join(dataDir, 'discipline.sqlite');
-let disciplineDb;
+const legacyTasksFile = path.join(dataDir, 'tasks.json');
+const legacySessionsFile = path.join(dataDir, 'pomodoros.json');
+const legacyEventsFile = path.join(dataDir, 'events.json');
+const legacyAppSettingsFile = path.join(dataDir, 'app-settings.json');
+const legacyHistoryFile = path.join(dataDir, 'history.json');
+const legacyTaskSnapshotsFile = path.join(dataDir, 'task-snapshots.json');
+const legacyCronRunsFile = path.join(dataDir, 'cron-runs.json');
+const legacyDisciplineDbFile = process.env.DISCIPLINE_DB_FILE || path.join(dataDir, 'discipline.sqlite');
+const disciplineDbs = new Map();
 const legacyScoreKeys = ['deep_work', 'reading', 'exercise', 'sleep', 'nutrition', 'discipline'];
 const specScoreKeys = ['BUILD', 'JOB_APPS', 'FLEX', 'EXERCISE', 'FOCUS', 'SLEEP'];
 const specScoreKeyMap = {
@@ -35,6 +35,10 @@ const specScoreKeyMap = {
 };
 const goodDayThreshold = 35;
 const businessTimeZone = process.env.BUSINESS_TIME_ZONE || 'Asia/Bangkok';
+const centralAuthEnabled = isTruthyEnv(process.env.CENTRAL_AUTH_ENABLED);
+const centralAuthBaseUrl = centralAuthEnabled ? normalizeCentralAuthUrl(process.env.CENTRAL_AUTH_URL) : '';
+const trustedCentralServiceToken = process.env.XSMITY_SERVICE_TOKEN || process.env.CENTRAL_SERVICE_TOKEN || '';
+const defaultUserKey = process.env.POMODORO_DEFAULT_USER_ID || process.env.DEFAULT_OWNER_USER_ID || '';
 const defaultAppSettings = {
   focusTime: 25,
   breakTime: 5,
@@ -81,6 +85,92 @@ async function writeJson(file, value) {
   await writeFile(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 }
 
+function isTruthyEnv(value) {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized !== '' && !['0', 'false', 'no', 'off'].includes(normalized);
+}
+
+function normalizeCentralAuthUrl(value) {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return (trimmed || 'http://localhost:3210').replace(/\/+$/, '');
+}
+
+function sanitizeUserKey(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return raw.replace(/[^a-zA-Z0-9._@-]/g, '_').slice(0, 160);
+}
+
+function userDataDir(userKey) {
+  const safeKey = sanitizeUserKey(userKey);
+  return safeKey ? path.join(dataDir, 'users', safeKey) : dataDir;
+}
+
+function userFile(userKey, fileName, legacyFile) {
+  const safeKey = sanitizeUserKey(userKey);
+  return safeKey ? path.join(userDataDir(safeKey), fileName) : legacyFile;
+}
+
+function userIdentityKey(user) {
+  return sanitizeUserKey(user?.id || user?.providerSubject || user?.email || '');
+}
+
+function serviceUserKey(req) {
+  return sanitizeUserKey(
+    req.headers['x-xsmity-user-id']
+      || req.headers['x-xsmity-owner-id']
+      || defaultUserKey
+      || 'service-xsmity-auth',
+  );
+}
+
+async function requestAuthContext(req) {
+  if (hasValidCentralServiceAuth(req)) {
+    return { authenticated: true, userKey: serviceUserKey(req), service: true };
+  }
+  if (!centralAuthEnabled) return { authenticated: true, userKey: '', service: false };
+
+  const cookieHeader = Array.isArray(req.headers.cookie) ? req.headers.cookie.join('; ') : req.headers.cookie;
+  if (typeof cookieHeader !== 'string' || !cookieHeader.trim()) return { authenticated: false };
+
+  try {
+    const response = await fetch(`${centralAuthBaseUrl}/auth/session`, {
+      headers: {
+        accept: 'application/json',
+        cookie: cookieHeader,
+      },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!response.ok) return { authenticated: false };
+
+    const session = await response.json().catch(() => null);
+    const authenticated = session?.authenticated === true
+      && session?.user
+      && typeof session.user === 'object'
+      && !Array.isArray(session.user);
+    if (!authenticated) return { authenticated: false };
+    const userKey = userIdentityKey(session.user);
+    return userKey ? { authenticated: true, userKey, service: false, user: session.user } : { authenticated: false };
+  } catch {
+    return { authenticated: false };
+  }
+}
+
+function hasValidCentralServiceAuth(req) {
+  if (!trustedCentralServiceToken) return false;
+  const serviceName = String(req.headers['x-xsmity-service'] || '').trim();
+  const serviceToken = String(req.headers['x-xsmity-service-token'] || '').trim();
+  return serviceName === 'xsmity-auth' && safeEqualSecret(serviceToken, trustedCentralServiceToken);
+}
+
+function safeEqualSecret(left, right) {
+  const leftBuffer = Buffer.from(String(left));
+  const rightBuffer = Buffer.from(String(right));
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
 function normalizeThemeSettings(value) {
   return {
     focus: typeof value?.focus === 'string' && value.focus.trim() ? value.focus.trim() : defaultAppSettings.theme.focus,
@@ -113,13 +203,13 @@ function normalizeAppSettings(value) {
   };
 }
 
-async function readAppSettings() {
-  return normalizeAppSettings(await readJson(appSettingsFile, defaultAppSettings));
+async function readAppSettings(userKey) {
+  return normalizeAppSettings(await readJson(userFile(userKey, 'app-settings.json', legacyAppSettingsFile), defaultAppSettings));
 }
 
-async function writeAppSettings(nextSettings) {
+async function writeAppSettings(userKey, nextSettings) {
   const normalized = normalizeAppSettings(nextSettings);
-  await writeJson(appSettingsFile, normalized);
+  await writeJson(userFile(userKey, 'app-settings.json', legacyAppSettingsFile), normalized);
   return normalized;
 }
 
@@ -151,14 +241,14 @@ function normalizeHistoryItem(item) {
   };
 }
 
-async function readHistory() {
-  const history = await readJson(historyFile, []);
+async function readHistory(userKey) {
+  const history = await readJson(userFile(userKey, 'history.json', legacyHistoryFile), []);
   return Array.isArray(history) ? history.map(normalizeHistoryItem) : [];
 }
 
-async function writeHistory(history) {
+async function writeHistory(userKey, history) {
   const normalized = Array.isArray(history) ? history.map(normalizeHistoryItem) : [];
-  await writeJson(historyFile, normalized);
+  await writeJson(userFile(userKey, 'history.json', legacyHistoryFile), normalized);
   return normalized;
 }
 
@@ -359,14 +449,14 @@ function normalizePomodoroSession(session = {}) {
   };
 }
 
-async function readPomodoros() {
-  const sessions = await readJson(sessionsFile, []);
+async function readPomodoros(userKey) {
+  const sessions = await readJson(userFile(userKey, 'pomodoros.json', legacySessionsFile), []);
   return Array.isArray(sessions) ? sessions.map(normalizePomodoroSession) : [];
 }
 
-async function writePomodoros(sessions) {
+async function writePomodoros(userKey, sessions) {
   const normalized = Array.isArray(sessions) ? sessions.map(normalizePomodoroSession) : [];
-  await writeJson(sessionsFile, normalized);
+  await writeJson(userFile(userKey, 'pomodoros.json', legacySessionsFile), normalized);
   return normalized;
 }
 
@@ -397,14 +487,14 @@ function normalizePomodoroEvent(event = {}) {
   };
 }
 
-async function readPomodoroEvents() {
-  const events = await readJson(eventsFile, []);
+async function readPomodoroEvents(userKey) {
+  const events = await readJson(userFile(userKey, 'events.json', legacyEventsFile), []);
   return Array.isArray(events) ? events.map(normalizePomodoroEvent) : [];
 }
 
-async function writePomodoroEvents(events) {
+async function writePomodoroEvents(userKey, events) {
   const normalized = Array.isArray(events) ? events.map(normalizePomodoroEvent) : [];
-  await writeJson(eventsFile, normalized);
+  await writeJson(userFile(userKey, 'events.json', legacyEventsFile), normalized);
   return normalized;
 }
 
@@ -426,11 +516,14 @@ function resolveLogDate(body) {
   return date || businessDate || requireDateKey(null, 'date');
 }
 
-async function getDisciplineDb() {
-  if (disciplineDb) return disciplineDb;
+async function getDisciplineDb(userKey) {
+  const safeKey = sanitizeUserKey(userKey);
+  const dbFile = safeKey ? path.join(userDataDir(safeKey), 'discipline.sqlite') : legacyDisciplineDbFile;
+  if (disciplineDbs.has(dbFile)) return disciplineDbs.get(dbFile);
 
-  await mkdir(path.dirname(disciplineDbFile), { recursive: true });
-  disciplineDb = new DatabaseSync(disciplineDbFile);
+  await mkdir(path.dirname(dbFile), { recursive: true });
+  const disciplineDb = new DatabaseSync(dbFile);
+  disciplineDbs.set(dbFile, disciplineDb);
   disciplineDb.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
@@ -543,8 +636,8 @@ function datesBetween(startDate, endDate) {
   return dates;
 }
 
-async function recomputeStreak() {
-  const db = await getDisciplineDb();
+async function recomputeStreak(userKey) {
+  const db = await getDisciplineDb(userKey);
   const rows = db.prepare('SELECT date FROM daily_scores ORDER BY date ASC').all();
   const scoredDates = new Set(rows.map(row => row.date));
   let current = 0;
@@ -642,22 +735,23 @@ function normalizeTasks(tasks) {
     .sort((a, b) => (b.order || 0) - (a.order || 0));
 }
 
-async function readTasks() {
-  const rawTasks = await readJson(tasksFile, []);
+async function readTasks(userKey) {
+  const taskFile = userFile(userKey, 'tasks.json', legacyTasksFile);
+  const rawTasks = await readJson(taskFile, []);
   const cleanedTasks = normalizeTasks(stripLegacyDefaultTasks(rawTasks));
   if (Array.isArray(rawTasks) && rawTasks.length !== cleanedTasks.length) {
-    await writeJson(tasksFile, cleanedTasks);
+    await writeJson(taskFile, cleanedTasks);
   }
   return cleanedTasks;
 }
 
-async function readTaskSnapshots() {
-  const snapshots = await readJson(taskSnapshotsFile, {});
+async function readTaskSnapshots(userKey) {
+  const snapshots = await readJson(userFile(userKey, 'task-snapshots.json', legacyTaskSnapshotsFile), {});
   return snapshots && typeof snapshots === 'object' && !Array.isArray(snapshots) ? snapshots : {};
 }
 
-async function writeTaskSnapshots(snapshots) {
-  await writeJson(taskSnapshotsFile, snapshots);
+async function writeTaskSnapshots(userKey, snapshots) {
+  await writeJson(userFile(userKey, 'task-snapshots.json', legacyTaskSnapshotsFile), snapshots);
   return snapshots;
 }
 
@@ -676,14 +770,14 @@ function normalizeTaskSnapshot(date, value = {}) {
   };
 }
 
-async function readCronRuns() {
-  const runs = await readJson(cronRunsFile, []);
+async function readCronRuns(userKey) {
+  const runs = await readJson(userFile(userKey, 'cron-runs.json', legacyCronRunsFile), []);
   return Array.isArray(runs) ? runs.map(normalizeCronRun) : [];
 }
 
-async function writeCronRuns(runs) {
+async function writeCronRuns(userKey, runs) {
   const normalized = Array.isArray(runs) ? runs.map(normalizeCronRun) : [];
-  await writeJson(cronRunsFile, normalized);
+  await writeJson(userFile(userKey, 'cron-runs.json', legacyCronRunsFile), normalized);
   return normalized;
 }
 
@@ -724,8 +818,15 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  const authContext = await requestAuthContext(req);
+  if (!authContext.authenticated) {
+    sendJson(res, 401, { error: 'auth_required' });
+    return;
+  }
+  const userKey = authContext.userKey;
+
   if (pathname === '/api/settings' && req.method === 'GET') {
-    sendJson(res, 200, { settings: await readAppSettings() });
+    sendJson(res, 200, { settings: await readAppSettings(userKey) });
     return;
   }
 
@@ -736,14 +837,14 @@ async function handleApi(req, res, url) {
       return;
     }
 
-    const current = await readAppSettings();
-    const nextSettings = await writeAppSettings(mergeAppSettings(current, body));
+    const current = await readAppSettings(userKey);
+    const nextSettings = await writeAppSettings(userKey, mergeAppSettings(current, body));
     sendJson(res, 200, { settings: nextSettings });
     return;
   }
 
   if (pathname === '/api/history' && req.method === 'GET') {
-    sendJson(res, 200, { history: await readHistory() });
+    sendJson(res, 200, { history: await readHistory(userKey) });
     return;
   }
 
@@ -756,26 +857,26 @@ async function handleApi(req, res, url) {
       return;
     }
 
-    const history = await readHistory();
+    const history = await readHistory(userKey);
     const existing = findIdempotentRecord(history, entry.idempotencyKey, entry.id);
     if (existing) {
       sendJson(res, 200, { history, item: existing, idempotent: true });
       return;
     }
     const nextHistory = [entry, ...history];
-    await writeHistory(nextHistory);
+    await writeHistory(userKey, nextHistory);
     sendJson(res, 201, { history: nextHistory, item: entry });
     return;
   }
 
   if (pathname === '/api/history' && req.method === 'DELETE') {
-    await writeHistory([]);
+    await writeHistory(userKey, []);
     sendJson(res, 200, { ok: true });
     return;
   }
 
   if (pathname === '/api/tasks' && req.method === 'GET') {
-    const tasks = await readTasks();
+    const tasks = await readTasks(userKey);
     sendJson(res, 200, { tasks });
     return;
   }
@@ -788,7 +889,7 @@ async function handleApi(req, res, url) {
       return;
     }
 
-    const tasks = await readTasks();
+    const tasks = await readTasks(userKey);
     const existing = findIdempotentRecord(tasks, idempotencyKey, body?.id);
     if (existing) {
       sendJson(res, 200, { task: existing, idempotent: true });
@@ -807,7 +908,7 @@ async function handleApi(req, res, url) {
       idempotencyKey: idempotencyKey ?? undefined,
       subtasks: Array.isArray(body.subtasks) ? body.subtasks : [],
     });
-    await writeJson(tasksFile, normalizeTasks([task, ...tasks]));
+    await writeJson(userFile(userKey, 'tasks.json', legacyTasksFile), normalizeTasks([task, ...tasks]));
     sendJson(res, 201, { task });
     return;
   }
@@ -816,7 +917,7 @@ async function handleApi(req, res, url) {
   if (taskMatch && req.method === 'PUT') {
     const taskId = decodeURIComponent(taskMatch[1]);
     const body = await readBody(req);
-    const tasks = await readTasks();
+    const tasks = await readTasks(userKey);
     const index = tasks.findIndex(task => task.id === taskId);
 
     if (index === -1) {
@@ -832,14 +933,14 @@ async function handleApi(req, res, url) {
       updatedAt: new Date().toISOString(),
     });
     tasks[index] = task;
-    await writeJson(tasksFile, tasks);
+    await writeJson(userFile(userKey, 'tasks.json', legacyTasksFile), tasks);
     sendJson(res, 200, { task });
     return;
   }
 
   if (taskMatch && req.method === 'DELETE') {
     const taskId = decodeURIComponent(taskMatch[1]);
-    const tasks = await readTasks();
+    const tasks = await readTasks(userKey);
     const nextTasks = tasks.filter(task => task.id !== taskId);
 
     if (nextTasks.length === tasks.length) {
@@ -847,14 +948,14 @@ async function handleApi(req, res, url) {
       return;
     }
 
-    await writeJson(tasksFile, nextTasks);
+    await writeJson(userFile(userKey, 'tasks.json', legacyTasksFile), nextTasks);
     sendJson(res, 200, { ok: true });
     return;
   }
 
   if (pathname === '/api/task-snapshots' && req.method === 'GET') {
     const date = requireDateKey(url.searchParams.get('date'));
-    const snapshots = await readTaskSnapshots();
+    const snapshots = await readTaskSnapshots(userKey);
     const snapshot = snapshots[date] ? normalizeTaskSnapshot(date, snapshots[date]) : null;
     sendJson(res, 200, { date, snapshot });
     return;
@@ -864,26 +965,26 @@ async function handleApi(req, res, url) {
     const date = requireDateKey(url.searchParams.get('date'));
     const body = await readBody(req);
     const idempotencyKey = getIdempotencyKey(req, body);
-    const snapshots = await readTaskSnapshots();
+    const snapshots = await readTaskSnapshots(userKey);
     const current = snapshots[date] ? normalizeTaskSnapshot(date, snapshots[date]) : null;
     if (current && idempotencyKey && current.idempotencyKey === idempotencyKey) {
       sendJson(res, 200, { date, snapshot: current, idempotent: true });
       return;
     }
     const snapshot = normalizeTaskSnapshot(date, {
-      tasks: Array.isArray(body?.tasks) ? body.tasks : buildReviewTasks(await readTasks(), date),
+      tasks: Array.isArray(body?.tasks) ? body.tasks : buildReviewTasks(await readTasks(userKey), date),
       source: body?.source,
       idempotencyKey: idempotencyKey ?? body?.idempotencyKey,
     });
     snapshots[date] = snapshot;
-    await writeTaskSnapshots(snapshots);
+    await writeTaskSnapshots(userKey, snapshots);
     sendJson(res, current ? 200 : 201, { date, snapshot });
     return;
   }
 
   if (pathname === '/api/cron-runs' && req.method === 'GET') {
     const date = url.searchParams.has('date') ? requireDateKey(url.searchParams.get('date')) : null;
-    const runs = await readCronRuns();
+    const runs = await readCronRuns(userKey);
     const filteredRuns = date ? runs.filter(run => run.businessDate === date) : runs;
     sendJson(res, 200, { runs: filteredRuns });
     return;
@@ -892,7 +993,7 @@ async function handleApi(req, res, url) {
   if (pathname === '/api/cron-runs' && req.method === 'POST') {
     const body = await readBody(req);
     const idempotencyKey = getIdempotencyKey(req, body);
-    const runs = await readCronRuns();
+    const runs = await readCronRuns(userKey);
     const existing = findIdempotentRecord(runs, idempotencyKey, body?.id);
     const run = normalizeCronRun({ ...body, idempotencyKey: idempotencyKey ?? body?.idempotencyKey });
     if (existing) {
@@ -900,13 +1001,13 @@ async function handleApi(req, res, url) {
       return;
     }
     const nextRuns = [run, ...runs].slice(0, 500);
-    await writeCronRuns(nextRuns);
+    await writeCronRuns(userKey, nextRuns);
     sendJson(res, 201, { run });
     return;
   }
 
   if (pathname === '/api/pomodoros' && req.method === 'GET') {
-    const sessions = await readPomodoros();
+    const sessions = await readPomodoros(userKey);
     sendJson(res, 200, { pomodoros: sessions });
     return;
   }
@@ -925,20 +1026,20 @@ async function handleApi(req, res, url) {
       return;
     }
 
-    const sessions = await readPomodoros();
+    const sessions = await readPomodoros(userKey);
     const existing = findIdempotentRecord(sessions, session.idempotencyKey, session.id);
     if (existing) {
       sendJson(res, 200, { pomodoro: existing, idempotent: true });
       return;
     }
-    await writePomodoros([session, ...sessions]);
+    await writePomodoros(userKey, [session, ...sessions]);
     sendJson(res, 201, { pomodoro: session });
     return;
   }
 
   if (pathname === '/api/events' && req.method === 'GET') {
     const date = url.searchParams.has('date') ? requireDateKey(url.searchParams.get('date')) : null;
-    const events = await readPomodoroEvents();
+    const events = await readPomodoroEvents(userKey);
     const filteredEvents = date ? events.filter(event => eventMatchesDate(event, date)) : events;
     sendJson(res, 200, { events: filteredEvents });
     return;
@@ -957,13 +1058,13 @@ async function handleApi(req, res, url) {
       idempotencyKey: idempotencyKey ?? body?.idempotencyKey,
     });
 
-    const events = await readPomodoroEvents();
+    const events = await readPomodoroEvents(userKey);
     const existing = findIdempotentRecord(events, event.idempotencyKey, event.id);
     if (existing) {
       sendJson(res, 200, { event: existing, idempotent: true });
       return;
     }
-    await writePomodoroEvents([event, ...events]);
+    await writePomodoroEvents(userKey, [event, ...events]);
     sendJson(res, 201, { event });
     return;
   }
@@ -975,7 +1076,7 @@ async function handleApi(req, res, url) {
 
     const stats = scoreStats(scores);
     const now = new Date().toISOString();
-    const db = await getDisciplineDb();
+    const db = await getDisciplineDb(userKey);
     db.prepare(`
       INSERT INTO daily_scores (date, scores_json, notes, total, average, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -988,14 +1089,14 @@ async function handleApi(req, res, url) {
     `).run(date, JSON.stringify(scores), body?.notes || '', stats.total, stats.average, now, now);
 
     const row = db.prepare('SELECT * FROM daily_scores WHERE date = ?').get(date);
-    const streak = await recomputeStreak();
+    const streak = await recomputeStreak(userKey);
     sendJson(res, 200, { score: parseScores(row), streak });
     return;
   }
 
   if (pathname === '/api/discipline/scores' && req.method === 'GET') {
     const date = requireDateKey(url.searchParams.get('date'));
-    const db = await getDisciplineDb();
+    const db = await getDisciplineDb(userKey);
     const score = parseScores(db.prepare('SELECT * FROM daily_scores WHERE date = ?').get(date));
     if (!score) {
       sendJson(res, 404, { error: 'score_not_found' });
@@ -1007,7 +1108,7 @@ async function handleApi(req, res, url) {
 
   if (pathname === '/api/discipline/scores/trend' && req.method === 'GET') {
     const range = buildTrendRange(url);
-    const db = await getDisciplineDb();
+    const db = await getDisciplineDb(userKey);
     const rows = db.prepare('SELECT * FROM daily_scores WHERE date BETWEEN ? AND ? ORDER BY date ASC').all(range.startDate, range.endDate);
     const byDate = new Map(rows.map(row => [row.date, parseScores(row)]));
     const trend = datesBetween(range.startDate, range.endDate).map(date => byDate.get(date) || {
@@ -1031,7 +1132,7 @@ async function handleApi(req, res, url) {
   }
 
   if (pathname === '/api/discipline/streak' && req.method === 'GET') {
-    const streak = addStreakAliases(await recomputeStreak());
+    const streak = addStreakAliases(await recomputeStreak(userKey));
     sendJson(res, 200, { streak });
     return;
   }
@@ -1052,7 +1153,7 @@ async function handleApi(req, res, url) {
       createdAt: now,
       idempotencyKey: idempotencyKey ?? undefined,
     };
-    const db = await getDisciplineDb();
+    const db = await getDisciplineDb(userKey);
     const existing = entry.idempotencyKey
       ? db.prepare('SELECT * FROM reading_log WHERE idempotency_key = ?').get(entry.idempotencyKey)
       : db.prepare('SELECT * FROM reading_log WHERE id = ?').get(entry.id);
@@ -1070,7 +1171,7 @@ async function handleApi(req, res, url) {
 
   if (pathname === '/api/discipline/reading' && req.method === 'GET') {
     const date = requireDateKey(url.searchParams.get('date'));
-    const db = await getDisciplineDb();
+    const db = await getDisciplineDb(userKey);
     const reading = db.prepare('SELECT * FROM reading_log WHERE date = ? ORDER BY created_at DESC').all(date).map(normalizeLogRow);
     sendJson(res, 200, { date, reading });
     return;
@@ -1092,7 +1193,7 @@ async function handleApi(req, res, url) {
       createdAt: now,
       idempotencyKey: idempotencyKey ?? undefined,
     };
-    const db = await getDisciplineDb();
+    const db = await getDisciplineDb(userKey);
     const existing = entry.idempotencyKey
       ? db.prepare('SELECT * FROM exercise_log WHERE idempotency_key = ?').get(entry.idempotencyKey)
       : db.prepare('SELECT * FROM exercise_log WHERE id = ?').get(entry.id);
@@ -1110,7 +1211,7 @@ async function handleApi(req, res, url) {
 
   if (pathname === '/api/discipline/exercise' && req.method === 'GET') {
     const date = requireDateKey(url.searchParams.get('date'));
-    const db = await getDisciplineDb();
+    const db = await getDisciplineDb(userKey);
     const exercise = db.prepare('SELECT * FROM exercise_log WHERE date = ? ORDER BY created_at DESC').all(date).map(normalizeLogRow);
     sendJson(res, 200, { date, exercise });
     return;
@@ -1118,16 +1219,16 @@ async function handleApi(req, res, url) {
 
   if (pathname === '/api/discipline/review' && req.method === 'GET') {
     const date = requireDateKey(url.searchParams.get('date'));
-    const db = await getDisciplineDb();
+    const db = await getDisciplineDb(userKey);
     const score = parseScores(db.prepare('SELECT * FROM daily_scores WHERE date = ?').get(date));
-    const streak = addStreakAliases(await recomputeStreak());
+    const streak = addStreakAliases(await recomputeStreak(userKey));
     const reading = db.prepare('SELECT * FROM reading_log WHERE date = ? ORDER BY created_at DESC').all(date).map(normalizeLogRow);
     const exercise = db.prepare('SELECT * FROM exercise_log WHERE date = ? ORDER BY created_at DESC').all(date).map(normalizeLogRow);
-    const pomodoros = (await readPomodoros()).filter(session => pomodoroMatchesDate(session, date));
-    const events = (await readPomodoroEvents()).filter(event => eventMatchesDate(event, date));
-    const snapshots = await readTaskSnapshots();
+    const pomodoros = (await readPomodoros(userKey)).filter(session => pomodoroMatchesDate(session, date));
+    const events = (await readPomodoroEvents(userKey)).filter(event => eventMatchesDate(event, date));
+    const snapshots = await readTaskSnapshots(userKey);
     const taskSnapshot = snapshots[date] ? normalizeTaskSnapshot(date, snapshots[date]) : null;
-    const tasks = taskSnapshot ? taskSnapshot.tasks : buildReviewTasks(await readTasks(), date);
+    const tasks = taskSnapshot ? taskSnapshot.tasks : buildReviewTasks(await readTasks(userKey), date);
 
     sendJson(res, 200, {
       date,

@@ -1,92 +1,128 @@
-# Hermes Discipline Log Guide
+# Hermes Pomodoro Discipline Guide
 
-Use this guide when Hermes needs to write or read the new Discipline data in Keshi Pomodoro.
+Use this guide for Pomodoro-specific Discipline, task, Pomodoro, event, and
+cron-run payloads.
 
-## Base URL
+Central authentication, service access, agent keys, scopes, and gateway rules
+live in the central workspace document:
 
-- Production API: `https://pomodoro.xsmity.cloud/api/discipline`
-- Local dev proxy: `/api/discipline`
-- Optional frontend env override: `VITE_HERMES_DISCIPLINE_API_URL`
+```txt
+C:\letmecook\xsmity-central\_docs\access-management.md
+```
 
-Prefer the API over direct file access. Use files only if the API is unavailable.
+Hermes production requests should use the central gateway base:
 
-## What This API Stores
+```txt
+https://xsmity.cloud/api/agent/pomodoro
+```
 
-- Daily discipline scores, keyed by date
-- Reading logs, appended per entry
-- Exercise logs, appended per entry
-- Daily review snapshots that combine score, streak, reading, exercise, tasks, pomodoros, and events
+Direct Pomodoro API base for browser/service context:
 
-Pomodoro session logs and timer events are written by the main Pomodoro API:
-
-- `GET /api/pomodoros`
-- `POST /api/pomodoros`
-- `GET /api/events`
-- `POST /api/events`
+```txt
+https://pomodoro.xsmity.cloud/api
+```
 
 ## Date Rule
 
-All write and read endpoints use a date key in `YYYY-MM-DD` format.
+All daily writes and reads use `YYYY-MM-DD`.
+
+The business timezone is Asia/Bangkok. Hermes should explicitly send the exact
+business date it is updating instead of relying on server time.
 
 Example:
 
 ```txt
-2026-07-04
+2026-07-08
 ```
 
-Use the exact date string you intend to log against. If a required date is missing or invalid, the API returns `400`.
+Missing or invalid dates return `400`.
 
-## Score Blocks
+## Idempotency Rule
 
-Default score keys:
+For repeated automation writes, send an `Idempotency-Key` header.
 
-- `deep_work`
-- `reading`
-- `exercise`
-- `sleep`
-- `nutrition`
-- `discipline`
+Recommended format:
 
-Each score value should be a number from `0` to `10`.
+```txt
+hermes:<job>:<date>:<stable-item-id>
+```
 
-The API also accepts the spec score set used by Hermes:
+Examples:
 
-- `BUILD`
-- `JOB_APPS`
-- `FLEX`
-- `EXERCISE`
-- `FOCUS`
-- `SLEEP`
+```txt
+hermes:nightly-review:2026-07-08:scores
+hermes:reading:2026-07-08:deep-work-ch2
+hermes:exercise:2026-07-08:run-evening
+```
 
-Only send one complete set per request.
+Supported by the Pomodoro API for append/write flows including tasks, history,
+pomodoros, events, task snapshots, cron runs, reading logs, and exercise logs.
+
+`POST /discipline/scores` is already an upsert by date, but using an
+idempotency key is still fine for consistent agent behavior.
 
 ## Recommended Hermes Flow
 
-1. Read the day first with `GET /review?date=YYYY-MM-DD`.
-2. Write only the logs that are missing.
-3. Save scores with `POST /scores` when the day score changes.
-4. Append reading or exercise logs with `POST /reading` and `POST /exercise`.
-5. Re-read `GET /review?date=YYYY-MM-DD` to verify the final state.
+1. Read the day first:
 
-Important:
+```http
+GET /discipline/review?date=YYYY-MM-DD
+```
 
-- `POST /scores` is an upsert for that date.
-- `POST /reading` and `POST /exercise` are append-only.
-- There are no edit/delete endpoints for reading or exercise yet.
-- `GET /scores?date=YYYY-MM-DD` returns `404` if no score exists for that date.
-- `GET /scores?date=` or any missing required date returns `400`.
+2. Decide what is missing.
+3. Write only missing append-only logs.
+4. Save or update scores if needed.
+5. Write a cron-run record for observability if Hermes is running a scheduled job.
+6. Re-read the same review endpoint and trust the response as the source of truth.
 
-## Endpoints
+Use the full gateway URL in production:
 
-### 1. Save daily scores
+```txt
+https://xsmity.cloud/api/agent/pomodoro/discipline/review?date=YYYY-MM-DD
+```
 
-`POST /api/discipline/scores`
+## Discipline Endpoints
+
+All endpoints below are shown as Pomodoro paths. Prefix them with:
+
+```txt
+https://xsmity.cloud/api/agent/pomodoro
+```
+
+### Read Full Daily Review
+
+Best endpoint for Hermes to inspect a day:
+
+```http
+GET /discipline/review?date=YYYY-MM-DD
+```
+
+Returns:
+
+- `date`
+- `score`
+- `streak`
+- `reading`
+- `exercise`
+- `tasks`
+- `taskSnapshot`
+- `taskSnapshotSource`
+- `taskSnapshotGeneratedAt`
+- `pomodoros`
+- `events`
+- `generatedAt`
+
+### Save Daily Scores
+
+```http
+POST /discipline/scores
+```
 
 Body:
 
 ```json
 {
-  "date": "2026-07-04",
+  "date": "2026-07-08",
   "scores": {
     "deep_work": 8,
     "reading": 6,
@@ -99,34 +135,64 @@ Body:
 }
 ```
 
-Response returns:
+Accepted score keys are either the current set:
 
-- saved `score`
-- updated `streak`
-- `score.is_good_day` and `score.isGoodDay` are both returned
-- `streak.current_streak`, `streak.longest_streak`, and `streak.last_score_date` are also returned
+```txt
+deep_work
+reading
+exercise
+sleep
+nutrition
+discipline
+```
 
-### 2. Read daily scores
+or the Hermes spec set:
 
-`GET /api/discipline/scores?date=YYYY-MM-DD`
+```txt
+BUILD
+JOB_APPS
+FLEX
+EXERCISE
+FOCUS
+SLEEP
+```
 
-Returns the saved score object for that date. If no row exists, the API returns `404`.
+Only send one complete set per request. Each score must be `0` to `10`.
 
-### 3. Read score trend
+Response includes:
+
+- `score`
+- `streak`
+- camelCase and snake_case aliases such as `isGoodDay` and `is_good_day`
+
+### Read Daily Scores
+
+```http
+GET /discipline/scores?date=YYYY-MM-DD
+```
+
+Returns `404` if no score exists for that date.
+
+### Read Score Trend
 
 Preferred:
 
-`GET /api/discipline/scores/trend?from=YYYY-MM-DD&to=YYYY-MM-DD`
+```http
+GET /discipline/scores/trend?from=YYYY-MM-DD&to=YYYY-MM-DD
+```
 
-Legacy compatibility is still accepted:
+Legacy compatibility:
 
-`GET /api/discipline/scores/trend?days=7|30&endDate=YYYY-MM-DD`
+```http
+GET /discipline/scores/trend?days=7&endDate=YYYY-MM-DD
+GET /discipline/scores/trend?days=30&endDate=YYYY-MM-DD
+```
 
-Use this for dashboard charts and weekly or monthly summaries.
+### Read Streak
 
-### 4. Read streak
-
-`GET /api/discipline/streak`
+```http
+GET /discipline/streak
+```
 
 Returns:
 
@@ -134,17 +200,20 @@ Returns:
 - `longest`
 - `lastScoreDate`
 - `updatedAt`
-- plus snake_case aliases: `current_streak`, `longest_streak`, `last_score_date`, `updated_at`
+- snake_case aliases
 
-### 5. Save a reading log
+### Save Reading Log
 
-`POST /api/discipline/reading`
+```http
+POST /discipline/reading
+Idempotency-Key: hermes:reading:2026-07-08:deep-work-ch2
+```
 
 Body:
 
 ```json
 {
-  "date": "2026-07-04",
+  "date": "2026-07-08",
   "title": "Deep Work",
   "pages": 20,
   "minutes": 30,
@@ -152,19 +221,24 @@ Body:
 }
 ```
 
-### 6. Read reading logs
+### Read Reading Logs
 
-`GET /api/discipline/reading?date=YYYY-MM-DD`
+```http
+GET /discipline/reading?date=YYYY-MM-DD
+```
 
-### 7. Save an exercise log
+### Save Exercise Log
 
-`POST /api/discipline/exercise`
+```http
+POST /discipline/exercise
+Idempotency-Key: hermes:exercise:2026-07-08:run-evening
+```
 
 Body:
 
 ```json
 {
-  "date": "2026-07-04",
+  "date": "2026-07-08",
   "type": "Run",
   "durationMinutes": 25,
   "intensity": "moderate",
@@ -172,42 +246,233 @@ Body:
 }
 ```
 
-### 8. Read exercise logs
+### Read Exercise Logs
 
-`GET /api/discipline/exercise?date=YYYY-MM-DD`
+```http
+GET /discipline/exercise?date=YYYY-MM-DD
+```
 
-### 9. Read the full daily review
+## Pomodoro And Task Endpoints
 
-`GET /api/discipline/review?date=YYYY-MM-DD`
+All endpoints below also use the central gateway prefix:
 
-This is the best endpoint for Hermes to inspect a day. It returns:
+```txt
+https://xsmity.cloud/api/agent/pomodoro
+```
 
-- `date`
-- `score`
-- `streak`
-- `reading`
-- `exercise`
-- `tasks` (daily sprint task snapshot)
-- `pomodoros`
-- `events`
-- `generatedAt`
+### Settings
 
-## Example Hermes Decision Pattern
+```http
+GET /settings
+PATCH /settings
+```
 
-When Hermes needs to update a day:
+### History
 
-1. Fetch `GET /review?date=YYYY-MM-DD`.
-2. Check whether the score already exists.
-3. Save or overwrite the score with `POST /scores` if needed.
-4. Append reading or exercise entries only when there is new activity.
-5. Fetch `GET /review?date=YYYY-MM-DD` again and trust that payload as the source of truth.
+```http
+GET /history
+POST /history
+DELETE /history
+```
 
-## Direct VPS Files
+### Tasks
 
-If Hermes must inspect storage directly on the VPS, the important files are:
+```http
+GET /tasks
+POST /tasks
+PUT /tasks/:id
+DELETE /tasks/:id
+```
 
-- `/opt/pomodoro/data/discipline.sqlite`
-- `/opt/pomodoro/data/pomodoros.json`
-- `/opt/pomodoro/data/events.json`
+### Task Snapshots
 
-Use the API first. Use files only for fallback inspection.
+Use this when Hermes wants to freeze the task state for a completed day:
+
+```http
+GET /task-snapshots?date=YYYY-MM-DD
+POST /task-snapshots?date=YYYY-MM-DD
+PUT /task-snapshots?date=YYYY-MM-DD
+```
+
+Body:
+
+```json
+{
+  "tasks": [],
+  "source": "hermes"
+}
+```
+
+If `tasks` is omitted or empty, the server can build from live tasks.
+
+### Completed Pomodoros
+
+```http
+GET /pomodoros
+POST /pomodoros
+```
+
+Body:
+
+```json
+{
+  "id": "session-id",
+  "taskId": "task-1",
+  "taskTitle": "Build sprint tracker",
+  "durationMinutes": 25,
+  "completedAt": "2026-07-08T15:00:00.000Z",
+  "businessDate": "2026-07-08",
+  "source": "hermes"
+}
+```
+
+### Timer Events
+
+```http
+GET /events
+GET /events?date=YYYY-MM-DD
+POST /events
+```
+
+Known event types:
+
+```txt
+pomodoro_started
+pomodoro_paused
+pomodoro_resumed
+pomodoro_cancelled
+pomodoro_completed
+```
+
+### Cron Runs
+
+Use this to record Hermes scheduled job execution:
+
+```http
+GET /cron-runs
+GET /cron-runs?date=YYYY-MM-DD
+POST /cron-runs
+```
+
+Body:
+
+```json
+{
+  "job": "hermes-nightly-review",
+  "status": "success",
+  "businessDate": "2026-07-08",
+  "startedAt": "2026-07-08T16:55:00.000Z",
+  "finishedAt": "2026-07-08T16:56:00.000Z",
+  "summary": "Reviewed day and saved scores",
+  "source": "hermes"
+}
+```
+
+Allowed statuses:
+
+```txt
+running
+success
+failed
+partial
+```
+
+## Curl Examples
+
+Read a day:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer $HERMES_AGENT_KEY" \
+  "https://xsmity.cloud/api/agent/pomodoro/discipline/review?date=2026-07-08"
+```
+
+Save scores:
+
+```bash
+curl -sS -X POST \
+  -H "Authorization: Bearer $HERMES_AGENT_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: hermes:nightly-review:2026-07-08:scores" \
+  "https://xsmity.cloud/api/agent/pomodoro/discipline/scores" \
+  -d '{
+    "date": "2026-07-08",
+    "scores": {
+      "BUILD": 8,
+      "JOB_APPS": 6,
+      "FLEX": 6,
+      "EXERCISE": 5,
+      "FOCUS": 8,
+      "SLEEP": 7
+    },
+    "notes": "Good focus day"
+  }'
+```
+
+Record a cron run:
+
+```bash
+curl -sS -X POST \
+  -H "Authorization: Bearer $HERMES_AGENT_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: hermes:cron:2026-07-08:nightly-review" \
+  "https://xsmity.cloud/api/agent/pomodoro/cron-runs" \
+  -d '{
+    "job": "hermes-nightly-review",
+    "status": "success",
+    "businessDate": "2026-07-08",
+    "summary": "Saved nightly review",
+    "source": "hermes"
+  }'
+```
+
+## Local Development
+
+Pomodoro API local default:
+
+```txt
+http://127.0.0.1:4177/api
+```
+
+Important local env in Pomodoro:
+
+```txt
+CENTRAL_AUTH_ENABLED=true
+CENTRAL_AUTH_URL=http://localhost:3210
+XSMITY_SERVICE_TOKEN=<same shared secret>
+BUSINESS_TIME_ZONE=Asia/Bangkok
+```
+
+## Direct File Fallback
+
+Prefer the API. Use files only if the API is unavailable and Hermes is already
+on the VPS.
+
+Legacy/global files:
+
+```txt
+/opt/pomodoro/data/discipline.sqlite
+/opt/pomodoro/data/tasks.json
+/opt/pomodoro/data/pomodoros.json
+/opt/pomodoro/data/events.json
+/opt/pomodoro/data/app-settings.json
+/opt/pomodoro/data/history.json
+/opt/pomodoro/data/task-snapshots.json
+/opt/pomodoro/data/cron-runs.json
+```
+
+With central auth enabled, data may be scoped per central user:
+
+```txt
+/opt/pomodoro/data/users/<central-user-id>/
+```
+
+Do not write these files directly unless recovery requires it.
+
+## Practical Rules For Hermes
+
+- Use the central access-management document for auth and gateway rules.
+- Send explicit `businessDate` or `date` for daily records.
+- Send `Idempotency-Key` on repeated writes.
+- Read `GET /discipline/review?date=...` before and after updates.
+- Treat append-only logs as immutable unless a future edit/delete endpoint is added.

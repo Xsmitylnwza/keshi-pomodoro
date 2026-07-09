@@ -10,8 +10,6 @@ interface AnalyticsModalProps {
 }
 
 export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose, history, onBack }) => {
-    if (!isOpen) return null;
-
     // Calculate Stats
     const stats = useMemo(() => {
         const focusSessions = history.filter(h => h.mode === 'focus');
@@ -30,6 +28,8 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose,
 
         return { minutes: totalMinutes, sessions: totalSessions, bestTime, streak, topTask };
     }, [history]);
+
+    if (!isOpen) return null;
 
     // Generate Insights
     const getInsight = () => {

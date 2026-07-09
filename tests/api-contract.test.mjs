@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -297,4 +298,113 @@ test('required date parameters return 400', async () => {
 
   const missingReviewDate = await api('/api/discipline/review');
   assert.equal(missingReviewDate.response.status, 400);
+});
+
+test('central auth protects API routes when enabled', async () => {
+  const protectedDataDir = await mkdtemp(path.join(tmpdir(), 'keshi-auth-api-'));
+  const authPort = 50000 + Math.floor(Math.random() * 1000);
+  const appPort = 51000 + Math.floor(Math.random() * 1000);
+  const protectedBaseUrl = `http://127.0.0.1:${appPort}`;
+  const seenCookies = [];
+  let protectedServer;
+  let protectedStdout = '';
+  let protectedStderr = '';
+
+  const authServer = createServer((req, res) => {
+    if (req.url !== '/auth/session') {
+      res.writeHead(404, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'not_found' }));
+      return;
+    }
+
+    const cookie = req.headers.cookie ?? '';
+    seenCookies.push(cookie);
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({
+      authenticated: String(cookie).includes('xsmity.sid=valid'),
+      user: String(cookie).includes('xsmity.sid=valid')
+        ? { id: 'central-user-1', email: 'user@example.com', name: 'Central User' }
+        : null,
+    }));
+  });
+
+  await new Promise(resolve => authServer.listen(authPort, '127.0.0.1', resolve));
+
+  try {
+    protectedServer = spawn(process.execPath, ['server/pomodoro-server.mjs'], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        HOST: '127.0.0.1',
+        PORT: String(appPort),
+        POMODORO_DATA_DIR: protectedDataDir,
+        POMODORO_DIST_DIR: path.join(protectedDataDir, 'dist'),
+        CENTRAL_AUTH_ENABLED: 'true',
+        CENTRAL_AUTH_URL: `http://127.0.0.1:${authPort}`,
+        XSMITY_SERVICE_TOKEN: 'central-service-test-token',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    protectedServer.stdout.on('data', chunk => { protectedStdout += chunk.toString(); });
+    protectedServer.stderr.on('data', chunk => { protectedStderr += chunk.toString(); });
+
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
+      if (protectedServer.exitCode !== null) {
+        throw new Error(`protected server exited early\nstdout:\n${protectedStdout}\nstderr:\n${protectedStderr}`);
+      }
+
+      try {
+        const response = await fetch(`${protectedBaseUrl}/api/health`);
+        if (response.ok) break;
+      } catch {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    const health = await fetch(`${protectedBaseUrl}/api/health`);
+    assert.equal(health.status, 200);
+
+    const rejected = await fetch(`${protectedBaseUrl}/api/settings`, {
+      headers: { accept: 'application/json' },
+    });
+    assert.equal(rejected.status, 401);
+    assert.equal((await rejected.json()).error, 'auth_required');
+
+    const rejectedService = await fetch(`${protectedBaseUrl}/api/settings`, {
+      headers: {
+        accept: 'application/json',
+        'x-xsmity-service': 'xsmity-auth',
+        'x-xsmity-service-token': 'wrong-token',
+      },
+    });
+    assert.equal(rejectedService.status, 401);
+
+    const acceptedService = await fetch(`${protectedBaseUrl}/api/settings`, {
+      headers: {
+        accept: 'application/json',
+        'x-xsmity-service': 'xsmity-auth',
+        'x-xsmity-service-token': 'central-service-test-token',
+      },
+    });
+    assert.equal(acceptedService.status, 200);
+    assert.ok((await acceptedService.json()).settings);
+
+    const accepted = await fetch(`${protectedBaseUrl}/api/settings`, {
+      headers: {
+        accept: 'application/json',
+        cookie: 'xsmity.sid=valid',
+      },
+    });
+    assert.equal(accepted.status, 200);
+    assert.ok((await accepted.json()).settings);
+    assert.ok(seenCookies.includes('xsmity.sid=valid'));
+  } finally {
+    if (protectedServer && protectedServer.exitCode === null) {
+      protectedServer.kill();
+      await new Promise(resolve => protectedServer.once('exit', resolve));
+    }
+    await new Promise(resolve => authServer.close(resolve));
+    await rm(protectedDataDir, { recursive: true, force: true });
+  }
 });

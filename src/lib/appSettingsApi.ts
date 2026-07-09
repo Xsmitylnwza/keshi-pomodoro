@@ -55,6 +55,7 @@ async function appRequest<T>(path: string, init: RequestInit = {}) {
 
   const response = await fetch(buildApiUrl(path), {
     ...init,
+    credentials: 'include',
     headers,
   });
 

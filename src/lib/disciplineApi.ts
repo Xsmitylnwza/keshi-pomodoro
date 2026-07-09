@@ -163,6 +163,7 @@ async function disciplineRequest<T>(path: string, init: RequestInit = {}) {
 
   const response = await fetch(buildDisciplineUrl(path), {
     ...init,
+    credentials: 'include',
     headers,
   });
 

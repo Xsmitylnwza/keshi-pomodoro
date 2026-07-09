@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { useTheme } from '../context/ThemeContext';
+import { useTheme } from '../context/useTheme';
 import { RefreshCw, Image as ImageIcon, Trash2 } from 'lucide-react';
 
 const COLOR_PRESETS = [

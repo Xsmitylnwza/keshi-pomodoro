@@ -1,29 +1,10 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { fetchAppSettings, updateAppSettings } from '../lib/appSettingsApi';
-
-interface ThemeColors {
-    focus: string;
-    break: string;
-}
-
-interface ThemeContextType {
-    colors: ThemeColors;
-    updateColor: (mode: keyof ThemeColors, color: string) => void;
-    resetTheme: () => void;
-    leftImage: string | null;
-    rightImage: string | null;
-    updateLeftImage: (img: string | null) => void;
-    updateRightImage: (img: string | null) => void;
-}
-
-const DEFAULT_THEME: ThemeColors = {
-    focus: '#b91c1c',
-    break: '#34d399',
-};
-
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+import { DEFAULT_THEME, ThemeContext, type ThemeColors } from './ThemeContextCore';
+import { useAuth } from './useAuth';
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const auth = useAuth();
     const [colors, setColors] = useState<ThemeColors>(DEFAULT_THEME);
     const [leftImage, setLeftImage] = useState<string | null>(null);
     const [rightImage, setRightImage] = useState<string | null>(null);
@@ -31,6 +12,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const syncTimerRef = useRef<number | null>(null);
 
     useEffect(() => {
+        if (auth.loading || !auth.authenticated) return;
         let active = true;
 
         void fetchAppSettings()
@@ -53,7 +35,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return () => {
             active = false;
         };
-    }, []);
+    }, [auth.authenticated, auth.loading]);
 
     useEffect(() => {
         const root = document.documentElement;
@@ -62,6 +44,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }, [colors]);
 
     useEffect(() => {
+        if (!auth.authenticated) return;
         if (!hasHydratedRef.current) return;
         if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
 
@@ -81,7 +64,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return () => {
             if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
         };
-    }, [colors, leftImage, rightImage]);
+    }, [auth.authenticated, colors, leftImage, rightImage]);
 
     const updateColor = (mode: keyof ThemeColors, color: string) => {
         setColors(prev => ({ ...prev, [mode]: color }));
@@ -105,12 +88,4 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             {children}
         </ThemeContext.Provider>
     );
-};
-
-export const useTheme = () => {
-    const context = useContext(ThemeContext);
-    if (!context) {
-        throw new Error('useTheme must be used within a ThemeProvider');
-    }
-    return context;
 };

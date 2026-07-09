@@ -32,6 +32,9 @@ jobs:
       - name: Build app
         run: npm run build
 
+      - name: Run API contract tests
+        run: npm run test
+
       - name: Sync release files
         run: |
           mkdir -p /opt/pomodoro/releases/current/dist
@@ -41,6 +44,7 @@ jobs:
           rsync -az --delete server/ /opt/pomodoro/releases/current/server/
           rsync -az --delete docs/ /opt/pomodoro/releases/current/docs/
           rsync -az package.json /opt/pomodoro/releases/current/package.json
+          rsync -az package-lock.json /opt/pomodoro/releases/current/package-lock.json
 
       - name: Restart service
         run: systemctl restart pomodoro

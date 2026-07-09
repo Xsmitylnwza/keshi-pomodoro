@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BarChart3, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Clock3, GripVertical, ListTodo, Menu, Pause, Play, Plus, RotateCcw, Trash2, Wifi, WifiOff, X } from 'lucide-react';
+import { BarChart3, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Clock3, GripVertical, ListTodo, LogIn, LogOut, Menu, Pause, Play, Plus, RotateCcw, Trash2, UserCircle, Wifi, WifiOff, X } from 'lucide-react';
 import { CustomCursor } from './components/CustomCursor';
 import Background from './components/Background';
 import { DisciplineDashboard } from './components/DisciplineDashboard';
@@ -10,7 +10,8 @@ const SettingsModal = lazy(() => import('./components/Modals').then(m => ({ defa
 const HistoryModal = lazy(() => import('./components/Modals').then(m => ({ default: m.HistoryModal })));
 const AnalyticsModal = lazy(() => import('./components/AnalyticsModal').then(m => ({ default: m.AnalyticsModal })));
 import { RadioWidget } from './components/RadioWidget';
-import { useTheme } from './context/ThemeContext';
+import { useAuth } from './context/useAuth';
+import { useTheme } from './context/useTheme';
 import {
   createSprintTask,
   deleteSprintTask,
@@ -86,7 +87,53 @@ const taskBusinessDate = (task?: SprintTask | null) => {
 };
 const TASK_STATUS_ORDER: SprintTask['status'][] = ['todo', 'doing', 'done'];
 
+function AuthGate({
+  loading,
+  onLogin,
+  backgroundColor,
+}: {
+  loading: boolean;
+  onLogin: () => void;
+  backgroundColor: string;
+}) {
+  return (
+    <div
+      className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden p-6 text-paper-cream font-grotesk"
+      style={{ backgroundColor }}
+    >
+      <CustomCursor />
+      <Background mode="focus" />
+      <div className="noise-overlay"></div>
+      <motion.div
+        className="relative z-10 flex w-full max-w-sm flex-col items-center gap-5 border-2 border-paper-cream bg-black/75 p-7 text-center shadow-[10px_10px_0_rgba(0,0,0,0.75)] backdrop-blur-md"
+        variants={scaleIn}
+        initial="initial"
+        animate="animate"
+      >
+        <div className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-paper-cream text-paper-cream">
+          <UserCircle className="h-8 w-8" strokeWidth={3} />
+        </div>
+        <div>
+          <h1 className="font-marker text-4xl uppercase tracking-wider">Keshi</h1>
+          <p className="mt-2 text-sm font-bold uppercase tracking-widest text-white/55">
+            {loading ? 'Checking session' : 'Sign in to continue'}
+          </p>
+        </div>
+        <button
+          onClick={onLogin}
+          disabled={loading}
+          className="inline-flex min-h-12 w-full items-center justify-center gap-2 border-2 border-paper-cream bg-paper-cream px-4 py-3 text-sm font-black uppercase tracking-widest text-black transition-all hover:-translate-y-0.5 hover:bg-accent-red hover:text-white disabled:translate-y-0 disabled:cursor-wait disabled:opacity-60"
+        >
+          <LogIn className="h-5 w-5" strokeWidth={3} />
+          {loading ? 'Please wait' : 'Continue with Xsmity'}
+        </button>
+      </motion.div>
+    </div>
+  );
+}
+
 function App() {
+  const auth = useAuth();
   const [pathname, setPathname] = useState(() => (typeof window !== 'undefined' ? window.location.pathname : '/'));
   // State
   const [mode, setMode] = useState<TimerMode>('focus');
@@ -146,6 +193,11 @@ function App() {
 
   // Initial Load
   useEffect(() => {
+    if (auth.loading) return;
+    if (!auth.authenticated) {
+      return;
+    }
+
     let active = true;
 
     const loadInitialData = async () => {
@@ -206,7 +258,7 @@ function App() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [auth.authenticated, auth.loading]);
 
   const refreshTasks = async () => {
     setTaskSyncState('syncing');
@@ -243,40 +295,6 @@ function App() {
     link.href = '/logo.png';
   }, [mode]);
 
-  // Timer Logic - Using absolute time to handle browser tab throttling
-  useEffect(() => {
-    let interval: number;
-
-    if (isRunning && timeLeft > 0) {
-      // Set the end time when starting the timer
-      if (endTimeRef.current === null) {
-        endTimeRef.current = Date.now() + timeLeft * 1000;
-      }
-
-      // Check time every 250ms - sufficient for second-level display accuracy
-      interval = setInterval(() => {
-        if (endTimeRef.current !== null) {
-          const remaining = Math.ceil((endTimeRef.current - Date.now()) / 1000);
-
-          if (remaining <= 0) {
-            setTimeLeft(0);
-          } else {
-            setTimeLeft(remaining);
-          }
-        }
-      }, 250);
-    } else if (timeLeft === 0) {
-      handleComplete();
-    }
-
-    // Clear endTimeRef when timer is paused or stopped
-    if (!isRunning) {
-      endTimeRef.current = null;
-    }
-
-    return () => clearInterval(interval);
-  }, [isRunning, timeLeft]);
-
   // Handle visibility change - recalculate time when returning to tab
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -301,25 +319,7 @@ function App() {
     document.title = isDisciplineRoute ? `Discipline • ${m}:${s}` : `${m}:${s} • ${mode.toUpperCase()}`;
   }, [timeLeft, mode, isDisciplineRoute]);
 
-  // Keyboard Shortcuts (Enter / Spacebar to toggle timer)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is typing in an input or modal is open
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (isDisciplineRoute || showSettings || showHistory || taskPendingDelete) return;
-
-      if (e.key === ' ' || e.key === 'Enter') {
-        e.preventDefault();
-        toggleTimer();
-        playClick();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isDisciplineRoute, showSettings, showHistory, soundEnabled, taskPendingDelete]);
-
-  const handleComplete = () => {
+  function handleComplete() {
     setIsRunning(false);
     if (soundEnabled && audioRef.current) audioRef.current.play();
     logTimerEvent('pomodoro_completed', {
@@ -414,7 +414,7 @@ function App() {
     if (!isRunning) {
       resetTimer();
     }
-  };
+  }
 
   const clearHistory = () => {
     setHistory([]);
@@ -552,7 +552,7 @@ function App() {
     sessionIdRef.current = null;
   };
 
-  const toggleTimer = () => {
+  function toggleTimer() {
     if (isRunning) {
       logTimerEvent('pomodoro_paused');
       setIsRunning(false);
@@ -565,7 +565,63 @@ function App() {
       sessionId: isFreshRun ? crypto.randomUUID() : sessionIdRef.current ?? undefined,
     });
     setIsRunning(true);
-  };
+  }
+
+  // Timer Logic - Using absolute time to handle browser tab throttling
+  useEffect(() => {
+    let interval: number | undefined;
+    let completionTimer: number | undefined;
+
+    if (isRunning && timeLeft > 0) {
+      // Set the end time when starting the timer
+      if (endTimeRef.current === null) {
+        endTimeRef.current = Date.now() + timeLeft * 1000;
+      }
+
+      // Check time every 250ms - sufficient for second-level display accuracy
+      interval = setInterval(() => {
+        if (endTimeRef.current !== null) {
+          const remaining = Math.ceil((endTimeRef.current - Date.now()) / 1000);
+
+          if (remaining <= 0) {
+            setTimeLeft(0);
+          } else {
+            setTimeLeft(remaining);
+          }
+        }
+      }, 250);
+    } else if (timeLeft === 0) {
+      completionTimer = window.setTimeout(handleComplete, 0);
+    }
+
+    // Clear endTimeRef when timer is paused or stopped
+    if (!isRunning) {
+      endTimeRef.current = null;
+    }
+
+    return () => {
+      if (interval !== undefined) clearInterval(interval);
+      if (completionTimer !== undefined) window.clearTimeout(completionTimer);
+    };
+  }, [isRunning, timeLeft]);
+
+  // Keyboard Shortcuts (Enter / Spacebar to toggle timer)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input or modal is open
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (isDisciplineRoute || showSettings || showHistory || taskPendingDelete) return;
+
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        toggleTimer();
+        playClick();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isDisciplineRoute, showSettings, showHistory, soundEnabled, taskPendingDelete]);
 
   const addTask = () => {
     const title = newTaskTitle.trim();
@@ -763,6 +819,16 @@ function App() {
     ? '#080808'
     : `color-mix(in srgb, ${colors.break} 10%, #050505)`;
 
+  if (auth.loading || !auth.authenticated) {
+    return (
+      <AuthGate
+        loading={auth.loading}
+        onLogin={() => auth.login()}
+        backgroundColor={dynamicBg}
+      />
+    );
+  }
+
   if (isDisciplineRoute) {
     return <DisciplineDashboard onNavigateHome={() => navigateTo('/')} />;
   }
@@ -827,6 +893,23 @@ function App() {
               title="Discipline dashboard"
             >
               <BarChart3 className="w-5 h-5" strokeWidth={3} />
+            </motion.button>
+            <motion.button
+              onClick={() => { playClick(); auth.logout(); }}
+              className="inline-flex min-h-11 items-center gap-2 border-2 border-transparent px-3 py-2 text-sm font-black uppercase tracking-widest text-white/65 transition-all hover:border-white/25 hover:bg-white/10 hover:text-white"
+              variants={fadeDown}
+              initial="initial"
+              animate="animate"
+              transition={{ delay: entranceDelays.menu + 0.1 }}
+              whileTap={{ scale: 0.95 }}
+              aria-label="Sign out"
+              title={auth.user?.email ? `Signed in as ${auth.user.email}` : 'Signed in'}
+            >
+              <UserCircle className="h-5 w-5" strokeWidth={3} />
+              <span className="hidden max-w-36 truncate md:inline">
+                {auth.user?.name || auth.user?.email || 'Account'}
+              </span>
+              <LogOut className="h-4 w-4" strokeWidth={3} />
             </motion.button>
           </div>
           <motion.div

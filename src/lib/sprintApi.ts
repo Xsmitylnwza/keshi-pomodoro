@@ -27,6 +27,7 @@ export function normalizeTasks(tasks: SprintTask[]): SprintTask[] {
 
 export async function fetchSprintTasks(): Promise<SprintTask[]> {
   const response = await fetch(buildApiUrl('/tasks'), {
+    credentials: 'include',
     headers: { accept: 'application/json' },
   });
 
@@ -42,6 +43,7 @@ export async function fetchSprintTasks(): Promise<SprintTask[]> {
 export async function createSprintTask(task: SprintTask) {
   const response = await fetch(buildApiUrl('/tasks'), {
     method: 'POST',
+    credentials: 'include',
     headers: {
       accept: 'application/json',
       'content-type': 'application/json',
@@ -57,6 +59,7 @@ export async function createSprintTask(task: SprintTask) {
 export async function updateSprintTask(task: SprintTask) {
   const response = await fetch(buildApiUrl(`/tasks/${encodeURIComponent(task.id)}`), {
     method: 'PUT',
+    credentials: 'include',
     headers: {
       accept: 'application/json',
       'content-type': 'application/json',
@@ -72,6 +75,7 @@ export async function updateSprintTask(task: SprintTask) {
 export async function deleteSprintTask(taskId: string) {
   const response = await fetch(buildApiUrl(`/tasks/${encodeURIComponent(taskId)}`), {
     method: 'DELETE',
+    credentials: 'include',
     headers: { accept: 'application/json' },
   });
 
@@ -84,6 +88,7 @@ export async function pushPomodoroSession(item: HistoryItem) {
 
   const response = await fetch(buildApiUrl('/pomodoros'), {
     method: 'POST',
+    credentials: 'include',
     headers: {
       accept: 'application/json',
       'content-type': 'application/json',
@@ -107,6 +112,7 @@ export async function pushPomodoroSession(item: HistoryItem) {
 export async function pushPomodoroEvent(event: PomodoroEvent) {
   const response = await fetch(buildApiUrl('/events'), {
     method: 'POST',
+    credentials: 'include',
     headers: {
       accept: 'application/json',
       'content-type': 'application/json',
