@@ -1074,18 +1074,20 @@ export function DisciplineDashboard({
   );
 }
 
-function AccountMenu({
+export function AccountMenu({
   user,
   onOpenSettings,
   onOpenHistory,
   onOpenAnalytics,
   onLogout,
+  compactOnMobile = false,
 }: {
   user: CentralAuthUser | null;
   onOpenSettings: () => void;
   onOpenHistory: () => void;
   onOpenAnalytics: () => void;
   onLogout: () => void;
+  compactOnMobile?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
@@ -1153,11 +1155,16 @@ function AccountMenu({
           setIsOpen(true);
           window.setTimeout(() => menuItems()[0]?.focus(), 0);
         }}
-        className={`flex min-h-11 max-w-[12.5rem] items-center gap-2 border-2 px-2.5 text-left transition sm:max-w-[16rem] sm:px-3 ${
+        className={`flex min-h-11 items-center gap-2 border-2 text-left transition ${
+          compactOnMobile
+            ? 'w-11 max-w-11 justify-center px-2 min-[480px]:w-auto min-[480px]:max-w-[12.5rem] min-[480px]:justify-start min-[480px]:px-3 md:max-w-[16rem]'
+            : 'max-w-[12.5rem] px-2.5 sm:max-w-[16rem] sm:px-3'
+        } ${
           isOpen
             ? 'border-accent-green/60 bg-accent-green/10 text-white'
             : 'border-white/10 bg-white/[0.03] text-white/65 hover:border-white/30 hover:bg-white/[0.07] hover:text-white'
         } focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green active:translate-y-px`}
+        aria-label={`Open account menu for ${name}`}
         aria-haspopup="menu"
         aria-expanded={isOpen}
         aria-controls="discipline-account-menu"
@@ -1169,11 +1176,11 @@ function AccountMenu({
             <UserCircle className="h-4 w-4" strokeWidth={2.5} />
           )}
         </span>
-        <span className="min-w-0 flex-1">
+        <span className={`min-w-0 flex-1 ${compactOnMobile ? 'hidden min-[480px]:block' : ''}`}>
           <span className="block truncate text-xs font-black text-white">{name}</span>
           <span className="hidden truncate text-[9px] font-bold uppercase tracking-[0.12em] text-white/35 sm:block">Account</span>
         </span>
-        <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} strokeWidth={3} />
+        <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${compactOnMobile ? 'hidden min-[480px]:block' : ''} ${isOpen ? 'rotate-180' : ''}`} strokeWidth={3} />
       </button>
 
       <AnimatePresence>

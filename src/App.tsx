@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BarChart3, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Clock3, GripVertical, ListTodo, LogIn, LogOut, Menu, Pause, Play, Plus, RotateCcw, Trash2, UserCircle, Wifi, WifiOff, X } from 'lucide-react';
+import { BarChart3, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Clock3, GripVertical, ListTodo, LogIn, Menu, Pause, Play, Plus, RotateCcw, Trash2, UserCircle, Wifi, WifiOff, X } from 'lucide-react';
 import { CustomCursor } from './components/CustomCursor';
 import Background from './components/Background';
-import { DisciplineDashboard } from './components/DisciplineDashboard';
+import { AccountMenu, DisciplineDashboard } from './components/DisciplineDashboard';
 
 // Lazy load modals for smaller initial bundle
 const SettingsModal = lazy(() => import('./components/Modals').then(m => ({ default: m.SettingsModal })));
@@ -906,7 +906,7 @@ function App() {
       <div className="noise-overlay"></div>
 
       {/* Navigation (Floating / Minimal) */}
-      <nav className="fixed top-0 left-0 right-0 z-40 p-3 sm:p-4 md:p-6 flex justify-between items-start" style={{ viewTransitionName: 'main-nav' }}>
+      <nav className="fixed top-0 left-0 right-0 z-[80] p-3 sm:p-4 md:p-6 flex justify-between items-start" style={{ viewTransitionName: 'main-nav' }}>
         <motion.div
           className="flex items-center gap-2 sm:gap-4 group cursor-pointer"
           variants={fadeDown}
@@ -951,23 +951,21 @@ function App() {
             >
               <BarChart3 className="w-5 h-5" strokeWidth={3} />
             </motion.button>
-            <motion.button
-              onClick={() => { playClick(); auth.logout(); }}
-              className="inline-flex min-h-11 items-center gap-2 border-2 border-transparent px-3 py-2 text-sm font-black uppercase tracking-widest text-white/65 transition-all hover:border-white/25 hover:bg-white/10 hover:text-white"
+            <motion.div
               variants={fadeDown}
               initial="initial"
               animate="animate"
               transition={{ delay: entranceDelays.menu + 0.1 }}
-              whileTap={{ scale: 0.95 }}
-              aria-label="Sign out"
-              title={auth.user?.email ? `Signed in as ${auth.user.email}` : 'Signed in'}
             >
-              <UserCircle className="h-5 w-5" strokeWidth={3} />
-              <span className="hidden max-w-36 truncate md:inline">
-                {auth.user?.name || auth.user?.email || 'Account'}
-              </span>
-              <LogOut className="h-4 w-4" strokeWidth={3} />
-            </motion.button>
+              <AccountMenu
+                user={auth.user}
+                onOpenSettings={() => { setShowSettings(true); playClick(); }}
+                onOpenHistory={() => { setShowHistory(true); playClick(); }}
+                onOpenAnalytics={() => { setShowAnalytics(true); playClick(); }}
+                onLogout={() => { playClick(); auth.logout(); }}
+                compactOnMobile
+              />
+            </motion.div>
           </div>
           <motion.div
             className={`${mode === 'focus' ? 'bg-accent-red' : 'bg-accent-green'} ${mode === 'focus' ? 'text-white' : 'text-black'} text-[10px] px-2 py-0.5 font-bold shadow-sm transition-colors duration-500`}
