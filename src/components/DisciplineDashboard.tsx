@@ -3,22 +3,29 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   Activity,
   Apple,
+  ArrowRight,
   BadgeCheck,
   BarChart3,
   BookOpen,
   CalendarDays,
+  CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
   Dumbbell,
   Flame,
+  History as HistoryIcon,
+  LogOut,
   Moon,
   Pause,
   Play,
   Plus,
   RefreshCcw,
   RotateCcw,
-  TrendingUp,
+  Settings2,
+  Target,
+  UserCircle,
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -34,67 +41,14 @@ import {
   fetchDisciplineTrend,
   saveDisciplineScores,
 } from '../lib/disciplineApi';
-import {
-  buildHabitTrendSummaries,
-  buildHermesInsightPanel,
-  buildSevenDayMomentumSummary,
-  buildThirtyDayHeatmapCells,
-  getLatestCompletedDateKey,
-} from '../lib/disciplineDashboardModel';
+import type { CentralAuthUser } from '../lib/centralAuth';
 
 const SCORE_MAX = 10;
 const DAY_SCORE_MAX = DISCIPLINE_SCORE_BLOCKS.length * SCORE_MAX;
-const MOMENTUM_DAYS = 7;
 const HEATMAP_DAYS = 30;
+const CONSISTENCY_DAYS = 7;
 
 type ScoreDraft = Record<DisciplineScoreKey, number>;
-
-type MomentumSummaryLike = {
-  consistencyRate?: number;
-  shownUpDays?: number;
-  availableDays?: number;
-  averageScore?: number;
-  bestHabit?: HabitStatLike | string | null;
-  weakestHabit?: HabitStatLike | string | null;
-  recoveryRisk?: boolean | string | { isAtRisk?: boolean; guidance?: string; level?: string } | null;
-  days?: MomentumDayLike[];
-};
-
-type MomentumDayLike = {
-  date?: string;
-  total?: number;
-  touchedHabitKeys?: string[];
-  touchedHabits?: string[];
-  habitKeys?: string[];
-  scores?: Record<string, number> | null;
-};
-
-type HeatmapCellLike = {
-  date?: string;
-  total?: number;
-  intensity?: number;
-  topHabit?: string | null;
-  topHabitLabel?: string | null;
-  label?: string;
-};
-
-type HabitTrendLike = {
-  key?: string;
-  label?: string;
-  average?: number;
-  delta?: number;
-  direction?: string;
-  values?: Array<number | null>;
-  series?: Array<number | null>;
-  points?: Array<number | null>;
-  sparkline?: Array<number | null>;
-};
-
-type HabitStatLike = {
-  key?: string;
-  label?: string;
-  average?: number;
-};
 
 const SCORE_META: Record<
   DisciplineScoreKey,
@@ -104,7 +58,6 @@ const SCORE_META: Record<
     track: string;
     fill: string;
     tint: string;
-    stroke: string;
   }
 > = {
   deep_work: {
@@ -113,7 +66,6 @@ const SCORE_META: Record<
     track: 'bg-accent-red/15',
     fill: 'bg-accent-red',
     tint: 'bg-accent-red/10',
-    stroke: '#f87171',
   },
   reading: {
     icon: BookOpen,
@@ -121,7 +73,6 @@ const SCORE_META: Record<
     track: 'bg-amber-400/15',
     fill: 'bg-amber-400',
     tint: 'bg-amber-400/10',
-    stroke: '#fbbf24',
   },
   exercise: {
     icon: Dumbbell,
@@ -129,7 +80,6 @@ const SCORE_META: Record<
     track: 'bg-accent-green/15',
     fill: 'bg-accent-green',
     tint: 'bg-accent-green/10',
-    stroke: '#34d399',
   },
   sleep: {
     icon: Moon,
@@ -137,7 +87,6 @@ const SCORE_META: Record<
     track: 'bg-sky-400/15',
     fill: 'bg-sky-400',
     tint: 'bg-sky-400/10',
-    stroke: '#38bdf8',
   },
   nutrition: {
     icon: Apple,
@@ -145,7 +94,6 @@ const SCORE_META: Record<
     track: 'bg-lime-400/15',
     fill: 'bg-lime-400',
     tint: 'bg-lime-400/10',
-    stroke: '#a3e635',
   },
   discipline: {
     icon: BadgeCheck,
@@ -153,7 +101,6 @@ const SCORE_META: Record<
     track: 'bg-white/10',
     fill: 'bg-white',
     tint: 'bg-white/10',
-    stroke: '#f8fafc',
   },
 };
 
@@ -162,15 +109,7 @@ const EVENT_ICON: Record<DisciplineReviewPayload['events'][number]['type'], Luci
   pomodoro_paused: Pause,
   pomodoro_resumed: RefreshCcw,
   pomodoro_cancelled: X,
-  pomodoro_completed: Clock3,
-};
-
-const EVENT_STYLES: Record<DisciplineReviewPayload['events'][number]['type'], string> = {
-  pomodoro_started: 'border-accent-green/20 bg-accent-green/5 text-accent-green',
-  pomodoro_paused: 'border-amber-400/20 bg-amber-400/5 text-amber-400',
-  pomodoro_resumed: 'border-sky-400/20 bg-sky-400/5 text-sky-400',
-  pomodoro_cancelled: 'border-white/10 bg-white/5 text-white/60',
-  pomodoro_completed: 'border-accent-red/20 bg-accent-red/5 text-accent-red',
+  pomodoro_completed: CheckCircle2,
 };
 
 const toDateKey = (date: Date) => {
@@ -178,6 +117,12 @@ const toDateKey = (date: Date) => {
   const month = `${date.getMonth() + 1}`.padStart(2, '0');
   const day = `${date.getDate()}`.padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+const latestCompletedDateKey = (referenceDate = new Date()) => {
+  const completed = new Date(referenceDate);
+  completed.setDate(completed.getDate() - 1);
+  return toDateKey(completed);
 };
 
 const shiftDateKey = (dateKey: string, days: number) => {
@@ -188,14 +133,15 @@ const shiftDateKey = (dateKey: string, days: number) => {
 
 const formatLongDate = (dateKey: string) =>
   new Date(`${dateKey}T12:00:00`).toLocaleDateString('en-US', {
-    weekday: 'short',
+    weekday: 'long',
     month: 'short',
     day: 'numeric',
   });
 
-const formatShortDay = (dateKey: string) =>
+const formatShortDate = (dateKey: string) =>
   new Date(`${dateKey}T12:00:00`).toLocaleDateString('en-US', {
-    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
   });
 
 const formatDateTime = (value: string) =>
@@ -205,8 +151,6 @@ const formatDateTime = (value: string) =>
     hour: 'numeric',
     minute: '2-digit',
   });
-
-const latestCompletedDateKey = (referenceDate?: Date) => getLatestCompletedDateKey({ referenceDate });
 
 const createEmptyScores = (): ScoreDraft =>
   Object.fromEntries(DISCIPLINE_SCORE_BLOCKS.map(block => [block.key, 0])) as ScoreDraft;
@@ -222,117 +166,60 @@ const normalizeScores = (scores?: Record<string, number> | null): ScoreDraft => 
 
 const clampDateKey = (dateKey: string, maxDateKey: string) => (dateKey > maxDateKey ? maxDateKey : dateKey);
 
-const safeModel = <T,>(factory: () => T, fallback: T) => {
-  try {
-    return factory();
-  } catch {
-    return fallback;
-  }
-};
+const summarizeReview = (review: DisciplineReviewPayload | null) => {
+  const tasks = review?.tasks ?? [];
+  const pomodoros = review?.pomodoros ?? [];
+  const reading = review?.reading ?? [];
+  const exercise = review?.exercise ?? [];
 
-const coerceNumber = (value: unknown) => {
-  const next = Number(value);
-  return Number.isFinite(next) ? next : null;
-};
-
-const coerceSeries = (trend: HabitTrendLike | undefined) => {
-  const values = trend?.values ?? trend?.series ?? trend?.points ?? trend?.sparkline;
-  if (!Array.isArray(values)) return null;
-  return values.map(value => {
-    const next = coerceNumber(value);
-    return next === null ? 0 : Math.min(SCORE_MAX, Math.max(0, next));
-  });
-};
-
-const keyFromLabel = (value: string) => {
-  const normalized = value.trim().toLowerCase().replace(/\s+/g, '_');
-  return DISCIPLINE_SCORE_BLOCKS.find(block => block.key === normalized)?.key ?? null;
-};
-
-const resolveHabitLabel = (value: HabitStatLike | string | null | undefined) => {
-  if (!value) return 'None';
-  if (typeof value === 'string') {
-    const key = keyFromLabel(value);
-    return DISCIPLINE_SCORE_BLOCKS.find(block => block.key === key)?.label ?? value;
-  }
-  if (value.label) return value.label;
-  if (value.key) {
-    return DISCIPLINE_SCORE_BLOCKS.find(block => block.key === value.key)?.label ?? value.key;
-  }
-  return 'None';
-};
-
-const resolveHabitAverage = (value: HabitStatLike | string | null | undefined) => {
-  if (!value || typeof value === 'string') return null;
-  const average = coerceNumber(value.average);
-  return average === null ? null : average;
-};
-
-const getTouchedHabitKeys = (scores?: Record<string, number> | null) =>
-  DISCIPLINE_SCORE_BLOCKS.filter(block => Number(scores?.[block.key] ?? 0) > 0).map(block => block.key);
-
-const getTopHabitKey = (scores?: Record<string, number> | null) => {
-  let bestKey: DisciplineScoreKey | null = null;
-  let bestValue = -1;
-  for (const block of DISCIPLINE_SCORE_BLOCKS) {
-    const value = Number(scores?.[block.key] ?? 0);
-    if (value > bestValue) {
-      bestValue = value;
-      bestKey = block.key;
-    }
-  }
-  return bestValue > 0 ? bestKey : null;
+  return {
+    taskCount: tasks.length,
+    completedTasks: tasks.filter(task => task.status === 'done').length,
+    pomodoroCount: pomodoros.length,
+    focusMinutes: pomodoros.reduce((sum, session) => sum + Number(session.durationMinutes || 0), 0),
+    readingPages: reading.reduce((sum, entry) => sum + Number(entry.pages || 0), 0),
+    readingMinutes: reading.reduce((sum, entry) => sum + Number(entry.minutes || 0), 0),
+    exerciseMinutes: exercise.reduce((sum, entry) => sum + Number(entry.durationMinutes || 0), 0),
+  };
 };
 
 const getHeatmapTone = (intensity: number) => {
-  if (intensity >= 0.85) return 'bg-accent-green';
-  if (intensity >= 0.65) return 'bg-lime-400';
-  if (intensity >= 0.45) return 'bg-amber-400';
-  if (intensity > 0) return 'bg-white/30';
-  return 'bg-white/8';
+  if (intensity >= 0.82) return 'bg-accent-green shadow-[0_0_12px_rgba(52,211,153,0.24)]';
+  if (intensity >= 0.58) return 'bg-accent-green/75';
+  if (intensity >= 0.34) return 'bg-accent-green/45';
+  if (intensity > 0) return 'bg-accent-green/20';
+  return 'bg-white/[0.06]';
 };
 
-const normalizeDirection = (direction: string | undefined, delta: number) => {
-  if (direction === 'up' || direction === 'down' || direction === 'flat') return direction;
-  if (delta > 0.35) return 'up';
-  if (delta < -0.35) return 'down';
-  return 'flat';
-};
-
-const getDirectionLabel = (direction: 'up' | 'down' | 'flat') => {
-  if (direction === 'up') return 'Rising';
-  if (direction === 'down') return 'Falling';
-  return 'Flat';
-};
-
-const getRecoveryRiskLabel = (value: boolean | string | { isAtRisk?: boolean; guidance?: string; level?: string } | null | undefined) => {
-  if (typeof value === 'string') return value;
-  if (value && typeof value === 'object') {
-    if (value.level === 'high') return 'High';
-    if (value.level === 'moderate') return 'Moderate';
-    if (value.level === 'low') return 'Stable';
-    if (typeof value.isAtRisk === 'boolean') return value.isAtRisk ? 'Watch recovery' : 'Stable';
-  }
-  return value ? 'Watch recovery' : 'Stable';
-};
-
-const getRecoveryRiskDetail = (value: boolean | string | { isAtRisk?: boolean; guidance?: string; level?: string } | null | undefined) => {
-  if (value && typeof value === 'object' && typeof value.guidance === 'string' && value.guidance) {
-    return value.guidance;
-  }
-  if (typeof value === 'string') return value;
-  return value ? 'Protect sleep, movement, and food before adding load.' : 'Sleep, exercise, nutrition vs workload';
+const scorePercent = (review: DisciplineReviewPayload | null) => {
+  if (!review?.score) return null;
+  return Math.round(Math.max(0, Math.min(1, review.score.total / DAY_SCORE_MAX)) * 100);
 };
 
 interface DisciplineDashboardProps {
   onNavigateHome: () => void;
+  onOpenSettings: () => void;
+  onOpenHistory: () => void;
+  onOpenAnalytics: () => void;
+  onLogout: () => void;
+  user: CentralAuthUser | null;
+  focusSessionMinutes: number;
 }
 
-export function DisciplineDashboard({ onNavigateHome }: DisciplineDashboardProps) {
+export function DisciplineDashboard({
+  onNavigateHome,
+  onOpenSettings,
+  onOpenHistory,
+  onOpenAnalytics,
+  onLogout,
+  user,
+  focusSessionMinutes,
+}: DisciplineDashboardProps) {
+  const [todayDate, setTodayDate] = useState(() => toDateKey(new Date()));
   const [dataThroughDate, setDataThroughDate] = useState(() => latestCompletedDateKey(new Date()));
   const [selectedDate, setSelectedDate] = useState(() => latestCompletedDateKey(new Date()));
-  const [review, setReview] = useState<DisciplineReviewPayload | null>(null);
-  const [reviewDateLoaded, setReviewDateLoaded] = useState<string | null>(null);
+  const [todayReview, setTodayReview] = useState<DisciplineReviewPayload | null>(null);
+  const [selectedReview, setSelectedReview] = useState<DisciplineReviewPayload | null>(null);
   const [trend, setTrend] = useState<DisciplineTrendPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -352,367 +239,174 @@ export function DisciplineDashboard({ onNavigateHome }: DisciplineDashboardProps
   const [savingReading, setSavingReading] = useState(false);
   const [savingExercise, setSavingExercise] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [statusTone, setStatusTone] = useState<'idle' | 'success' | 'error'>('idle');
+  const [statusTone, setStatusTone] = useState<'success' | 'error'>('success');
   const loadRequestRef = useRef(0);
 
-  const loadData = useCallback(async (reviewDate: string, trendEndDate: string) => {
+  const loadData = useCallback(async (reviewDate: string, trendEndDate: string, liveDate: string) => {
     const requestId = loadRequestRef.current + 1;
     loadRequestRef.current = requestId;
     const clampedReviewDate = clampDateKey(reviewDate, trendEndDate);
     setLoading(true);
     setError(null);
-    setReview(null);
-    setReviewDateLoaded(null);
-    setScoreDraft(createEmptyScores());
-    setScoreNotes('');
 
     try {
-      const [reviewPayload, trendPayload] = await Promise.all([
-        fetchDisciplineReview(clampedReviewDate),
+      const selectedRequest = fetchDisciplineReview(clampedReviewDate);
+      const todayRequest = clampedReviewDate === liveDate ? selectedRequest : fetchDisciplineReview(liveDate);
+      const [reviewPayload, livePayload, trendPayload] = await Promise.all([
+        selectedRequest,
+        todayRequest,
         fetchDisciplineTrend(HEATMAP_DAYS, trendEndDate),
       ]);
 
       if (loadRequestRef.current !== requestId) return;
 
       setSelectedDate(clampedReviewDate);
-      setReview(reviewPayload);
-      setReviewDateLoaded(clampedReviewDate);
+      setSelectedReview(reviewPayload);
+      setTodayReview(livePayload);
       setTrend(trendPayload.trend);
       setScoreDraft(normalizeScores(reviewPayload.score?.scores));
       setScoreNotes(reviewPayload.score?.notes ?? '');
     } catch (fetchError) {
       if (loadRequestRef.current !== requestId) return;
-      const message = fetchError instanceof Error ? fetchError.message : 'Unable to load discipline data';
-      setError(message);
-      setReview(null);
-      setReviewDateLoaded(null);
-      setTrend([]);
-      setScoreDraft(createEmptyScores());
-      setScoreNotes('');
+      setError(fetchError instanceof Error ? fetchError.message : 'Unable to load discipline data');
     } finally {
-      if (loadRequestRef.current === requestId) {
-        setLoading(false);
-      }
+      if (loadRequestRef.current === requestId) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadData(selectedDate, dataThroughDate);
-  }, [dataThroughDate, loadData, selectedDate]);
+    void loadData(selectedDate, dataThroughDate, todayDate);
+  }, [dataThroughDate, loadData, selectedDate, todayDate]);
 
   useEffect(() => {
     setStatusMessage(null);
-    setStatusTone('idle');
-  }, [dataThroughDate, selectedDate]);
+  }, [selectedDate]);
 
-  const selectedReviewLoaded = reviewDateLoaded === selectedDate;
-  const selectedReview = selectedReviewLoaded ? review : null;
-  const selectedReviewLoading = loading && !selectedReviewLoaded;
-  const displayedScoreDraft = useMemo(
-    () => (selectedReviewLoaded ? scoreDraft : createEmptyScores()),
-    [scoreDraft, selectedReviewLoaded],
-  );
-  const hasTrendHistory = useMemo(
-    () =>
-      trend.some(point => {
-        if (Number(point.total ?? 0) > 0) return true;
-        return DISCIPLINE_SCORE_BLOCKS.some(block => Number(point.scores?.[block.key] ?? 0) > 0);
-      }),
-    [trend],
-  );
+  const todaySummary = useMemo(() => summarizeReview(todayReview), [todayReview]);
+  const selectedSummary = useMemo(() => summarizeReview(selectedReview), [selectedReview]);
 
-  const scoreStats = useMemo(() => {
-    const scores = selectedReview?.score?.scores ?? displayedScoreDraft;
-    const values = DISCIPLINE_SCORE_BLOCKS.map(block => Number(scores[block.key] ?? 0));
-    const total = selectedReview?.score?.total ?? values.reduce((sum, value) => sum + value, 0);
-    const average = values.length ? Number((total / values.length).toFixed(2)) : 0;
-    const completed = values.filter(value => value > 0).length;
-    return { total, average, completed };
-  }, [displayedScoreDraft, selectedReview]);
+  const taskProgress = todaySummary.taskCount
+    ? Math.round((todaySummary.completedTasks / todaySummary.taskCount) * 100)
+    : null;
+  const todayScore = scorePercent(todayReview);
+  const currentStreak = todayReview?.streak.current ?? todayReview?.streak.current_streak ?? selectedReview?.streak.current ?? 0;
 
-  const summary = useMemo(() => {
-    const pomodoros = selectedReview?.pomodoros ?? [];
-    const reading = selectedReview?.reading ?? [];
-    const exercise = selectedReview?.exercise ?? [];
-    const events = selectedReview?.events ?? [];
-    const tasks = selectedReview?.tasks ?? [];
-    const totalReadingPages = reading.reduce((sum, entry) => sum + Number(entry.pages || 0), 0);
-    const totalReadingMinutes = reading.reduce((sum, entry) => sum + Number(entry.minutes || 0), 0);
-    const totalExerciseMinutes = exercise.reduce((sum, entry) => sum + Number(entry.durationMinutes || 0), 0);
-    const totalPomodoroMinutes = pomodoros.reduce((sum, entry) => sum + Number(entry.durationMinutes || 0), 0);
-    const completedTasks = tasks.filter(task => task.status === 'done').length;
-    const eventCounts = events.reduce<Record<string, number>>((acc, event) => {
-      acc[event.type] = (acc[event.type] ?? 0) + 1;
-      return acc;
-    }, {});
+  const nextTask = useMemo(() => {
+    const tasks = [...(todayReview?.tasks ?? [])].sort((a, b) => (b.order ?? 0) - (a.order ?? 0));
+    return tasks.find(task => task.status === 'doing') ?? tasks.find(task => task.status !== 'done') ?? null;
+  }, [todayReview]);
+
+  const dailyDirection = useMemo(() => {
+    if (!todayReview) {
+      return {
+        shouldFocus: false,
+        label: 'CHECKING TODAY',
+        headline: 'Reading your current signal.',
+        doCopy: 'Hold the next action until today is loaded.',
+        stopCopy: 'Do not guess from an empty dashboard.',
+        actionLabel: 'Back to Pomodoro',
+      };
+    }
+
+    if (todaySummary.pomodoroCount === 0) {
+      return {
+        shouldFocus: true,
+        label: 'MORE FOCUS TODAY / YES',
+        headline: 'Start the first focused block.',
+        doCopy: nextTask
+          ? `Run one ${focusSessionMinutes}-minute session on “${nextTask.title}”.`
+          : `Choose one outcome, then run one ${focusSessionMinutes}-minute session.`,
+        stopCopy: 'Do not reorganize the whole list before the first block.',
+        actionLabel: `Start ${focusSessionMinutes} min focus`,
+      };
+    }
+
+    if (nextTask) {
+      return {
+        shouldFocus: true,
+        label: 'MORE FOCUS TODAY / YES',
+        headline: nextTask.status === 'doing' ? 'Finish what is already in motion.' : 'One useful block is still available.',
+        doCopy: `Use the next ${focusSessionMinutes} minutes for “${nextTask.title}”.`,
+        stopCopy: 'Stop after the block if the next outcome is not obvious.',
+        actionLabel: 'Continue focused work',
+      };
+    }
+
+    if (todaySummary.taskCount > 0) {
+      return {
+        shouldFocus: false,
+        label: 'MORE FOCUS TODAY / NO',
+        headline: 'Your planned work is complete.',
+        doCopy: 'Close the loop and leave tomorrow easy to start.',
+        stopCopy: 'Do not add work just to make today look fuller.',
+        actionLabel: 'Return to Pomodoro',
+      };
+    }
 
     return {
-      readingCount: reading.length,
-      exerciseCount: exercise.length,
-      pomodoroCount: pomodoros.length,
-      eventCount: events.length,
-      totalReadingPages,
-      totalReadingMinutes,
-      totalExerciseMinutes,
-      totalPomodoroMinutes,
-      completedTasks,
-      taskCount: tasks.length,
-      eventCounts,
+      shouldFocus: false,
+      label: 'MORE FOCUS TODAY / NOT YET',
+      headline: 'Focused work is logged. The next outcome is unclear.',
+      doCopy: 'Only start another block when you can name the result.',
+      stopCopy: 'Do not begin a vague session for the sake of the streak.',
+      actionLabel: 'Return to Pomodoro',
     };
-  }, [selectedReview]);
+  }, [focusSessionMinutes, nextTask, todayReview, todaySummary.pomodoroCount, todaySummary.taskCount]);
 
-  const fallbackMomentum = useMemo(() => {
-    const points = trend.slice(-MOMENTUM_DAYS);
-    const days = points.map(point => ({
-      date: point.date,
-      total: point.total,
-      touchedHabitKeys: getTouchedHabitKeys(point.scores),
-      scores: point.scores,
+  const recentTrend = useMemo(() => trend.slice(-CONSISTENCY_DAYS), [trend]);
+  const shownUpDays = recentTrend.filter(day => Number(day.total ?? 0) > 0).length;
+  const consistencyScore = recentTrend.length ? Math.round((shownUpDays / recentTrend.length) * 100) : 0;
+  const hasTrendHistory = trend.some(day => Number(day.total ?? 0) > 0);
+
+  const habitSignals = useMemo(() => {
+    if (!hasTrendHistory || recentTrend.length === 0) return { strongest: null, weakest: null };
+    const averages = DISCIPLINE_SCORE_BLOCKS.map(block => ({
+      key: block.key,
+      label: block.label,
+      average: recentTrend.reduce((sum, day) => sum + Number(day.scores?.[block.key] ?? 0), 0) / recentTrend.length,
     }));
-
-    const availableDays = days.length;
-    const shownUpDays = days.filter(day => Number(day.total ?? 0) > 0).length;
-    const averages = DISCIPLINE_SCORE_BLOCKS.map(block => {
-      const total = points.reduce((sum, point) => sum + Number(point.scores?.[block.key] ?? 0), 0);
-      const average = availableDays ? total / availableDays : 0;
-      return {
-        key: block.key,
-        label: block.label,
-        average,
-      };
-    });
-    const bestHabit = [...averages].sort((a, b) => b.average - a.average)[0] ?? null;
-    const weakestHabit = [...averages].sort((a, b) => a.average - b.average)[0] ?? null;
-    const deepWorkAverage = averages.find(item => item.key === 'deep_work')?.average ?? 0;
-    const recoveryAverage =
-      ((averages.find(item => item.key === 'sleep')?.average ?? 0) +
-        (averages.find(item => item.key === 'exercise')?.average ?? 0) +
-        (averages.find(item => item.key === 'nutrition')?.average ?? 0)) /
-      3;
-
     return {
-      consistencyRate: availableDays ? shownUpDays / availableDays : 0,
-      shownUpDays,
-      availableDays,
-      averageScore: availableDays ? points.reduce((sum, point) => sum + point.total, 0) / availableDays : 0,
-      bestHabit,
-      weakestHabit,
-      recoveryRisk: deepWorkAverage >= 5 && recoveryAverage < 4,
-      days,
+      strongest: [...averages].sort((a, b) => b.average - a.average)[0] ?? null,
+      weakest: [...averages].sort((a, b) => a.average - b.average)[0] ?? null,
     };
-  }, [trend]);
+  }, [hasTrendHistory, recentTrend]);
 
-  const modelMomentum = useMemo(
-    () =>
-      safeModel(
-        () => buildSevenDayMomentumSummary(trend, { days: MOMENTUM_DAYS, endDate: dataThroughDate }) as MomentumSummaryLike,
-        fallbackMomentum,
-      ),
-    [dataThroughDate, fallbackMomentum, trend],
-  );
+  const selectedScoreStats = useMemo(() => {
+    const values = DISCIPLINE_SCORE_BLOCKS.map(block => Number(scoreDraft[block.key] ?? 0));
+    const total = selectedReview?.score?.total ?? values.reduce((sum, value) => sum + value, 0);
+    return {
+      total,
+      average: values.length ? total / values.length : 0,
+    };
+  }, [scoreDraft, selectedReview]);
 
-  const momentumDays = useMemo(() => {
-    const fallbackByDate = new Map(fallbackMomentum.days.map(day => [day.date, day]));
-    const modelDays = Array.isArray(modelMomentum.days) ? modelMomentum.days : [];
-
-    if (!modelDays.length) return fallbackMomentum.days;
-
-    return modelDays
-      .map(day => {
-        const date = day.date;
-        if (!date) return null;
-        const fallback = fallbackByDate.get(date);
-        return {
-          date,
-          total: coerceNumber(day.total) ?? fallback?.total ?? 0,
-          touchedHabitKeys:
-            day.touchedHabitKeys ??
-            day.touchedHabits ??
-            day.habitKeys ??
-            fallback?.touchedHabitKeys ??
-            getTouchedHabitKeys(day.scores ?? fallback?.scores),
-        };
-      })
-      .filter((day): day is { date: string; total: number; touchedHabitKeys: string[] } => Boolean(day));
-  }, [fallbackMomentum.days, modelMomentum.days]);
-
-  const consistencyRate = coerceNumber(modelMomentum.consistencyRate) ?? fallbackMomentum.consistencyRate;
-  const shownUpDays = coerceNumber(modelMomentum.shownUpDays) ?? fallbackMomentum.shownUpDays;
-  const availableDays = coerceNumber(modelMomentum.availableDays) ?? fallbackMomentum.availableDays;
-  const averageMomentumScore = coerceNumber(modelMomentum.averageScore) ?? fallbackMomentum.averageScore;
-  const bestHabit = hasTrendHistory ? modelMomentum.bestHabit ?? fallbackMomentum.bestHabit : null;
-  const weakestHabit = hasTrendHistory ? modelMomentum.weakestHabit ?? fallbackMomentum.weakestHabit : null;
-  const recoveryRisk = hasTrendHistory ? modelMomentum.recoveryRisk ?? fallbackMomentum.recoveryRisk : 'Awaiting history';
-
-  const fallbackHeatmap = useMemo(
-    () =>
-      trend.slice(-HEATMAP_DAYS).map(point => {
-        const topHabitKey = getTopHabitKey(point.scores);
-        return {
-          date: point.date,
-          total: point.total,
-          intensity: Math.max(0, Math.min(1, point.total / DAY_SCORE_MAX)),
-          topHabit: topHabitKey
-            ? DISCIPLINE_SCORE_BLOCKS.find(block => block.key === topHabitKey)?.label ?? topHabitKey
-            : null,
-          label: `${point.date}: ${point.total}/${DAY_SCORE_MAX}`,
-        };
-      }),
-    [trend],
-  );
-
-  const heatmapCells = useMemo(() => {
-    const modelCells = safeModel(
-      () => buildThirtyDayHeatmapCells(trend, { days: HEATMAP_DAYS, endDate: dataThroughDate }) as HeatmapCellLike[],
-      [],
-    );
-    const fallbackByDate = new Map(fallbackHeatmap.map(cell => [cell.date, cell]));
-
-    if (!modelCells.length) return fallbackHeatmap;
-
-    return modelCells
-      .map(cell => {
-        const date = cell.date;
-        if (!date) return null;
-        const fallback = fallbackByDate.get(date);
-        const total = coerceNumber(cell.total) ?? fallback?.total ?? 0;
-        const intensity = coerceNumber(cell.intensity) ?? fallback?.intensity ?? Math.max(0, Math.min(1, total / DAY_SCORE_MAX));
-        return {
-          date,
-          total,
-          intensity,
-          topHabit: cell.topHabit ?? cell.topHabitLabel ?? fallback?.topHabit ?? null,
-          label: cell.label ?? fallback?.label ?? `${date}: ${total}/${DAY_SCORE_MAX}`,
-        };
-      })
-      .filter((cell): cell is { date: string; total: number; intensity: number; topHabit: string | null; label: string } => Boolean(cell));
-  }, [dataThroughDate, fallbackHeatmap, trend]);
-
-  const fallbackHabitTrends = useMemo(
-    () =>
-      DISCIPLINE_SCORE_BLOCKS.map(block => {
-        const values = trend.slice(-HEATMAP_DAYS).map(point => Math.max(0, Math.min(SCORE_MAX, Number(point.scores?.[block.key] ?? 0))));
-        const first = values.find(value => value > 0) ?? values[0] ?? 0;
-        const last = values[values.length - 1] ?? 0;
-        return {
-          key: block.key,
-          label: block.label,
-          average: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0,
-          delta: last - first,
-          direction: normalizeDirection(undefined, last - first),
-          values,
-        };
-      }),
-    [trend],
-  );
-
-  const habitTrends = useMemo(() => {
-    const modelItems = safeModel(
-      () => buildHabitTrendSummaries(trend, { days: HEATMAP_DAYS, endDate: dataThroughDate }) as HabitTrendLike[],
-      [],
-    );
-    const byKey = new Map(
-      modelItems.map(item => {
-        const key = item.key ?? (item.label ? keyFromLabel(item.label) : null);
-        return [key, item] as const;
-      }),
-    );
-
-    return fallbackHabitTrends.map(item => {
-      const model = byKey.get(item.key);
-      const values = coerceSeries(model) ?? item.values;
-      const average = coerceNumber(model?.average) ?? item.average;
-      const delta = coerceNumber(model?.delta) ?? item.delta;
-      const direction = normalizeDirection(model?.direction, delta);
-      return {
-        key: item.key,
-        label: model?.label ?? item.label,
-        average,
-        delta,
-        direction,
-        values,
-      };
-    });
-  }, [dataThroughDate, fallbackHabitTrends, trend]);
-
-  const fallbackInsights = useMemo(() => {
-    if (!hasTrendHistory) {
-      return [
-        'No completed discipline scores are available in this 30-day window yet.',
-        'Hermes will turn the next midnight review into consistency, habit, and recovery signals.',
-        'Tasks and logs remain available, but the pattern layer needs scored days first.',
-      ];
-    }
-
-    const messages = [
-      `You showed up ${shownUpDays} of the last ${availableDays} days.`,
-      `${resolveHabitLabel(bestHabit)} is your strongest habit in the last 7 days.`,
-      `${resolveHabitLabel(weakestHabit)} is the weakest habit to stabilize next.`,
-    ];
-
-    const recoveryDetail = getRecoveryRiskDetail(recoveryRisk);
-    if (recoveryDetail !== 'Sleep, exercise, nutrition vs workload') {
-      messages.push(recoveryDetail);
-    }
-
-    if (summary.taskCount > 0) {
-      messages.push(`Selected day task completion: ${summary.completedTasks}/${summary.taskCount}.`);
-    }
-
-    return messages;
-  }, [availableDays, bestHabit, hasTrendHistory, recoveryRisk, shownUpDays, summary.completedTasks, summary.taskCount, weakestHabit]);
-
-  const hermesPanel = useMemo(() => {
-    if (!hasTrendHistory) {
-      return {
-        dataThroughDate,
-        headline: 'Waiting for completed discipline data',
-        insights: fallbackInsights,
-        tomorrowFocus: 'Let the next completed-day review establish the baseline.',
-      };
-    }
-
-    return safeModel(
-        () => buildHermesInsightPanel(trend, { days: MOMENTUM_DAYS, endDate: dataThroughDate }),
-        {
-          dataThroughDate,
-          headline: 'Week in view',
-          insights: fallbackInsights,
-          tomorrowFocus: 'Repeat the basics and keep tomorrow easy to start.',
-        },
-      );
-  }, [dataThroughDate, fallbackInsights, hasTrendHistory, trend]);
-
-  const insightMessages = useMemo<string[]>(() => {
-    const panelInsights = Array.isArray(hermesPanel.insights) ? hermesPanel.insights : [];
-    const next = panelInsights.length ? [...panelInsights, `Tomorrow's best focus: ${hermesPanel.tomorrowFocus}`] : fallbackInsights;
-    return next;
-  }, [fallbackInsights, hermesPanel.insights, hermesPanel.tomorrowFocus]);
-
-  const selectReviewDate = useCallback((dateKey: string) => {
-    const nextDate = clampDateKey(dateKey, dataThroughDate);
-    if (nextDate !== selectedDate) {
-      setReview(null);
-      setReviewDateLoaded(null);
+  const selectReviewDate = useCallback(
+    (dateKey: string) => {
+      if (!dateKey) return;
+      const nextDate = clampDateKey(dateKey, dataThroughDate);
+      if (nextDate === selectedDate) return;
+      setSelectedReview(null);
       setScoreDraft(createEmptyScores());
       setScoreNotes('');
-    }
-    setSelectedDate(nextDate);
-  }, [dataThroughDate, selectedDate]);
+      setSelectedDate(nextDate);
+    },
+    [dataThroughDate, selectedDate],
+  );
 
   const refreshDashboard = async () => {
-    const latest = latestCompletedDateKey(new Date());
-    const nextSelectedDate = clampDateKey(selectedDate, latest);
-    if (latest === dataThroughDate && nextSelectedDate === selectedDate) {
-      await loadData(nextSelectedDate, latest);
+    const now = new Date();
+    const nextToday = toDateKey(now);
+    const nextCompleted = latestCompletedDateKey(now);
+    const nextSelected = clampDateKey(selectedDate, nextCompleted);
+
+    if (nextToday === todayDate && nextCompleted === dataThroughDate && nextSelected === selectedDate) {
+      await loadData(selectedDate, dataThroughDate, todayDate);
       return;
     }
-    setReview(null);
-    setReviewDateLoaded(null);
-    setScoreDraft(createEmptyScores());
-    setScoreNotes('');
-    setDataThroughDate(latest);
-    setSelectedDate(nextSelectedDate);
+
+    setTodayDate(nextToday);
+    setDataThroughDate(nextCompleted);
+    setSelectedDate(nextSelected);
   };
 
   const handleSaveScores = async () => {
@@ -721,8 +415,8 @@ export function DisciplineDashboard({ onNavigateHome }: DisciplineDashboardProps
     try {
       await saveDisciplineScores(selectedDate, scoreDraft, scoreNotes.trim());
       setStatusTone('success');
-      setStatusMessage('Scores saved');
-      await loadData(selectedDate, dataThroughDate);
+      setStatusMessage('Daily score saved.');
+      await loadData(selectedDate, dataThroughDate, todayDate);
     } catch (saveError) {
       setStatusTone('error');
       setStatusMessage(saveError instanceof Error ? saveError.message : 'Unable to save scores');
@@ -735,7 +429,7 @@ export function DisciplineDashboard({ onNavigateHome }: DisciplineDashboardProps
     const title = readingTitle.trim();
     if (!title) {
       setStatusTone('error');
-      setStatusMessage('Reading title required');
+      setStatusMessage('Reading title is required.');
       return;
     }
 
@@ -755,8 +449,8 @@ export function DisciplineDashboard({ onNavigateHome }: DisciplineDashboardProps
       setReadingNotes('');
       setIsAddingReading(false);
       setStatusTone('success');
-      setStatusMessage('Reading logged');
-      await loadData(selectedDate, dataThroughDate);
+      setStatusMessage('Reading logged.');
+      await loadData(selectedDate, dataThroughDate, todayDate);
     } catch (saveError) {
       setStatusTone('error');
       setStatusMessage(saveError instanceof Error ? saveError.message : 'Unable to save reading');
@@ -769,7 +463,7 @@ export function DisciplineDashboard({ onNavigateHome }: DisciplineDashboardProps
     const type = exerciseType.trim();
     if (!type) {
       setStatusTone('error');
-      setStatusMessage('Exercise type required');
+      setStatusMessage('Exercise type is required.');
       return;
     }
 
@@ -789,8 +483,8 @@ export function DisciplineDashboard({ onNavigateHome }: DisciplineDashboardProps
       setExerciseNotes('');
       setIsAddingExercise(false);
       setStatusTone('success');
-      setStatusMessage('Exercise logged');
-      await loadData(selectedDate, dataThroughDate);
+      setStatusMessage('Exercise logged.');
+      await loadData(selectedDate, dataThroughDate, todayDate);
     } catch (saveError) {
       setStatusTone('error');
       setStatusMessage(saveError instanceof Error ? saveError.message : 'Unable to save exercise');
@@ -799,682 +493,870 @@ export function DisciplineDashboard({ onNavigateHome }: DisciplineDashboardProps
     }
   };
 
-  const selectedDateTitle = selectedDate === dataThroughDate ? 'Latest Completed Day Review' : 'Selected Completed Day Review';
   const canMoveForward = selectedDate < dataThroughDate;
+  const initialLoading = loading && !todayReview;
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-bg-dark text-paper-cream">
+    <div className="relative min-h-screen overflow-x-hidden bg-bg-dark text-paper-cream">
       <CustomCursor />
       <div className="noise-overlay" />
-      <div className="absolute inset-x-0 top-0 h-48 bg-white/[0.02]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top_left,rgba(52,211,153,0.08),transparent_55%)]" />
 
-      <header className="sticky top-0 z-20 border-b border-white/5 bg-bg-dark/90 backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={onNavigateHome}
-                className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold tracking-wider text-white/70 transition hover:bg-white/10 hover:text-white"
-              >
-                <ChevronLeft className="h-4 w-4" strokeWidth={3} />
-                Pomodoro
-              </button>
-              <span className="inline-flex items-center gap-2 rounded-lg border border-accent-green/20 bg-accent-green/10 px-4 py-2 text-xs font-semibold tracking-wider text-accent-green">
-                <BarChart3 className="h-4 w-4" strokeWidth={3} />
-                Discipline Dashboard
-              </span>
-            </div>
-            <div className="mt-4 flex flex-wrap items-end gap-x-4 gap-y-2">
-              <div>
-                <h1 className="font-grotesk text-3xl font-black tracking-tight text-white sm:text-4xl">Discipline Dashboard</h1>
-                <p className="mt-1 text-sm text-white/55">Retrospective life map</p>
-              </div>
-              <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/60">
-                Data through {dataThroughDate}
-              </div>
+      <header className="sticky top-0 z-[60] border-b border-white/10 bg-bg-dark/92 backdrop-blur-xl">
+        <div className="mx-auto flex min-h-[72px] w-full max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={onNavigateHome}
+              className="inline-flex min-h-11 shrink-0 items-center gap-2 border-2 border-white/15 bg-white/[0.03] px-3 text-xs font-black uppercase tracking-[0.16em] text-white/65 transition hover:border-white/35 hover:bg-white/[0.07] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green active:translate-y-px sm:px-4"
+            >
+              <ChevronLeft className="h-4 w-4" strokeWidth={3} />
+              <span className="hidden sm:inline">Pomodoro</span>
+            </button>
+            <div className="min-w-0">
+              <div className="truncate text-[10px] font-black uppercase tracking-[0.24em] text-accent-green">XPT / Daily signal</div>
+              <div className="truncate font-grotesk text-lg font-black tracking-tight text-white sm:text-xl">Discipline</div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center rounded-lg border border-white/10 bg-white/5 p-1">
-              <button
-                onClick={() => selectReviewDate(shiftDateKey(selectedDate, -1))}
-                className="grid h-8 w-8 place-items-center rounded-md text-white/55 transition hover:bg-white/10 hover:text-white"
-                aria-label="Previous day"
-              >
-                <ChevronLeft className="h-4 w-4" strokeWidth={3} />
-              </button>
-              <button
-                onClick={() => selectReviewDate(dataThroughDate)}
-                className={`rounded-md px-4 py-1.5 text-xs font-bold tracking-wider transition ${
-                  selectedDate === dataThroughDate ? 'bg-accent-green/20 text-accent-green' : 'text-white/65 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                Latest
-              </button>
-              <button
-                onClick={() => canMoveForward && selectReviewDate(shiftDateKey(selectedDate, 1))}
-                disabled={!canMoveForward}
-                className="grid h-8 w-8 place-items-center rounded-md text-white/55 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:text-white/20"
-                aria-label="Next day"
-              >
-                <ChevronRight className="h-4 w-4" strokeWidth={3} />
-              </button>
-            </div>
-
-            <label className="flex h-10 items-center rounded-lg border border-white/10 bg-white/5 px-3 transition hover:border-white/20">
-              <CalendarDays className="mr-2 h-4 w-4 text-white/45" strokeWidth={3} />
-              <input
-                type="date"
-                value={selectedDate}
-                max={dataThroughDate}
-                onChange={event => selectReviewDate(event.target.value)}
-                className="bg-transparent text-xs font-semibold uppercase tracking-wider text-white/80 outline-none"
-              />
-            </label>
-
+          <div className="flex shrink-0 items-center gap-2">
             <button
+              type="button"
               onClick={() => void refreshDashboard()}
-              className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 text-xs font-semibold tracking-wider text-white/70 transition hover:bg-white/10 hover:text-white"
+              disabled={loading}
+              className="grid h-11 w-11 place-items-center border-2 border-white/10 bg-white/[0.03] text-white/55 transition hover:border-white/30 hover:bg-white/[0.07] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green active:translate-y-px disabled:cursor-wait disabled:opacity-50"
+              aria-label="Refresh discipline data"
+              title="Refresh discipline data"
             >
-              <RotateCcw className="h-4 w-4" strokeWidth={3} />
-              Refresh
+              <RotateCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} strokeWidth={3} />
             </button>
+            <AccountMenu
+              user={user}
+              onOpenSettings={onOpenSettings}
+              onOpenHistory={onOpenHistory}
+              onOpenAnalytics={onOpenAnalytics}
+              onLogout={onLogout}
+            />
           </div>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl px-4 py-8 pb-20">
+      <main className="relative z-10 mx-auto w-full max-w-7xl px-4 py-6 pb-20 sm:px-6 sm:py-8">
+        <div className="sr-only" aria-live="polite">
+          {loading ? 'Refreshing discipline data' : 'Discipline data loaded'}
+        </div>
+
         <AnimatePresence>
           {(statusMessage || error) && (
             <motion.div
-              className={`mb-6 rounded-xl border p-4 text-sm font-medium backdrop-blur-md ${
-                error
-                  ? 'border-accent-red/40 bg-accent-red/10 text-accent-red'
-                  : statusTone === 'success'
-                    ? 'border-accent-green/40 bg-accent-green/10 text-accent-green'
-                    : 'border-white/15 bg-white/[0.04] text-white/70'
+              className={`mb-6 flex flex-col gap-3 border-2 p-4 text-sm font-semibold sm:flex-row sm:items-center sm:justify-between ${
+                error || statusTone === 'error'
+                  ? 'border-accent-red/50 bg-accent-red/10 text-red-200'
+                  : 'border-accent-green/40 bg-accent-green/10 text-accent-green'
               }`}
-              initial={{ opacity: 0, y: -10 }}
+              initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
+              exit={{ opacity: 0, y: -8 }}
+              role={error || statusTone === 'error' ? 'alert' : 'status'}
             >
               <div className="flex items-center gap-2">
-                {error ? <X className="h-4 w-4" /> : <BadgeCheck className="h-4 w-4" />}
-                {error || statusMessage}
+                {error || statusTone === 'error' ? <X className="h-4 w-4 shrink-0" /> : <BadgeCheck className="h-4 w-4 shrink-0" />}
+                <span>{error || statusMessage}</span>
               </div>
+              {error && (
+                <button
+                  type="button"
+                  onClick={() => void loadData(selectedDate, dataThroughDate, todayDate)}
+                  className="min-h-10 border-2 border-current px-4 text-xs font-black uppercase tracking-[0.16em] transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current active:translate-y-px"
+                >
+                  Try again
+                </button>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
 
-        <section className="mb-8">
-          <SectionHeading
-            icon={TrendingUp}
-            title="Last 7 Days Momentum"
-            subtitle={hasTrendHistory ? `${shownUpDays}/${availableDays} days with non-zero discipline score` : 'Awaiting completed discipline scores'}
-          />
-
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-            <MetricCard icon={Flame} label="Consistency" value={`${Math.round(consistencyRate * 100)}%`} detail={`${shownUpDays} of ${availableDays} days`} />
-            <MetricCard icon={BarChart3} label="Average Score" value={`${averageMomentumScore.toFixed(1)}/${DAY_SCORE_MAX}`} detail="Mean total score over 7 days" />
-            <MetricCard
-              icon={SCORE_META[(typeof bestHabit === 'object' && bestHabit?.key ? bestHabit.key : keyFromLabel(resolveHabitLabel(bestHabit)) ?? 'discipline') as DisciplineScoreKey].icon}
-              label="Best Habit"
-              value={resolveHabitLabel(bestHabit)}
-              detail={hasTrendHistory && resolveHabitAverage(bestHabit) !== null ? `${resolveHabitAverage(bestHabit)?.toFixed(1)}/10 average` : 'Awaiting completed scores'}
-            />
-            <MetricCard
-              icon={SCORE_META[(typeof weakestHabit === 'object' && weakestHabit?.key ? weakestHabit.key : keyFromLabel(resolveHabitLabel(weakestHabit)) ?? 'discipline') as DisciplineScoreKey].icon}
-              label="Weakest Habit"
-              value={resolveHabitLabel(weakestHabit)}
-              detail={hasTrendHistory && resolveHabitAverage(weakestHabit) !== null ? `${resolveHabitAverage(weakestHabit)?.toFixed(1)}/10 average` : 'Awaiting completed scores'}
-            />
-            <MetricCard icon={Moon} label="Recovery Risk" value={getRecoveryRiskLabel(recoveryRisk)} detail={getRecoveryRiskDetail(recoveryRisk)} />
-            <MetricCard
-              icon={BadgeCheck}
-              label="Task Completion"
-              value={summary.taskCount ? `${summary.completedTasks}/${summary.taskCount}` : 'No tasks'}
-              detail={summary.taskCount ? `${Math.round((summary.completedTasks / summary.taskCount) * 100)}% done on selected day` : 'No tasks on selected day'}
-            />
+        <section aria-labelledby="today-heading" aria-busy={initialLoading}>
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-black uppercase tracking-[0.24em] text-accent-green">Today / {formatLongDate(todayDate)}</div>
+              <h1 id="today-heading" className="mt-2 font-grotesk text-3xl font-black leading-none tracking-tight text-white sm:text-4xl">
+                Your discipline signal.
+              </h1>
+            </div>
+            <div className="border border-white/10 bg-white/[0.03] px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-white/45">
+              Scores based on recorded data only
+            </div>
           </div>
 
-          <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+            <article className="relative overflow-hidden border-2 border-white/15 bg-white/[0.035] p-5 sm:p-6">
+              <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-accent-green/10 blur-3xl" />
+              {initialLoading ? (
+                <TodaySkeleton />
+              ) : (
+                <div className="relative grid gap-6 sm:grid-cols-[1fr_auto] sm:items-center">
+                  <div className="min-w-0">
+                    <div className="inline-flex items-center gap-2 bg-paper-cream px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-black">
+                      <Target className="h-3.5 w-3.5" strokeWidth={3} /> Current progress
+                    </div>
+                    <h2 className="mt-5 max-w-xl font-serif-custom text-2xl font-bold leading-tight text-white sm:text-3xl">
+                      {todaySummary.pomodoroCount > 0
+                        ? `${todaySummary.focusMinutes} focused minutes are already recorded.`
+                        : 'No focused learning time is recorded yet.'}
+                    </h2>
+                    <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/55">
+                      {todaySummary.taskCount > 0
+                        ? `${todaySummary.completedTasks} of ${todaySummary.taskCount} planned tasks are complete.`
+                        : 'There is no task plan for today, so the dashboard will not pretend there is a completion target.'}
+                    </p>
+
+                    <div className="mt-6">
+                      <div className="mb-2 flex items-center justify-between gap-3 text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
+                        <span>{taskProgress === null ? 'Task plan not set' : 'Today progress'}</span>
+                        <span>{taskProgress === null ? '—' : `${taskProgress}%`}</span>
+                      </div>
+                      <div className="h-2 overflow-hidden bg-white/10">
+                        <div
+                          className="h-full bg-accent-green transition-[width] duration-500"
+                          style={{ width: `${taskProgress ?? 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <ScoreDial value={todayScore} total={todayReview?.score?.total ?? null} />
+                </div>
+              )}
+            </article>
+
+            <article
+              className={`relative border-2 p-5 sm:p-6 ${
+                dailyDirection.shouldFocus
+                  ? 'border-accent-green/45 bg-accent-green/[0.07]'
+                  : 'border-white/15 bg-white/[0.035]'
+              }`}
+            >
+              <div className={`text-[10px] font-black uppercase tracking-[0.22em] ${dailyDirection.shouldFocus ? 'text-accent-green' : 'text-white/55'}`}>
+                {dailyDirection.label}
+              </div>
+              <h2 className="mt-3 font-grotesk text-2xl font-black leading-tight text-white">{dailyDirection.headline}</h2>
+
+              <div className="mt-5 space-y-3">
+                <div className="border-l-2 border-accent-green bg-black/25 px-4 py-3">
+                  <div className="text-[10px] font-black uppercase tracking-[0.18em] text-accent-green">Do next</div>
+                  <p className="mt-1 text-sm leading-relaxed text-white/75">{dailyDirection.doCopy}</p>
+                </div>
+                <div className="border-l-2 border-accent-red bg-black/25 px-4 py-3">
+                  <div className="text-[10px] font-black uppercase tracking-[0.18em] text-accent-red">Stop / avoid</div>
+                  <p className="mt-1 text-sm leading-relaxed text-white/65">{dailyDirection.stopCopy}</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={onNavigateHome}
+                className={`mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 border-2 border-black px-4 text-sm font-black uppercase tracking-[0.12em] text-black transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-cream active:translate-y-px ${
+                  dailyDirection.shouldFocus ? 'bg-accent-green' : 'bg-paper-cream'
+                }`}
+                style={{ boxShadow: '5px 5px 0 rgba(0,0,0,0.85)' }}
+              >
+                {dailyDirection.actionLabel}
+                <ArrowRight className="h-4 w-4" strokeWidth={3} />
+              </button>
+            </article>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <MetricCard
+              icon={Target}
+              label="Today progress"
+              value={todaySummary.taskCount ? `${todaySummary.completedTasks}/${todaySummary.taskCount}` : 'No plan'}
+              detail={todaySummary.taskCount ? `${taskProgress}% of planned tasks` : 'No invented target'}
+            />
+            <MetricCard icon={Flame} label="Current streak" value={`${currentStreak} day${currentStreak === 1 ? '' : 's'}`} detail={`Longest: ${todayReview?.streak.longest ?? 0} days`} />
+            <MetricCard icon={Clock3} label="Focused learning" value={`${todaySummary.focusMinutes} min`} detail="Completed focus time today" />
+            <MetricCard icon={CheckCircle2} label="Sessions done" value={`${todaySummary.pomodoroCount}`} detail="Completed Pomodoro sessions" />
+          </div>
+        </section>
+
+        <section className="mt-10" aria-labelledby="consistency-heading">
+          <SectionHeading
+            icon={CalendarDays}
+            title="Learning consistency"
+            subtitle="A contribution view of the recorded daily discipline score"
+            id="consistency-heading"
+          />
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
+            <article className="border-2 border-white/15 bg-white/[0.03] p-4 sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-black text-white">Last 30 completed days</div>
+                  <div className="mt-1 text-xs text-white/45">
+                    {trend.length ? `${formatShortDate(trend[0].date)} – ${formatShortDate(trend[trend.length - 1].date)}` : 'Waiting for recorded days'}
+                  </div>
+                </div>
+                <HeatmapLegend />
+              </div>
+
+              <div className="mt-6">
+                <ContributionHeatmap
+                  trend={trend}
+                  selectedDate={selectedDate}
+                  onSelectDate={selectReviewDate}
+                  loading={loading && trend.length === 0}
+                />
+              </div>
+
+              {!hasTrendHistory && !loading && (
+                <div className="mt-5 border border-dashed border-white/15 bg-black/20 p-4 text-sm leading-relaxed text-white/45">
+                  No daily scores are recorded in this window yet. The cells will fill from the existing score review; unscored days stay visibly empty.
+                </div>
+              )}
+            </article>
+
+            <article className="border-2 border-white/15 bg-white/[0.03] p-5 sm:p-6">
+              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/45">7-day consistency score</div>
+              <div className="mt-3 flex items-end gap-2">
+                <div className="font-grotesk text-5xl font-black leading-none text-white">{consistencyScore}</div>
+                <div className="pb-1 text-lg font-black text-accent-green">%</div>
+              </div>
+              <p className="mt-3 text-sm leading-relaxed text-white/55">
+                {shownUpDays} of {recentTrend.length || CONSISTENCY_DAYS} days have a recorded, non-zero discipline score.
+              </p>
+
+              <div className="mt-6 space-y-3 border-t border-white/10 pt-5">
+                <SignalRow
+                  label="Strongest signal"
+                  value={habitSignals.strongest ? `${habitSignals.strongest.label} · ${habitSignals.strongest.average.toFixed(1)}/10` : 'Waiting for scores'}
+                  tone="text-accent-green"
+                />
+                <SignalRow
+                  label="Needs consistency"
+                  value={habitSignals.weakest ? `${habitSignals.weakest.label} · ${habitSignals.weakest.average.toFixed(1)}/10` : 'Waiting for scores'}
+                  tone="text-amber-300"
+                />
+              </div>
+
+              <div className="mt-5 border-l-2 border-white/25 bg-black/25 px-4 py-3 text-sm leading-relaxed text-white/65">
+                {hasTrendHistory
+                  ? consistencyScore >= 80
+                    ? 'Your review rhythm is stable. Protect it with an easy-to-start next session.'
+                    : consistencyScore >= 50
+                      ? 'The pattern is forming. Closing one more daily review matters more than chasing a perfect score.'
+                      : 'The highest-value improvement is showing up consistently, not increasing the score on one day.'
+                  : 'Complete a daily score review to establish the first honest consistency signal.'}
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <details className="group mt-10 border-2 border-white/15 bg-white/[0.02]">
+          <summary className="flex min-h-20 cursor-pointer list-none items-center justify-between gap-4 p-4 transition hover:bg-white/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-accent-green sm:p-6 [&::-webkit-details-marker]:hidden">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="grid h-10 w-10 shrink-0 place-items-center border border-white/15 bg-white/[0.04] text-white/65">
+                <HistoryIcon className="h-4 w-4" strokeWidth={2.5} />
+              </div>
+              <div className="min-w-0">
+                <h2 className="font-grotesk text-lg font-black text-white">Completed-day review & logs</h2>
+                <p className="truncate text-sm text-white/45">Open only when you need history, score editing, reading, or exercise logs.</p>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-3">
+              <span className="hidden font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-white/40 sm:block">{selectedDate}</span>
+              <ChevronDown className="h-5 w-5 text-white/55 transition-transform group-open:rotate-180" strokeWidth={3} />
+            </div>
+          </summary>
+
+          <div className="border-t border-white/10 p-4 sm:p-6">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <div>
-                <h3 className="text-sm font-semibold tracking-wide text-white">Weekly intensity</h3>
-                <p className="text-xs text-white/45">Click a day to review it.</p>
+                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-accent-green">Selected completed day</div>
+                <h3 className="mt-2 text-2xl font-black text-white">{formatLongDate(selectedDate)}</h3>
               </div>
-              {loading && <span className="text-xs font-semibold tracking-wider text-white/40">Loading</span>}
-            </div>
-            {!hasTrendHistory && !loading ? (
-              <EmptyState icon={CalendarDays} message="No scored days in this weekly window yet. Hermes will populate this after the next completed-day review." />
-            ) : (
-              <div className="-mx-4 overflow-x-auto px-4 pb-1 md:mx-0 md:px-0">
-                <div className="grid min-w-[640px] grid-cols-7 gap-2 md:min-w-0">
-                  {momentumDays.map(day => {
-                    const total = Math.max(0, Math.min(DAY_SCORE_MAX, Number(day.total ?? 0)));
-                    const height = Math.max(18, Math.round((total / DAY_SCORE_MAX) * 112));
-                    const isSelected = selectedDate === day.date;
-                    const isLatest = dataThroughDate === day.date;
-                    return (
-                      <button
-                        key={day.date}
-                        type="button"
-                        onClick={() => selectReviewDate(day.date)}
-                        className={`flex min-h-[156px] flex-col justify-between rounded-lg border p-2.5 text-left transition sm:p-3 ${
-                          isSelected
-                            ? 'border-accent-green/50 bg-accent-green/10'
-                            : 'border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.05]'
-                        }`}
-                      >
-                        <div>
-                          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/45">{formatShortDay(day.date)}</div>
-                          <div className="mt-1 text-sm font-semibold text-white">{new Date(`${day.date}T12:00:00`).getDate()}</div>
-                          {isLatest && <div className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-accent-green">Latest</div>}
-                        </div>
-                        <div>
-                          <div className="flex h-28 items-end sm:h-32">
-                            <div className="w-full rounded-md bg-white/5 p-1">
-                              <div className="w-full rounded-sm bg-accent-green/90 transition-all" style={{ height }} />
-                            </div>
-                          </div>
-                          <div className="mt-3 text-sm font-semibold text-white">{total}</div>
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {DISCIPLINE_SCORE_BLOCKS.map(block => {
-                              const touched = day.touchedHabitKeys.includes(block.key);
-                              return (
-                                <span
-                                  key={`${day.date}-${block.key}`}
-                                  className={`h-2 w-2 rounded-full ${touched ? SCORE_META[block.key].fill : 'bg-white/10'}`}
-                                  aria-hidden="true"
-                                />
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center border-2 border-white/10 bg-white/[0.03] p-1">
+                  <button
+                    type="button"
+                    onClick={() => selectReviewDate(shiftDateKey(selectedDate, -1))}
+                    className="grid h-9 w-9 place-items-center text-white/55 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-green"
+                    aria-label="Previous completed day"
+                  >
+                    <ChevronLeft className="h-4 w-4" strokeWidth={3} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectReviewDate(dataThroughDate)}
+                    className={`min-h-9 px-4 text-xs font-black uppercase tracking-[0.14em] transition ${
+                      selectedDate === dataThroughDate ? 'bg-accent-green text-black' : 'text-white/60 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    Latest
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => canMoveForward && selectReviewDate(shiftDateKey(selectedDate, 1))}
+                    disabled={!canMoveForward}
+                    className="grid h-9 w-9 place-items-center text-white/55 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-green disabled:cursor-not-allowed disabled:text-white/20"
+                    aria-label="Next completed day"
+                  >
+                    <ChevronRight className="h-4 w-4" strokeWidth={3} />
+                  </button>
                 </div>
-              </div>
-            )}
-          </div>
-        </section>
 
-        <section className="mb-8">
-          <SectionHeading icon={CalendarDays} title="30-Day Life Map" subtitle="Monthly rhythm, gaps, and streaks through the latest completed day" />
-          <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-sm text-white/55">Each cell is a completed day scored by total discipline.</div>
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/45">
-                <span>Low</span>
-                <div className="flex items-center gap-1">
-                  {[0.1, 0.35, 0.6, 0.9].map(level => (
-                    <span key={level} className={`h-3 w-3 rounded-sm ${getHeatmapTone(level)}`} />
-                  ))}
-                </div>
-                <span>High</span>
+                <label className="flex min-h-11 items-center border-2 border-white/10 bg-white/[0.03] px-3 transition focus-within:border-accent-green/60 hover:border-white/25">
+                  <CalendarDays className="mr-2 h-4 w-4 text-white/45" strokeWidth={3} />
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    max={dataThroughDate}
+                    onChange={event => selectReviewDate(event.target.value)}
+                    className="bg-transparent text-xs font-bold uppercase tracking-wider text-white/80 outline-none"
+                    aria-label="Choose completed review date"
+                  />
+                </label>
               </div>
             </div>
 
-            {!hasTrendHistory && !loading ? (
-              <div className="mt-4">
-                <EmptyState icon={CalendarDays} message="No scored days in the 30-day window yet. The map will light up once Hermes records completed days." />
-              </div>
-            ) : (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {heatmapCells.map(cell => {
-                  const isSelected = selectedDate === cell.date;
-                  const isLatest = dataThroughDate === cell.date;
-                  return (
-                    <button
-                      key={cell.date}
-                      type="button"
-                      onClick={() => selectReviewDate(cell.date)}
-                      title={`${cell.label}${cell.topHabit ? ` | Top habit: ${cell.topHabit}` : ''}`}
-                      className={`group flex h-10 w-10 items-center justify-center rounded-md border text-[11px] font-semibold transition ${
-                        isSelected ? 'border-white bg-white text-black' : isLatest ? 'border-accent-green/50' : 'border-white/10'
-                      } ${getHeatmapTone(cell.intensity)}`}
-                    >
-                      <span className={isSelected ? 'text-black' : 'text-white/80'}>{new Date(`${cell.date}T12:00:00`).getDate()}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {hasTrendHistory && (
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {heatmapCells.slice(-3).map(cell => (
-                  <div key={`heatmap-note-${cell.date}`} className="rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-white/70">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/45">{cell.date}</div>
-                    <div className="mt-1 font-semibold text-white">{cell.total}/{DAY_SCORE_MAX}</div>
-                    <div className="mt-1 text-xs text-white/50">{cell.topHabit ? `Top habit: ${cell.topHabit}` : 'No dominant habit logged'}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className="mb-8">
-          <SectionHeading icon={Activity} title="Habit Trends" subtitle="30-day movement across the six discipline blocks" />
-          {!hasTrendHistory && !loading ? (
-            <div className="mt-4">
-              <EmptyState icon={Activity} message="Habit trend lines need at least one scored completed day." />
+            <div className="mt-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
+              <MetricCard icon={BarChart3} label="Daily score" value={`${selectedScoreStats.total}/${DAY_SCORE_MAX}`} detail={`${selectedScoreStats.average.toFixed(1)}/10 average`} />
+              <MetricCard icon={Clock3} label="Focus volume" value={`${selectedSummary.focusMinutes} min`} detail={`${selectedSummary.pomodoroCount} completed sessions`} />
+              <MetricCard icon={BookOpen} label="Reading" value={`${selectedSummary.readingPages} pages`} detail={`${selectedSummary.readingMinutes} minutes`} />
+              <MetricCard icon={Dumbbell} label="Exercise" value={`${selectedSummary.exerciseMinutes} min`} detail={`${selectedReview?.exercise.length ?? 0} entries`} />
             </div>
-          ) : (
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {habitTrends.map(item => {
-                const meta = SCORE_META[item.key];
-                const Icon = meta.icon;
-                const direction = item.direction as 'up' | 'down' | 'flat';
-                return (
-                  <div key={item.key} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`rounded-lg p-2 ${meta.tint}`}>
-                          <Icon className={`h-4 w-4 ${meta.accent}`} strokeWidth={2.5} />
-                        </div>
-                        <div>
-                          <div className="text-sm font-semibold text-white">{item.label}</div>
-                          <div className="text-xs text-white/45">{getDirectionLabel(direction)}</div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-semibold text-white">{item.average.toFixed(1)}/10</div>
-                        <div className={`text-xs ${direction === 'up' ? 'text-accent-green' : direction === 'down' ? 'text-accent-red' : 'text-white/45'}`}>
-                          {item.delta >= 0 ? '+' : ''}
-                          {item.delta.toFixed(1)}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-4">
-                      <Sparkline values={item.values} stroke={meta.stroke} />
-                    </div>
+
+            <div className="mt-6 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+              <div className="space-y-6">
+                <section className="border border-white/10 bg-black/20 p-4 sm:p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-black text-white">Score breakdown</h3>
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-white/40">Recorded / 10</span>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        <section className="mb-8">
-          <SectionHeading
-            icon={Clock3}
-            title={selectedDateTitle}
-            subtitle={`${formatLongDate(selectedDate)}${selectedDate === dataThroughDate ? ' | defaulted to the latest completed day' : ''}`}
-          />
-
-          <div className="mt-4 grid gap-6 lg:grid-cols-[1.35fr_1fr]">
-            <div className="space-y-6">
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <MetricCard icon={BarChart3} label="Total Score" value={`${scoreStats.total}/${DAY_SCORE_MAX}`} detail={`${scoreStats.average.toFixed(1)}/10 per block`} />
-                <MetricCard icon={Clock3} label="Focus Volume" value={`${summary.totalPomodoroMinutes} min`} detail={`${summary.pomodoroCount} completed sessions`} />
-                <MetricCard icon={BookOpen} label="Reading" value={`${summary.totalReadingPages} pages`} detail={`${summary.totalReadingMinutes} minutes logged`} />
-                <MetricCard icon={Dumbbell} label="Exercise" value={`${summary.totalExerciseMinutes} min`} detail={`${summary.exerciseCount} entries on selected day`} />
-              </div>
-
-              <div className="grid gap-6 xl:grid-cols-[1.1fr_1fr]">
-                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                  <h3 className="text-sm font-semibold tracking-wide text-white">Notes and habit breakdown</h3>
-                  <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3 text-sm leading-relaxed text-white/70">
-                    {selectedReviewLoading
-                      ? 'Loading selected completed day...'
-                      : selectedReview?.score?.notes?.trim()
-                        ? selectedReview.score.notes
-                        : 'No notes recorded for this completed day.'}
-                  </div>
-                  <div className="mt-4 space-y-3">
+                  <p className="mt-3 border-l-2 border-white/15 pl-3 text-sm leading-relaxed text-white/55">
+                    {selectedReview?.score?.notes?.trim() || 'No reflection was recorded for this day.'}
+                  </p>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
                     {DISCIPLINE_SCORE_BLOCKS.map(block => {
-                      const value = Number((selectedReview?.score?.scores ?? displayedScoreDraft)[block.key] ?? 0);
                       const meta = SCORE_META[block.key];
                       const Icon = meta.icon;
+                      const value = Number(selectedReview?.score?.scores?.[block.key] ?? scoreDraft[block.key] ?? 0);
                       return (
-                        <div key={block.key} className="rounded-lg border border-white/10 bg-black/20 p-3">
+                        <div key={block.key} className="border border-white/10 bg-white/[0.025] p-3">
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex items-center gap-2">
                               <Icon className={`h-4 w-4 ${meta.accent}`} strokeWidth={2.5} />
-                              <span className="text-sm font-medium text-white/80">{block.label}</span>
+                              <span className="text-sm font-semibold text-white/75">{block.label}</span>
                             </div>
-                            <span className="text-sm font-semibold text-white">{value}/10</span>
+                            <span className="text-sm font-black text-white">{value}/10</span>
                           </div>
-                          <div className={`mt-3 h-2 overflow-hidden rounded-full ${meta.track}`}>
-                            <div className={`h-full rounded-full ${meta.fill}`} style={{ width: `${(value / SCORE_MAX) * 100}%` }} />
+                          <div className={`mt-3 h-1.5 overflow-hidden ${meta.track}`}>
+                            <div className={`h-full ${meta.fill}`} style={{ width: `${value * 10}%` }} />
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                </div>
+                </section>
 
-                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-semibold tracking-wide text-white">Hermes insight panel</h3>
-                      <p className="mt-1 text-xs text-white/45">{hermesPanel.headline}</p>
-                    </div>
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">Deterministic</span>
+                <section className="border border-white/10 bg-black/20 p-4 sm:p-5">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-black text-white">Tasks</h3>
+                    <span className="text-xs text-white/45">{selectedSummary.completedTasks}/{selectedSummary.taskCount} complete</span>
                   </div>
-                  <div className="mt-4 space-y-3">
-                    {insightMessages.map((message: string, index: number) => (
-                      <div key={`${index}-${message}`} className="rounded-lg border border-white/10 bg-black/20 p-3 text-sm leading-relaxed text-white/75">
-                        {message}
+                  <div className="space-y-2">
+                    {(selectedReview?.tasks ?? []).map(task => (
+                      <div key={task.id} className="flex items-center justify-between gap-3 border border-white/10 bg-white/[0.025] p-3">
+                        <span className="min-w-0 truncate text-sm font-semibold text-white/75">{task.title}</span>
+                        <span className={`shrink-0 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] ${task.status === 'done' ? 'bg-accent-green/15 text-accent-green' : task.status === 'doing' ? 'bg-amber-400/15 text-amber-300' : 'bg-white/10 text-white/50'}`}>
+                          {task.status}
+                        </span>
                       </div>
                     ))}
+                    {(selectedReview?.tasks.length ?? 0) === 0 && !loading && <EmptyState icon={Target} message="No tasks were connected to this completed day." />}
                   </div>
-                </div>
-              </div>
+                </section>
 
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold tracking-wide text-white">Tasks</h3>
-                  <span className="text-xs text-white/45">{summary.completedTasks}/{summary.taskCount} completed</span>
-                </div>
-                <div className="space-y-3">
-                  {(selectedReview?.tasks ?? []).slice(0, 8).map(task => (
-                    <div key={task.id} className="flex items-start justify-between gap-3 rounded-lg border border-white/10 bg-black/20 p-3">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-white">{task.title}</div>
-                        <div className="mt-1 text-xs uppercase tracking-[0.16em] text-white/40">{task.status}</div>
-                      </div>
-                      <span
-                        className={`rounded-md px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
-                          task.status === 'done' ? 'bg-accent-green/15 text-accent-green' : task.status === 'doing' ? 'bg-amber-400/15 text-amber-300' : 'bg-white/10 text-white/55'
-                        }`}
-                      >
-                        {task.status}
-                      </span>
+                <div className="grid gap-6 xl:grid-cols-2">
+                  <section className="border border-white/10 bg-black/20 p-4 sm:p-5">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-black text-white">Focus sessions</h3>
+                      <span className="text-xs text-white/45">{selectedSummary.pomodoroCount}</span>
                     </div>
-                  ))}
-                  {(selectedReview?.tasks?.length ?? 0) === 0 && !selectedReviewLoading && <EmptyState icon={BadgeCheck} message="No tasks connected to this completed day." />}
-                </div>
-              </div>
-
-              <div className="grid gap-6 xl:grid-cols-2">
-                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-semibold tracking-wide text-white">Pomodoro sessions</h3>
-                    <span className="text-xs text-white/45">{summary.pomodoroCount} sessions</span>
-                  </div>
-                  <div className="space-y-3">
-                    {(selectedReview?.pomodoros ?? []).slice(0, 6).map(session => (
-                      <div key={session.id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/20 p-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-white">{session.taskTitle || 'Deep work session'}</div>
-                          <div className="mt-1 text-xs text-white/40">{formatDateTime(session.completedAt)}</div>
+                    <div className="space-y-2">
+                      {(selectedReview?.pomodoros ?? []).slice(0, 8).map(session => (
+                        <div key={session.id} className="flex items-center justify-between gap-3 border border-white/10 bg-white/[0.025] p-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-white/75">{session.taskTitle || 'Deep work session'}</div>
+                            <div className="mt-1 text-xs text-white/40">{formatDateTime(session.completedAt)}</div>
+                          </div>
+                          <span className="shrink-0 text-sm font-black text-white">{session.durationMinutes} min</span>
                         </div>
-                        <div className="text-sm font-semibold text-white">{session.durationMinutes} min</div>
-                      </div>
-                    ))}
-                    {(selectedReview?.pomodoros?.length ?? 0) === 0 && !selectedReviewLoading && <EmptyState icon={Clock3} message="No completed pomodoro sessions on this day." />}
-                  </div>
-                </div>
+                      ))}
+                      {(selectedReview?.pomodoros.length ?? 0) === 0 && !loading && <EmptyState icon={Clock3} message="No focus sessions were completed on this day." />}
+                    </div>
+                  </section>
 
-                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-semibold tracking-wide text-white">Events timeline</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {Object.entries(summary.eventCounts).slice(0, 3).map(([type, count]) => {
-                        const EventIcon = EVENT_ICON[type as keyof typeof EVENT_ICON] ?? Play;
+                  <section className="border border-white/10 bg-black/20 p-4 sm:p-5">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-black text-white">Session activity</h3>
+                      <span className="text-xs text-white/45">{selectedReview?.events.length ?? 0} events</span>
+                    </div>
+                    <div className="space-y-2">
+                      {(selectedReview?.events ?? []).slice(0, 8).map(event => {
+                        const EventIcon = EVENT_ICON[event.type];
                         return (
-                          <div
-                            key={type}
-                            className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[10px] font-semibold tracking-wider ${
-                              EVENT_STYLES[type as keyof typeof EVENT_STYLES] ?? 'border-white/10 bg-white/[0.03] text-white/70'
-                            }`}
-                          >
-                            <EventIcon className="h-3 w-3" strokeWidth={2.5} />
-                            {count}
+                          <div key={event.id} className="flex items-center gap-3 border border-white/10 bg-white/[0.025] p-3">
+                            <EventIcon className="h-4 w-4 shrink-0 text-white/45" strokeWidth={2.5} />
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold text-white/70">{event.taskTitle || event.type.replace('pomodoro_', '')}</div>
+                              <div className="mt-1 text-xs text-white/40">{formatDateTime(event.createdAt)}</div>
+                            </div>
                           </div>
                         );
                       })}
+                      {(selectedReview?.events.length ?? 0) === 0 && !loading && <EmptyState icon={Activity} message="No session events were captured on this day." />}
                     </div>
-                  </div>
-                  <div className="space-y-3">
-                    {(selectedReview?.events ?? []).slice(0, 8).map(event => {
-                      const EventIcon = EVENT_ICON[event.type] ?? Play;
-                      return (
-                        <div key={event.id} className={`rounded-lg border px-3 py-3 ${EVENT_STYLES[event.type]}`}>
-                          <div className="flex items-center gap-3">
-                            <EventIcon className="h-4 w-4 shrink-0" strokeWidth={2.5} />
-                            <div className="min-w-0">
-                              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-70">{event.type.replace('pomodoro_', '')}</div>
-                              <div className="truncate text-sm font-semibold text-white/90">{event.taskTitle || 'Unassigned session'}</div>
-                              <div className="text-xs opacity-60">{formatDateTime(event.createdAt)}</div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {(selectedReview?.events?.length ?? 0) === 0 && !selectedReviewLoading && <EmptyState icon={Activity} message="No timeline events captured for this day." />}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-semibold tracking-wide text-white">Update selected day</h3>
-                    <p className="mt-1 text-xs text-white/45">Score edits stay available without taking over the dashboard.</p>
-                  </div>
-                  <span className="text-xs text-white/45">{selectedDate}</span>
-                </div>
-                <div className="space-y-4">
-                  {DISCIPLINE_SCORE_BLOCKS.map(block => (
-                    <ScoreRow
-                      key={block.key}
-                      block={block}
-                      value={scoreDraft[block.key]}
-                      onChange={value => setScoreDraft(prev => ({ ...prev, [block.key]: value }))}
-                    />
-                  ))}
-                  <label className="block">
-                    <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-white/40">Notes</span>
-                    <textarea
-                      value={scoreNotes}
-                      onChange={event => setScoreNotes(event.target.value)}
-                      rows={4}
-                      className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none transition focus:border-white/25"
-                      placeholder="What shaped this completed day?"
-                    />
-                  </label>
-                  <button
-                    onClick={() => void handleSaveScores()}
-                    disabled={isSavingScores || selectedReviewLoading}
-                    className="inline-flex items-center gap-2 rounded-lg bg-accent-green px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {isSavingScores ? <RotateCcw className="h-4 w-4 animate-spin" /> : <BadgeCheck className="h-4 w-4" />}
-                    Save scores
-                  </button>
+                  </section>
                 </div>
               </div>
 
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold tracking-wide text-white">Reading log</h3>
-                  {!isAddingReading && (
+              <div className="space-y-6">
+                <section className="border border-white/10 bg-black/20 p-4 sm:p-5">
+                  <div className="mb-5 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-black text-white">Update daily score</h3>
+                      <p className="mt-1 text-xs text-white/45">Uses the existing six score blocks.</p>
+                    </div>
+                    <span className="font-mono text-[10px] text-white/35">{selectedDate}</span>
+                  </div>
+
+                  <div className="space-y-4">
+                    {DISCIPLINE_SCORE_BLOCKS.map(block => (
+                      <ScoreRow
+                        key={block.key}
+                        block={block}
+                        value={scoreDraft[block.key]}
+                        onChange={value => setScoreDraft(previous => ({ ...previous, [block.key]: value }))}
+                      />
+                    ))}
+                    <label className="block">
+                      <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-white/45">Reflection</span>
+                      <textarea
+                        value={scoreNotes}
+                        onChange={event => setScoreNotes(event.target.value)}
+                        rows={4}
+                        className="w-full border-2 border-white/10 bg-black/35 px-3 py-3 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-accent-green/50"
+                        placeholder="What shaped this completed day?"
+                      />
+                    </label>
                     <button
-                      onClick={() => setIsAddingReading(true)}
-                      disabled={selectedReviewLoading}
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-300 transition hover:text-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
+                      type="button"
+                      onClick={() => void handleSaveScores()}
+                      disabled={isSavingScores || loading}
+                      className="inline-flex min-h-11 items-center gap-2 border-2 border-black bg-accent-green px-4 text-sm font-black text-black transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-cream active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{ boxShadow: '4px 4px 0 rgba(0,0,0,0.85)' }}
                     >
-                      <Plus className="h-3.5 w-3.5" />
-                      Add
+                      {isSavingScores ? <RotateCcw className="h-4 w-4 animate-spin" /> : <BadgeCheck className="h-4 w-4" />}
+                      Save score
                     </button>
-                  )}
-                </div>
+                  </div>
+                </section>
 
-                <AnimatePresence>
-                  {isAddingReading && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0, overflow: 'hidden' }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="mb-4 rounded-lg border border-amber-400/20 bg-amber-400/5 p-4"
-                    >
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <input
-                          value={readingTitle}
-                          onChange={event => setReadingTitle(event.target.value)}
-                          className="sm:col-span-2 rounded-lg border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
-                          placeholder="Book title or article"
-                        />
-                        <input
-                          type="number"
-                          min="0"
-                          value={readingPages}
-                          onChange={event => setReadingPages(event.target.value)}
-                          className="rounded-lg border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
-                          placeholder="Pages"
-                        />
-                        <input
-                          type="number"
-                          min="0"
-                          value={readingMinutes}
-                          onChange={event => setReadingMinutes(event.target.value)}
-                          className="rounded-lg border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
-                          placeholder="Minutes"
-                        />
-                        <input
-                          value={readingNotes}
-                          onChange={event => setReadingNotes(event.target.value)}
-                          className="sm:col-span-2 rounded-lg border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-400/50"
-                          placeholder="Notes"
-                        />
-                      </div>
-                      <div className="mt-4 flex justify-end gap-3">
-                        <button onClick={() => setIsAddingReading(false)} className="px-3 py-2 text-xs font-semibold text-white/50 transition hover:text-white">
-                          Cancel
-                        </button>
-                        <button
-                          onClick={() => void handleSaveReading()}
-                          disabled={savingReading || selectedReviewLoading}
-                          className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-xs font-semibold text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {savingReading ? <RotateCcw className="h-4 w-4 animate-spin" /> : 'Save reading'}
-                        </button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                <div className="space-y-3">
-                  {(selectedReview?.reading ?? []).slice(0, 5).map(entry => (
-                    <div key={entry.id} className="rounded-lg border border-white/10 bg-black/20 p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-white">{entry.title || 'Untitled'}</div>
-                          <div className="mt-1 flex flex-wrap gap-2 text-xs text-white/45">
-                            <span>{entry.pages} pages</span>
-                            <span>{entry.minutes} min</span>
-                            <span>{formatDateTime(entry.createdAt)}</span>
-                          </div>
+                <LogPanel
+                  title="Reading log"
+                  icon={BookOpen}
+                  accent="text-amber-300"
+                  isAdding={isAddingReading}
+                  onAdd={() => setIsAddingReading(true)}
+                >
+                  <AnimatePresence initial={false}>
+                    {isAddingReading && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mb-4 overflow-hidden border border-amber-400/20 bg-amber-400/5 p-4"
+                      >
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <TextInput value={readingTitle} onChange={setReadingTitle} placeholder="Book title or article" className="sm:col-span-2" />
+                          <NumberInput value={readingPages} onChange={setReadingPages} placeholder="Pages" />
+                          <NumberInput value={readingMinutes} onChange={setReadingMinutes} placeholder="Minutes" />
+                          <TextInput value={readingNotes} onChange={setReadingNotes} placeholder="Notes" className="sm:col-span-2" />
                         </div>
-                      </div>
-                      {entry.notes && <div className="mt-3 text-sm text-white/65">{entry.notes}</div>}
-                    </div>
-                  ))}
-                  {(selectedReview?.reading?.length ?? 0) === 0 && !selectedReviewLoading && !isAddingReading && (
-                    <EmptyState icon={BookOpen} message="No reading logged for this completed day." onAction={() => setIsAddingReading(true)} actionText="Log reading" />
-                  )}
-                </div>
-              </div>
+                        <FormActions
+                          saving={savingReading}
+                          onCancel={() => setIsAddingReading(false)}
+                          onSave={() => void handleSaveReading()}
+                          saveLabel="Save reading"
+                          accentClass="bg-amber-400"
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold tracking-wide text-white">Exercise log</h3>
-                  {!isAddingExercise && (
-                    <button
-                      onClick={() => setIsAddingExercise(true)}
-                      disabled={selectedReviewLoading}
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent-green transition hover:text-green-300 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Add
-                    </button>
-                  )}
-                </div>
-
-                <AnimatePresence>
-                  {isAddingExercise && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0, overflow: 'hidden' }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="mb-4 rounded-lg border border-accent-green/20 bg-accent-green/5 p-4"
-                    >
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <input
-                          value={exerciseType}
-                          onChange={event => setExerciseType(event.target.value)}
-                          className="rounded-lg border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-accent-green/50"
-                          placeholder="Workout type"
-                        />
-                        <input
-                          type="number"
-                          min="0"
-                          value={exerciseDuration}
-                          onChange={event => setExerciseDuration(event.target.value)}
-                          className="rounded-lg border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-accent-green/50"
-                          placeholder="Minutes"
-                        />
-                        <input
-                          value={exerciseIntensity}
-                          onChange={event => setExerciseIntensity(event.target.value)}
-                          className="sm:col-span-2 rounded-lg border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-accent-green/50"
-                          placeholder="Intensity"
-                        />
-                        <input
-                          value={exerciseNotes}
-                          onChange={event => setExerciseNotes(event.target.value)}
-                          className="sm:col-span-2 rounded-lg border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-accent-green/50"
-                          placeholder="Notes"
-                        />
-                      </div>
-                      <div className="mt-4 flex justify-end gap-3">
-                        <button onClick={() => setIsAddingExercise(false)} className="px-3 py-2 text-xs font-semibold text-white/50 transition hover:text-white">
-                          Cancel
-                        </button>
-                        <button
-                          onClick={() => void handleSaveExercise()}
-                          disabled={savingExercise || selectedReviewLoading}
-                          className="inline-flex items-center gap-2 rounded-lg bg-accent-green px-4 py-2 text-xs font-semibold text-black transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {savingExercise ? <RotateCcw className="h-4 w-4 animate-spin" /> : 'Save exercise'}
-                        </button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                <div className="space-y-3">
-                  {(selectedReview?.exercise ?? []).slice(0, 5).map(entry => (
-                    <div key={entry.id} className="rounded-lg border border-white/10 bg-black/20 p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-white">{entry.type || 'Exercise'}</div>
-                          <div className="mt-1 flex flex-wrap gap-2 text-xs text-white/45">
-                            <span>{entry.durationMinutes} min</span>
-                            {entry.intensity && <span>{entry.intensity}</span>}
-                            <span>{formatDateTime(entry.createdAt)}</span>
+                  <div className="space-y-2">
+                    {(selectedReview?.reading ?? []).slice(0, 6).map(entry => (
+                      <div key={entry.id} className="border border-white/10 bg-white/[0.025] p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-white/75">{entry.title || 'Untitled'}</div>
+                            <div className="mt-1 text-xs text-white/40">{entry.pages} pages · {entry.minutes} min</div>
                           </div>
+                          <span className="shrink-0 text-xs text-white/35">{formatShortDate(entry.date)}</span>
                         </div>
+                        {entry.notes && <p className="mt-2 text-sm text-white/55">{entry.notes}</p>}
                       </div>
-                      {entry.notes && <div className="mt-3 text-sm text-white/65">{entry.notes}</div>}
-                    </div>
-                  ))}
-                  {(selectedReview?.exercise?.length ?? 0) === 0 && !selectedReviewLoading && !isAddingExercise && (
-                    <EmptyState icon={Dumbbell} message="No exercise logged for this completed day." onAction={() => setIsAddingExercise(true)} actionText="Log exercise" />
-                  )}
-                </div>
+                    ))}
+                    {(selectedReview?.reading.length ?? 0) === 0 && !loading && !isAddingReading && (
+                      <EmptyState icon={BookOpen} message="No reading was logged on this day." actionText="Log reading" onAction={() => setIsAddingReading(true)} />
+                    )}
+                  </div>
+                </LogPanel>
+
+                <LogPanel
+                  title="Exercise log"
+                  icon={Dumbbell}
+                  accent="text-accent-green"
+                  isAdding={isAddingExercise}
+                  onAdd={() => setIsAddingExercise(true)}
+                >
+                  <AnimatePresence initial={false}>
+                    {isAddingExercise && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mb-4 overflow-hidden border border-accent-green/20 bg-accent-green/5 p-4"
+                      >
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <TextInput value={exerciseType} onChange={setExerciseType} placeholder="Exercise type" className="sm:col-span-2" />
+                          <NumberInput value={exerciseDuration} onChange={setExerciseDuration} placeholder="Minutes" />
+                          <TextInput value={exerciseIntensity} onChange={setExerciseIntensity} placeholder="Intensity" />
+                          <TextInput value={exerciseNotes} onChange={setExerciseNotes} placeholder="Notes" className="sm:col-span-2" />
+                        </div>
+                        <FormActions
+                          saving={savingExercise}
+                          onCancel={() => setIsAddingExercise(false)}
+                          onSave={() => void handleSaveExercise()}
+                          saveLabel="Save exercise"
+                          accentClass="bg-accent-green"
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <div className="space-y-2">
+                    {(selectedReview?.exercise ?? []).slice(0, 6).map(entry => (
+                      <div key={entry.id} className="border border-white/10 bg-white/[0.025] p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-white/75">{entry.type || 'Exercise'}</div>
+                            <div className="mt-1 text-xs text-white/40">{entry.durationMinutes} min{entry.intensity ? ` · ${entry.intensity}` : ''}</div>
+                          </div>
+                          <span className="shrink-0 text-xs text-white/35">{formatShortDate(entry.date)}</span>
+                        </div>
+                        {entry.notes && <p className="mt-2 text-sm text-white/55">{entry.notes}</p>}
+                      </div>
+                    ))}
+                    {(selectedReview?.exercise.length ?? 0) === 0 && !loading && !isAddingExercise && (
+                      <EmptyState icon={Dumbbell} message="No exercise was logged on this day." actionText="Log exercise" onAction={() => setIsAddingExercise(true)} />
+                    )}
+                  </div>
+                </LogPanel>
               </div>
             </div>
           </div>
-        </section>
+        </details>
       </main>
+    </div>
+  );
+}
+
+function AccountMenu({
+  user,
+  onOpenSettings,
+  onOpenHistory,
+  onOpenAnalytics,
+  onLogout,
+}: {
+  user: CentralAuthUser | null;
+  onOpenSettings: () => void;
+  onOpenHistory: () => void;
+  onOpenAnalytics: () => void;
+  onLogout: () => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const name = user?.name || user?.email?.split('@')[0] || 'Account';
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setIsOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setIsOpen(false);
+      triggerRef.current?.focus();
+    };
+
+    document.addEventListener('pointerdown', closeOnOutsidePress);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePress);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isOpen]);
+
+  const menuItems = () => Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []);
+
+  const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = menuItems();
+    if (!items.length) return;
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      items[(currentIndex + 1 + items.length) % items.length]?.focus();
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      items[(currentIndex - 1 + items.length) % items.length]?.focus();
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      items[0]?.focus();
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      items[items.length - 1]?.focus();
+    }
+  };
+
+  const runAction = (action: () => void) => {
+    setIsOpen(false);
+    action();
+  };
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setIsOpen(open => !open)}
+        onKeyDown={event => {
+          if (event.key !== 'ArrowDown') return;
+          event.preventDefault();
+          setIsOpen(true);
+          window.setTimeout(() => menuItems()[0]?.focus(), 0);
+        }}
+        className={`flex min-h-11 max-w-[12.5rem] items-center gap-2 border-2 px-2.5 text-left transition sm:max-w-[16rem] sm:px-3 ${
+          isOpen
+            ? 'border-accent-green/60 bg-accent-green/10 text-white'
+            : 'border-white/10 bg-white/[0.03] text-white/65 hover:border-white/30 hover:bg-white/[0.07] hover:text-white'
+        } focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green active:translate-y-px`}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        aria-controls="discipline-account-menu"
+      >
+        <span className="grid h-7 w-7 shrink-0 place-items-center overflow-hidden rounded-full border border-white/20 bg-black/40">
+          {user?.avatarUrl && user.avatarUrl !== failedAvatarUrl ? (
+            <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" onError={() => setFailedAvatarUrl(user.avatarUrl ?? null)} />
+          ) : (
+            <UserCircle className="h-4 w-4" strokeWidth={2.5} />
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-black text-white">{name}</span>
+          <span className="hidden truncate text-[9px] font-bold uppercase tracking-[0.12em] text-white/35 sm:block">Account</span>
+        </span>
+        <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} strokeWidth={3} />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            id="discipline-account-menu"
+            ref={menuRef}
+            role="menu"
+            aria-label="Profile and account"
+            onKeyDown={handleMenuKeyDown}
+            className="absolute right-0 top-[calc(100%+0.65rem)] z-[80] w-[min(18rem,calc(100vw-2rem))] border-2 border-white/20 bg-[#0b0b0b] p-2 shadow-[8px_8px_0_rgba(0,0,0,0.85)]"
+            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.98 }}
+            transition={{ duration: 0.15 }}
+          >
+            <div className="border-b border-white/10 px-3 py-3">
+              <div className="truncate text-sm font-black text-white">{name}</div>
+              <div className="mt-1 truncate text-xs text-white/40">{user?.email || 'Signed in'}</div>
+            </div>
+
+            <div className="py-2">
+              <AccountMenuItem icon={Settings2} label="Settings" onClick={() => runAction(onOpenSettings)} />
+              <AccountMenuItem icon={HistoryIcon} label="History" onClick={() => runAction(onOpenHistory)} />
+              <AccountMenuItem icon={BarChart3} label="Analytics" onClick={() => runAction(onOpenAnalytics)} />
+            </div>
+
+            <div className="border-t border-white/10 pt-2">
+              <AccountMenuItem icon={LogOut} label="Sign out" onClick={() => runAction(onLogout)} danger />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function AccountMenuItem({
+  icon: Icon,
+  label,
+  onClick,
+  danger = false,
+}: {
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className={`flex min-h-11 w-full items-center gap-3 px-3 text-sm font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset active:translate-y-px ${
+        danger
+          ? 'text-red-300 hover:bg-accent-red/10 hover:text-red-200 focus-visible:outline-accent-red'
+          : 'text-white/65 hover:bg-white/[0.07] hover:text-white focus-visible:outline-accent-green'
+      }`}
+    >
+      <Icon className="h-4 w-4" strokeWidth={2.5} />
+      {label}
+    </button>
+  );
+}
+
+function ScoreDial({ value, total }: { value: number | null; total: number | null }) {
+  const progress = value ?? 0;
+  const circumference = 2 * Math.PI * 52;
+  const dashOffset = circumference - (progress / 100) * circumference;
+
+  return (
+    <div className="flex shrink-0 flex-col items-center sm:pl-4">
+      <div className="relative h-32 w-32">
+        <svg className="h-full w-full -rotate-90" viewBox="0 0 120 120" aria-hidden="true">
+          <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="8" />
+          <circle
+            cx="60"
+            cy="60"
+            r="52"
+            fill="none"
+            stroke="#34d399"
+            strokeWidth="8"
+            strokeLinecap="square"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            className="transition-[stroke-dashoffset] duration-700"
+          />
+        </svg>
+        <div className="absolute inset-0 grid place-items-center text-center">
+          <div>
+            <div className="font-grotesk text-3xl font-black leading-none text-white">{value === null ? '—' : value}</div>
+            <div className="mt-1 text-[9px] font-black uppercase tracking-[0.18em] text-white/40">{value === null ? 'Pending' : 'Percent'}</div>
+          </div>
+        </div>
+      </div>
+      <div className="mt-2 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Today discipline score</div>
+      <div className="mt-1 text-center text-xs text-white/35">{total === null ? 'Not recorded yet' : `${total}/${DAY_SCORE_MAX} existing total`}</div>
+    </div>
+  );
+}
+
+function ContributionHeatmap({
+  trend,
+  selectedDate,
+  onSelectDate,
+  loading,
+}: {
+  trend: DisciplineTrendPoint[];
+  selectedDate: string;
+  onSelectDate: (date: string) => void;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="flex gap-1.5" aria-label="Loading contribution history">
+        {Array.from({ length: 30 }, (_, index) => (
+          <span key={index} className="h-4 w-4 animate-pulse bg-white/10 sm:h-5 sm:w-5" />
+        ))}
+      </div>
+    );
+  }
+
+  const padding = trend.length ? new Date(`${trend[0].date}T12:00:00`).getDay() : 0;
+
+  return (
+    <div className="overflow-x-auto pb-2">
+      <div className="flex min-w-max gap-3">
+        <div className="grid grid-rows-7 gap-1.5 pt-px text-[9px] font-bold uppercase text-white/30" aria-hidden="true">
+          {['Sun', '', 'Tue', '', 'Thu', '', 'Sat'].map((day, index) => (
+            <span key={`${day}-${index}`} className="flex h-4 items-center sm:h-5">{day}</span>
+          ))}
+        </div>
+        <div className="grid grid-flow-col grid-rows-7 gap-1.5">
+          {Array.from({ length: padding }, (_, index) => (
+            <span key={`pad-${index}`} className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
+          ))}
+          {trend.map(day => {
+            const intensity = Math.max(0, Math.min(1, Number(day.total ?? 0) / DAY_SCORE_MAX));
+            const selected = day.date === selectedDate;
+            return (
+              <button
+                key={day.date}
+                type="button"
+                onClick={() => onSelectDate(day.date)}
+                className={`h-4 w-4 border transition hover:scale-110 hover:border-white/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-cream sm:h-5 sm:w-5 ${
+                  selected ? 'border-paper-cream ring-1 ring-paper-cream/50' : 'border-white/[0.06]'
+                } ${getHeatmapTone(intensity)}`}
+                title={`${formatLongDate(day.date)}: ${day.total}/${DAY_SCORE_MAX}`}
+                aria-label={`${formatLongDate(day.date)}, discipline score ${day.total} of ${DAY_SCORE_MAX}`}
+                aria-pressed={selected}
+              />
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HeatmapLegend() {
+  return (
+    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.14em] text-white/35" aria-label="Heatmap score intensity from no score to high score">
+      <span>None</span>
+      <div className="flex gap-1" aria-hidden="true">
+        {[0, 0.2, 0.45, 0.7, 0.9].map(level => (
+          <span key={level} className={`h-3 w-3 border border-white/[0.06] ${getHeatmapTone(level)}`} />
+        ))}
+      </div>
+      <span>High</span>
+    </div>
+  );
+}
+
+function TodaySkeleton() {
+  return (
+    <div className="grid animate-pulse gap-6 sm:grid-cols-[1fr_auto] sm:items-center">
+      <div>
+        <div className="h-6 w-36 bg-white/10" />
+        <div className="mt-5 h-8 w-4/5 bg-white/10" />
+        <div className="mt-3 h-4 w-3/5 bg-white/[0.07]" />
+        <div className="mt-8 h-2 w-full bg-white/10" />
+      </div>
+      <div className="h-32 w-32 rounded-full border-8 border-white/10" />
     </div>
   );
 }
@@ -1483,60 +1365,21 @@ function SectionHeading({
   icon: Icon,
   title,
   subtitle,
+  id,
 }: {
   icon: LucideIcon;
   title: string;
   subtitle: string;
+  id?: string;
 }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-3">
-      <div className="flex items-center gap-3">
-        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-2 text-white/70">
-          <Icon className="h-4 w-4" strokeWidth={2.5} />
-        </div>
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight text-white">{title}</h2>
-          <p className="text-sm text-white/45">{subtitle}</p>
-        </div>
+    <div className="flex items-center gap-3">
+      <div className="grid h-10 w-10 shrink-0 place-items-center border border-white/15 bg-white/[0.035] text-white/65">
+        <Icon className="h-4 w-4" strokeWidth={2.5} />
       </div>
-    </div>
-  );
-}
-
-function ScoreRow({
-  block,
-  value,
-  onChange,
-}: {
-  block: (typeof DISCIPLINE_SCORE_BLOCKS)[number];
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  const meta = SCORE_META[block.key];
-  const Icon = meta.icon;
-
-  return (
-    <div className="flex items-center gap-4">
-      <div className={`rounded-lg p-2.5 ${meta.tint}`}>
-        <Icon className={`h-4 w-4 ${meta.accent}`} strokeWidth={2.5} />
-      </div>
-      <div className="flex-1">
-        <div className="mb-2 flex items-end justify-between">
-          <span className="text-sm font-medium text-white/80">{block.label}</span>
-          <span className="text-sm font-semibold text-white">{value}/10</span>
-        </div>
-        <div className={`relative h-2 overflow-hidden rounded-full ${meta.track}`}>
-          <div className={`absolute inset-y-0 left-0 rounded-full ${meta.fill}`} style={{ width: `${(value / SCORE_MAX) * 100}%` }} />
-          <input
-            type="range"
-            min="0"
-            max="10"
-            step="1"
-            value={value}
-            onChange={event => onChange(Number(event.target.value))}
-            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-          />
-        </div>
+      <div>
+        <h2 id={id} className="font-grotesk text-lg font-black text-white">{title}</h2>
+        <p className="text-sm text-white/45">{subtitle}</p>
       </div>
     </div>
   );
@@ -1554,41 +1397,166 @@ function MetricCard({
   detail: string;
 }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-      <div className="flex items-center gap-3 text-white/50">
-        <div className="rounded-lg bg-white/5 p-2">
-          <Icon className="h-4 w-4" strokeWidth={2.5} />
-        </div>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/55">{label}</span>
+    <article className="min-w-0 border border-white/10 bg-white/[0.025] p-3 sm:p-4">
+      <div className="flex min-h-7 items-start gap-2 text-white/45">
+        <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} />
+        <span className="break-words text-[9px] font-black uppercase leading-tight tracking-[0.14em] sm:text-[10px]">{label}</span>
       </div>
-      <div className="mt-4 text-2xl font-semibold tracking-tight text-white">{value}</div>
-      <div className="mt-1 text-xs text-white/45">{detail}</div>
+      <div className="mt-3 break-words font-grotesk text-xl font-black leading-tight text-white sm:text-2xl">{value}</div>
+      <div className="mt-1 text-[11px] leading-snug text-white/40 sm:text-xs">{detail}</div>
+    </article>
+  );
+}
+
+function SignalRow({ label, value, tone }: { label: string; value: string; tone: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <span className="text-xs font-semibold text-white/40">{label}</span>
+      <span className={`text-right text-xs font-black ${tone}`}>{value}</span>
     </div>
   );
 }
 
-function Sparkline({ values, stroke }: { values: number[]; stroke: string }) {
-  if (!values.length) {
-    return <div className="h-20 rounded-lg border border-dashed border-white/10 bg-black/20" />;
-  }
-
-  const width = 220;
-  const height = 72;
-  const max = Math.max(...values, 1);
-  const step = values.length > 1 ? width / (values.length - 1) : width;
-  const points = values
-    .map((value, index) => {
-      const x = index * step;
-      const y = height - (value / max) * (height - 8) - 4;
-      return `${x},${y}`;
-    })
-    .join(' ');
+function ScoreRow({
+  block,
+  value,
+  onChange,
+}: {
+  block: (typeof DISCIPLINE_SCORE_BLOCKS)[number];
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const meta = SCORE_META[block.key];
+  const Icon = meta.icon;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-20 w-full">
-      <path d={`M 0 ${height - 4} L ${points.replace(/ /g, ' L ')}`} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
-      <polyline fill="none" points={points} stroke={stroke} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <label className="flex items-center gap-3">
+      <span className={`grid h-9 w-9 shrink-0 place-items-center ${meta.tint}`}>
+        <Icon className={`h-4 w-4 ${meta.accent}`} strokeWidth={2.5} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="mb-2 flex items-center justify-between gap-3">
+          <span className="truncate text-sm font-semibold text-white/75">{block.label}</span>
+          <span className="text-sm font-black text-white">{value}/10</span>
+        </span>
+        <span className={`relative block h-2 ${meta.track}`}>
+          <span className={`absolute inset-y-0 left-0 ${meta.fill}`} style={{ width: `${value * 10}%` }} />
+          <input
+            type="range"
+            min="0"
+            max="10"
+            step="1"
+            value={value}
+            onChange={event => onChange(Number(event.target.value))}
+            className="absolute -inset-y-3 inset-x-0 w-full cursor-pointer opacity-0"
+            aria-label={`${block.label} score`}
+          />
+        </span>
+      </span>
+    </label>
+  );
+}
+
+function LogPanel({
+  title,
+  icon: Icon,
+  accent,
+  isAdding,
+  onAdd,
+  children,
+}: {
+  title: string;
+  icon: LucideIcon;
+  accent: string;
+  isAdding: boolean;
+  onAdd: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="border border-white/10 bg-black/20 p-4 sm:p-5">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Icon className={`h-4 w-4 ${accent}`} strokeWidth={2.5} />
+          <h3 className="text-sm font-black text-white">{title}</h3>
+        </div>
+        {!isAdding && (
+          <button
+            type="button"
+            onClick={onAdd}
+            className={`inline-flex min-h-10 items-center gap-1.5 px-2 text-xs font-black transition hover:bg-white/[0.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-green active:translate-y-px ${accent}`}
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={3} />
+            Add
+          </button>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function TextInput({
+  value,
+  onChange,
+  placeholder,
+  className = '',
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  className?: string;
+}) {
+  return (
+    <input
+      value={value}
+      onChange={event => onChange(event.target.value)}
+      placeholder={placeholder}
+      className={`min-h-11 border-2 border-white/10 bg-black/35 px-3 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-white/35 ${className}`}
+    />
+  );
+}
+
+function NumberInput({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
+  return (
+    <input
+      type="number"
+      min="0"
+      value={value}
+      onChange={event => onChange(event.target.value)}
+      placeholder={placeholder}
+      className="min-h-11 border-2 border-white/10 bg-black/35 px-3 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-white/35"
+    />
+  );
+}
+
+function FormActions({
+  saving,
+  onCancel,
+  onSave,
+  saveLabel,
+  accentClass,
+}: {
+  saving: boolean;
+  onCancel: () => void;
+  onSave: () => void;
+  saveLabel: string;
+  accentClass: string;
+}) {
+  return (
+    <div className="mt-4 flex justify-end gap-2">
+      <button type="button" onClick={onCancel} className="min-h-10 px-3 text-xs font-black text-white/45 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white active:translate-y-px">
+        Cancel
+      </button>
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={saving}
+        className={`inline-flex min-h-10 items-center gap-2 px-4 text-xs font-black text-black transition hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-cream active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 ${accentClass}`}
+      >
+        {saving && <RotateCcw className="h-3.5 w-3.5 animate-spin" />}
+        {saveLabel}
+      </button>
+    </div>
   );
 }
 
@@ -1603,18 +1571,27 @@ function EmptyState({
   onAction?: () => void;
   actionText?: string;
 }) {
-  return (
-    <div
-      className={`flex flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-black/20 px-6 py-10 text-center ${
-        onAction ? 'cursor-pointer transition hover:border-white/20 hover:text-white' : ''
-      }`}
-      onClick={onAction}
-    >
-      <div className="mb-3 rounded-full bg-white/5 p-3 text-white/20">
-        <Icon className="h-5 w-5" />
-      </div>
-      <p className="text-sm font-medium text-white/40">{message}</p>
-      {onAction && actionText && <span className="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-white/55">{actionText}</span>}
-    </div>
+  const content = (
+    <>
+      <span className="grid h-9 w-9 place-items-center rounded-full bg-white/5 text-white/20">
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="mt-3 text-sm font-semibold text-white/40">{message}</span>
+      {actionText && <span className="mt-2 text-[10px] font-black uppercase tracking-[0.16em] text-accent-green">{actionText}</span>}
+    </>
   );
+
+  if (onAction) {
+    return (
+      <button
+        type="button"
+        onClick={onAction}
+        className="flex w-full flex-col items-center justify-center border border-dashed border-white/10 bg-black/20 px-5 py-8 text-center transition hover:border-white/25 hover:bg-white/[0.025] focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-accent-green active:translate-y-px"
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <div className="flex flex-col items-center justify-center border border-dashed border-white/10 bg-black/20 px-5 py-8 text-center">{content}</div>;
 }

@@ -819,6 +819,50 @@ function App() {
     ? '#080808'
     : `color-mix(in srgb, ${colors.break} 10%, #050505)`;
 
+  const appModals = (
+    <>
+      <Suspense fallback={null}>
+        {showSettings && (
+          <SettingsModal
+            isOpen={showSettings}
+            onClose={() => { setShowSettings(false); saveSettings(); }}
+            focusTime={focusTime}
+            breakTime={breakTime}
+            setFocusTime={setFocusTime}
+            setBreakTime={setBreakTime}
+            soundEnabled={soundEnabled}
+            toggleSound={() => setSoundEnabled(!soundEnabled)}
+            openHistory={() => setShowHistory(true)}
+            openAnalytics={() => setShowAnalytics(true)}
+          />
+        )}
+      </Suspense>
+
+      <Suspense fallback={null}>
+        {showHistory && (
+          <HistoryModal
+            isOpen={showHistory}
+            onClose={() => setShowHistory(false)}
+            history={history}
+            clearHistory={clearHistory}
+            onBack={() => { setShowHistory(false); setShowSettings(true); }}
+          />
+        )}
+      </Suspense>
+
+      <Suspense fallback={null}>
+        {showAnalytics && (
+          <AnalyticsModal
+            isOpen={showAnalytics}
+            onClose={() => setShowAnalytics(false)}
+            history={history}
+            onBack={() => { setShowAnalytics(false); setShowSettings(true); }}
+          />
+        )}
+      </Suspense>
+    </>
+  );
+
   if (auth.loading || !auth.authenticated) {
     return (
       <AuthGate
@@ -830,7 +874,20 @@ function App() {
   }
 
   if (isDisciplineRoute) {
-    return <DisciplineDashboard onNavigateHome={() => navigateTo('/')} />;
+    return (
+      <>
+        <DisciplineDashboard
+          onNavigateHome={() => navigateTo('/')}
+          onOpenSettings={() => { setShowSettings(true); playClick(); }}
+          onOpenHistory={() => { setShowHistory(true); playClick(); }}
+          onOpenAnalytics={() => { setShowAnalytics(true); playClick(); }}
+          onLogout={() => { playClick(); auth.logout(); }}
+          user={auth.user}
+          focusSessionMinutes={focusTime}
+        />
+        {appModals}
+      </>
+    );
   }
 
   return (
@@ -1488,45 +1545,7 @@ function App() {
         )}
       </AnimatePresence>
 
-      <Suspense fallback={null}>
-        {showSettings && (
-          <SettingsModal
-            isOpen={showSettings}
-            onClose={() => { setShowSettings(false); saveSettings(); }}
-            focusTime={focusTime}
-            breakTime={breakTime}
-            setFocusTime={setFocusTime}
-            setBreakTime={setBreakTime}
-            soundEnabled={soundEnabled}
-            toggleSound={() => setSoundEnabled(!soundEnabled)}
-            openHistory={() => setShowHistory(true)}
-            openAnalytics={() => setShowAnalytics(true)}
-          />
-        )}
-      </Suspense>
-
-      <Suspense fallback={null}>
-        {showHistory && (
-          <HistoryModal
-            isOpen={showHistory}
-            onClose={() => setShowHistory(false)}
-            history={history}
-            clearHistory={clearHistory}
-            onBack={() => { setShowHistory(false); setShowSettings(true); }}
-          />
-        )}
-      </Suspense>
-
-      <Suspense fallback={null}>
-        {showAnalytics && (
-          <AnalyticsModal
-            isOpen={showAnalytics}
-            onClose={() => setShowAnalytics(false)}
-            history={history}
-            onBack={() => { setShowAnalytics(false); setShowSettings(true); }}
-          />
-        )}
-      </Suspense>
+      {appModals}
     </div>
   );
 }
