@@ -372,7 +372,7 @@ function App() {
       });
 
     if (mode === 'focus') {
-      pushPomodoroSession(newItem)
+      pushPomodoroSession(newItem, sessionIdRef.current)
         .then(() => {
           if (sprintApiBaseUrl) setTaskSyncState('online');
         })

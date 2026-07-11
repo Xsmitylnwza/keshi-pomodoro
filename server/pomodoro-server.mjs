@@ -438,6 +438,7 @@ function normalizePomodoroSession(session = {}) {
   const idempotencyKey = typeof session.idempotencyKey === 'string' && session.idempotencyKey.trim() ? session.idempotencyKey.trim() : undefined;
   return {
     id: typeof session.id === 'string' && session.id ? session.id : randomUUID(),
+    sessionId: typeof session.sessionId === 'string' && session.sessionId ? session.sessionId : null,
     taskId: typeof session.taskId === 'string' && session.taskId ? session.taskId : null,
     taskTitle: typeof session.taskTitle === 'string' && session.taskTitle ? session.taskTitle : null,
     durationMinutes: Number(session.durationMinutes || 0),
@@ -634,6 +635,112 @@ function datesBetween(startDate, endDate) {
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return dates;
+}
+
+function emptyFocusActivity() {
+  return {
+    focusMinutes: 0,
+    completedSessions: 0,
+    firstStartedAt: null,
+    hourlyMinutes: Array.from({ length: 24 }, () => 0),
+    segments: [],
+  };
+}
+
+function businessHour(value) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: businessTimeZone,
+    hour: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(value));
+  return Number(parts.find(part => part.type === 'hour')?.value ?? 0);
+}
+
+function addFocusSegment(activity, segment) {
+  const start = new Date(segment.startedAt);
+  const end = new Date(segment.endedAt);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) return;
+
+  const minutes = (end.getTime() - start.getTime()) / 60000;
+  activity.focusMinutes += minutes;
+  activity.segments.push(segment);
+  if (!activity.firstStartedAt || start < new Date(activity.firstStartedAt)) activity.firstStartedAt = segment.startedAt;
+
+  for (let cursor = start.getTime(); cursor < end.getTime(); cursor += 60000) {
+    const chunkEnd = Math.min(cursor + 60000, end.getTime());
+    activity.hourlyMinutes[businessHour(cursor)] += (chunkEnd - cursor) / 60000;
+  }
+}
+
+function buildFocusActivityByDate(range, sessions, events) {
+  const activityByDate = new Map(datesBetween(range.startDate, range.endDate).map(date => [date, emptyFocusActivity()]));
+  const sessionsByTimerId = new Map(sessions
+    .filter(session => session.sessionId)
+    .map(session => [session.sessionId, session]));
+  const eventsBySession = new Map();
+
+  for (const event of events) {
+    if (event.mode !== 'focus' || !sessionsByTimerId.has(event.sessionId)) continue;
+    const group = eventsBySession.get(event.sessionId) ?? [];
+    group.push(event);
+    eventsBySession.set(event.sessionId, group);
+  }
+
+  const matchedSessionIds = new Set();
+  for (const [sessionId, sessionEvents] of eventsBySession) {
+    const session = sessionsByTimerId.get(sessionId);
+    const activity = activityByDate.get(session.businessDate);
+    if (!activity) continue;
+    const completed = sessionEvents.some(event => event.type === 'pomodoro_completed');
+    if (!completed) continue;
+
+    matchedSessionIds.add(session.id);
+    const ordered = [...sessionEvents].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    let activeStart = null;
+    let added = false;
+    for (const event of ordered) {
+      if (event.type === 'pomodoro_started' || event.type === 'pomodoro_resumed') {
+        activeStart ??= event.createdAt;
+        continue;
+      }
+      if (!activeStart || !['pomodoro_paused', 'pomodoro_cancelled', 'pomodoro_completed'].includes(event.type)) continue;
+      addFocusSegment(activity, {
+        sessionId,
+        startedAt: activeStart,
+        endedAt: event.createdAt,
+        durationMinutes: (new Date(event.createdAt).getTime() - new Date(activeStart).getTime()) / 60000,
+        taskTitle: session.taskTitle,
+        source: 'event',
+      });
+      added = true;
+      activeStart = null;
+    }
+    if (!added) matchedSessionIds.delete(session.id);
+  }
+
+  for (const session of sessions) {
+    if (matchedSessionIds.has(session.id)) continue;
+    const activity = activityByDate.get(session.businessDate);
+    const endedAt = new Date(session.completedAt);
+    const durationMinutes = Math.max(0, Number(session.durationMinutes || 0));
+    if (!activity || !Number.isFinite(endedAt.getTime()) || durationMinutes <= 0) continue;
+    const startedAt = new Date(endedAt.getTime() - durationMinutes * 60000);
+    addFocusSegment(activity, {
+      sessionId: session.sessionId ?? session.id,
+      startedAt: startedAt.toISOString(),
+      endedAt: endedAt.toISOString(),
+      durationMinutes,
+      taskTitle: session.taskTitle,
+      source: 'inferred',
+    });
+  }
+
+  for (const activity of activityByDate.values()) {
+    activity.focusMinutes = Math.round(activity.focusMinutes);
+    activity.hourlyMinutes = activity.hourlyMinutes.map(minutes => Math.round(minutes));
+    activity.completedSessions = new Set(activity.segments.map(segment => segment.sessionId)).size;
+  }
+  return activityByDate;
 }
 
 async function recomputeStreak(userKey) {
@@ -1111,15 +1218,23 @@ async function handleApi(req, res, url) {
     const db = await getDisciplineDb(userKey);
     const rows = db.prepare('SELECT * FROM daily_scores WHERE date BETWEEN ? AND ? ORDER BY date ASC').all(range.startDate, range.endDate);
     const byDate = new Map(rows.map(row => [row.date, parseScores(row)]));
-    const trend = datesBetween(range.startDate, range.endDate).map(date => byDate.get(date) || {
-      date,
-      scores: null,
-      notes: '',
-      total: 0,
-      average: 0,
-      createdAt: null,
-      updatedAt: null,
-    });
+    const focusActivityByDate = buildFocusActivityByDate(
+      range,
+      await readPomodoros(userKey),
+      await readPomodoroEvents(userKey),
+    );
+    const trend = datesBetween(range.startDate, range.endDate).map(date => ({
+      ...(byDate.get(date) || {
+        date,
+        scores: null,
+        notes: '',
+        total: 0,
+        average: 0,
+        createdAt: null,
+        updatedAt: null,
+      }),
+      activity: focusActivityByDate.get(date) ?? emptyFocusActivity(),
+    }));
     sendJson(res, 200, {
       days: range.days,
       from: range.from,

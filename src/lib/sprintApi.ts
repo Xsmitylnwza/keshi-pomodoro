@@ -83,7 +83,7 @@ export async function deleteSprintTask(taskId: string) {
   return response.json().catch(() => null);
 }
 
-export async function pushPomodoroSession(item: HistoryItem) {
+export async function pushPomodoroSession(item: HistoryItem, sessionId?: string | null) {
   if (item.mode !== 'focus') return null;
 
   const response = await fetch(buildApiUrl('/pomodoros'), {
@@ -95,6 +95,7 @@ export async function pushPomodoroSession(item: HistoryItem) {
     },
     body: JSON.stringify({
       id: item.id,
+      sessionId: sessionId ?? null,
       taskId: item.taskId,
       taskTitle: item.taskTitle,
       durationMinutes: item.duration,

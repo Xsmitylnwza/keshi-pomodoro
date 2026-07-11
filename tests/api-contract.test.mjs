@@ -177,6 +177,61 @@ test('pomodoros and events are idempotent and review by businessDate', async () 
   assert.equal(review.body.events.length, 1);
 });
 
+test('trend activity highlights completed focus sessions even without a discipline score', async () => {
+  const { response, body } = await api('/api/discipline/scores/trend?from=2026-07-05&to=2026-07-06');
+  assert.equal(response.status, 200);
+  const activeDay = body.trend.find(day => day.date === '2026-07-05');
+  const emptyDay = body.trend.find(day => day.date === '2026-07-06');
+
+  assert.equal(activeDay.total, 0);
+  assert.equal(activeDay.activity.focusMinutes, 25);
+  assert.equal(activeDay.activity.completedSessions, 1);
+  assert.equal(activeDay.activity.segments[0].source, 'inferred');
+  assert.equal(activeDay.activity.hourlyMinutes[0], 25);
+  assert.equal(emptyDay.activity.focusMinutes, 0);
+  assert.deepEqual(emptyDay.activity.hourlyMinutes, Array.from({ length: 24 }, () => 0));
+});
+
+test('trend activity uses the recorded timer start for linked sessions', async () => {
+  const sessionId = 'timer-session-timeline';
+  await post('/api/pomodoros', {
+    id: 'pomo-timeline',
+    sessionId,
+    durationMinutes: 25,
+    completedAt: '2026-07-06T03:25:00.000Z',
+    businessDate: '2026-07-06',
+  });
+  await post('/api/events', {
+    id: 'event-timeline-start',
+    sessionId,
+    type: 'pomodoro_started',
+    mode: 'focus',
+    plannedSeconds: 1500,
+    elapsedSeconds: 0,
+    remainingSeconds: 1500,
+    createdAt: '2026-07-06T03:00:00.000Z',
+    businessDate: '2026-07-06',
+  });
+  await post('/api/events', {
+    id: 'event-timeline-complete',
+    sessionId,
+    type: 'pomodoro_completed',
+    mode: 'focus',
+    plannedSeconds: 1500,
+    elapsedSeconds: 1500,
+    remainingSeconds: 0,
+    createdAt: '2026-07-06T03:25:00.000Z',
+    businessDate: '2026-07-06',
+  });
+
+  const { body } = await api('/api/discipline/scores/trend?from=2026-07-06&to=2026-07-06');
+  const activity = body.trend[0].activity;
+  assert.equal(activity.focusMinutes, 25);
+  assert.equal(activity.firstStartedAt, '2026-07-06T03:00:00.000Z');
+  assert.equal(activity.hourlyMinutes[10], 25);
+  assert.equal(activity.segments[0].source, 'event');
+});
+
 test('discipline logs are idempotent', async () => {
   const reading = {
     date: '2026-07-05',

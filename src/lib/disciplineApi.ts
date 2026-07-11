@@ -63,6 +63,7 @@ export interface DisciplineExerciseEntry {
 
 export interface DisciplinePomodoroSession {
   id: string;
+  sessionId?: string | null;
   taskId: string | null;
   taskTitle: string | null;
   durationMinutes: number;
@@ -71,6 +72,21 @@ export interface DisciplinePomodoroSession {
   source: string;
   storedAt?: string;
   idempotencyKey?: string;
+}
+
+export interface DisciplineFocusActivity {
+  focusMinutes: number;
+  completedSessions: number;
+  firstStartedAt: string | null;
+  hourlyMinutes: number[];
+  segments: Array<{
+    sessionId: string;
+    startedAt: string;
+    endedAt: string;
+    durationMinutes: number;
+    taskTitle: string | null;
+    source: 'event' | 'inferred';
+  }>;
 }
 
 export interface DisciplineEvent {
@@ -120,6 +136,7 @@ export interface DisciplineTrendPoint {
   average: number;
   createdAt: string | null;
   updatedAt: string | null;
+  activity?: DisciplineFocusActivity;
 }
 
 export interface DisciplineTrendResponse {

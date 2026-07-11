@@ -152,6 +152,12 @@ const formatDateTime = (value: string) =>
     minute: '2-digit',
   });
 
+const formatTime = (value: string) =>
+  new Date(value).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
 const createEmptyScores = (): ScoreDraft =>
   Object.fromEntries(DISCIPLINE_SCORE_BLOCKS.map(block => [block.key, 0])) as ScoreDraft;
 
@@ -183,12 +189,11 @@ const summarizeReview = (review: DisciplineReviewPayload | null) => {
   };
 };
 
-const getHeatmapTone = (intensity: number) => {
-  if (intensity >= 0.82) return 'bg-accent-green shadow-[0_0_12px_rgba(52,211,153,0.24)]';
-  if (intensity >= 0.58) return 'bg-accent-green/75';
-  if (intensity >= 0.34) return 'bg-accent-green/45';
-  if (intensity > 0) return 'bg-accent-green/20';
-  return 'bg-white/[0.06]';
+const getTimelineTone = (minutes: number) => {
+  if (minutes >= 20) return 'bg-accent-green shadow-[0_0_9px_rgba(52,211,153,0.4)]';
+  if (minutes >= 10) return 'bg-accent-green/70';
+  if (minutes > 0) return 'bg-accent-green/35';
+  return 'bg-white/[0.045]';
 };
 
 const scorePercent = (review: DisciplineReviewPayload | null) => {
@@ -255,7 +260,7 @@ export function DisciplineDashboard({
       const [reviewPayload, livePayload, trendPayload] = await Promise.all([
         selectedRequest,
         todayRequest,
-        fetchDisciplineTrend(HEATMAP_DAYS, trendEndDate),
+        fetchDisciplineTrend(HEATMAP_DAYS, liveDate),
       ]);
 
       if (loadRequestRef.current !== requestId) return;
@@ -354,9 +359,9 @@ export function DisciplineDashboard({
   }, [focusSessionMinutes, nextTask, todayReview, todaySummary.pomodoroCount, todaySummary.taskCount]);
 
   const recentTrend = useMemo(() => trend.slice(-CONSISTENCY_DAYS), [trend]);
-  const shownUpDays = recentTrend.filter(day => Number(day.total ?? 0) > 0).length;
+  const shownUpDays = recentTrend.filter(day => Number(day.total ?? 0) > 0 || Number(day.activity?.focusMinutes ?? 0) > 0).length;
   const consistencyScore = recentTrend.length ? Math.round((shownUpDays / recentTrend.length) * 100) : 0;
-  const hasTrendHistory = trend.some(day => Number(day.total ?? 0) > 0);
+  const hasTrendHistory = trend.some(day => Number(day.total ?? 0) > 0 || Number(day.activity?.focusMinutes ?? 0) > 0);
 
   const habitSignals = useMemo(() => {
     if (!hasTrendHistory || recentTrend.length === 0) return { strongest: null, weakest: null };
@@ -684,7 +689,7 @@ export function DisciplineDashboard({
           <SectionHeading
             icon={CalendarDays}
             title="Learning consistency"
-            subtitle="A contribution view of the recorded daily discipline score"
+            subtitle="Actual completed focus sessions, mapped across each day"
             id="consistency-heading"
           />
 
@@ -692,7 +697,7 @@ export function DisciplineDashboard({
             <article className="border-2 border-white/15 bg-white/[0.03] p-4 sm:p-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-black text-white">Last 30 completed days</div>
+                  <div className="text-sm font-black text-white">Last 30 days / focus timeline</div>
                   <div className="mt-1 text-xs text-white/45">
                     {trend.length ? `${formatShortDate(trend[0].date)} – ${formatShortDate(trend[trend.length - 1].date)}` : 'Waiting for recorded days'}
                   </div>
@@ -723,7 +728,7 @@ export function DisciplineDashboard({
                 <div className="pb-1 text-lg font-black text-accent-green">%</div>
               </div>
               <p className="mt-3 text-sm leading-relaxed text-white/55">
-                {shownUpDays} of {recentTrend.length || CONSISTENCY_DAYS} days have a recorded, non-zero discipline score.
+                {shownUpDays} of {recentTrend.length || CONSISTENCY_DAYS} days have recorded focus activity or a discipline score.
               </p>
 
               <div className="mt-6 space-y-3 border-t border-white/10 pt-5">
@@ -1303,35 +1308,46 @@ function ContributionHeatmap({
     );
   }
 
-  const padding = trend.length ? new Date(`${trend[0].date}T12:00:00`).getDay() : 0;
-
   return (
     <div className="overflow-x-auto pb-2">
-      <div className="flex min-w-max gap-3">
-        <div className="grid grid-rows-7 gap-1.5 pt-px text-[9px] font-bold uppercase text-white/30" aria-hidden="true">
-          {['Sun', '', 'Tue', '', 'Thu', '', 'Sat'].map((day, index) => (
-            <span key={`${day}-${index}`} className="flex h-4 items-center sm:h-5">{day}</span>
-          ))}
+      <div className="min-w-[38rem]">
+        <div className="mb-2 grid grid-cols-[4.5rem_1fr] gap-2 text-[9px] font-black uppercase tracking-[0.12em] text-white/30" aria-hidden="true">
+          <span>Day</span>
+          <div className="grid grid-cols-[repeat(24,minmax(0,1fr))] gap-px">
+            {Array.from({ length: 24 }, (_, hour) => (
+              <span key={hour} className="text-center">{hour % 3 === 0 ? String(hour).padStart(2, '0') : ''}</span>
+            ))}
+          </div>
         </div>
-        <div className="grid grid-flow-col grid-rows-7 gap-1.5">
-          {Array.from({ length: padding }, (_, index) => (
-            <span key={`pad-${index}`} className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
-          ))}
+        <div className="space-y-1">
           {trend.map(day => {
-            const intensity = Math.max(0, Math.min(1, Number(day.total ?? 0) / DAY_SCORE_MAX));
+            const activity = day.activity;
+            const hours = activity?.hourlyMinutes ?? Array.from({ length: 24 }, () => 0);
             const selected = day.date === selectedDate;
+            const summary = activity?.focusMinutes
+              ? `${activity.focusMinutes} focused min${activity.firstStartedAt ? `, started ${formatTime(activity.firstStartedAt)}` : ''}`
+              : day.total > 0
+                ? `discipline score ${day.total}/${DAY_SCORE_MAX}`
+                : 'no recorded focus activity';
             return (
               <button
                 key={day.date}
                 type="button"
                 onClick={() => onSelectDate(day.date)}
-                className={`h-4 w-4 border transition hover:scale-110 hover:border-white/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-cream sm:h-5 sm:w-5 ${
-                  selected ? 'border-paper-cream ring-1 ring-paper-cream/50' : 'border-white/[0.06]'
-                } ${getHeatmapTone(intensity)}`}
-                title={`${formatLongDate(day.date)}: ${day.total}/${DAY_SCORE_MAX}`}
-                aria-label={`${formatLongDate(day.date)}, discipline score ${day.total} of ${DAY_SCORE_MAX}`}
+                className={`grid w-full grid-cols-[4.5rem_1fr] items-center gap-2 border px-1.5 py-1 text-left transition hover:border-white/50 hover:bg-white/[0.035] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-cream ${
+                  selected ? 'border-paper-cream bg-white/[0.06] ring-1 ring-paper-cream/50' : 'border-transparent'
+                }`}
+                title={`${formatLongDate(day.date)}: ${summary}`}
+                aria-label={`${formatLongDate(day.date)}, ${summary}`}
                 aria-pressed={selected}
-              />
+              >
+                <span className="font-mono text-[9px] font-bold text-white/55">{formatShortDate(day.date)}</span>
+                <span className="grid grid-cols-[repeat(24,minmax(0,1fr))] gap-px" aria-hidden="true">
+                  {hours.map((minutes, hour) => (
+                    <span key={hour} className={`h-3 min-w-0 border border-black/20 ${getTimelineTone(Number(minutes) || 0)}`} />
+                  ))}
+                </span>
+              </button>
             );
           })}
         </div>
@@ -1342,14 +1358,14 @@ function ContributionHeatmap({
 
 function HeatmapLegend() {
   return (
-    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.14em] text-white/35" aria-label="Heatmap score intensity from no score to high score">
+    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.14em] text-white/35" aria-label="Focus timeline intensity from no focus time to a full focus block">
       <span>None</span>
       <div className="flex gap-1" aria-hidden="true">
-        {[0, 0.2, 0.45, 0.7, 0.9].map(level => (
-          <span key={level} className={`h-3 w-3 border border-white/[0.06] ${getHeatmapTone(level)}`} />
+        {[0, 5, 12, 20].map(minutes => (
+          <span key={minutes} className={`h-3 w-3 border border-white/[0.06] ${getTimelineTone(minutes)}`} />
         ))}
       </div>
-      <span>High</span>
+      <span>25 min / hour</span>
     </div>
   );
 }
