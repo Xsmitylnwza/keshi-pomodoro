@@ -16,7 +16,7 @@ const STATIONS: RadioStation[] = [
     { id: '1', name: 'Lofi Girl', shortName: 'LOFI', youtubeId: 'jfKfPfyJRdk' },
     { id: '2', name: 'Chillhop Music', shortName: 'CHILL', youtubeId: '5yx6BWlEVcY' },
     { id: '3', name: 'Lofi Cafe', shortName: 'CAFE', youtubeId: 'h2zkV-l_TbY' },
-    { id: '4', name: 'Jazz Hop Café', shortName: 'JAZZ', youtubeId: '-5KAN9_CzSA' },
+    { id: '4', name: 'Jazz Hop Café', shortName: 'JAZZ', youtubeId: 'Dx5qFachd3A' },
 ];
 
 interface RadioWidgetProps {
@@ -32,6 +32,7 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
     const [showVolumeSlider, setShowVolumeSlider] = useState(false);
     const [showTooltip, setShowTooltip] = useState(false);
     const iframeRef = useRef<HTMLIFrameElement>(null);
+    const playerReadyRef = useRef(false);
     const hasHydratedRef = useRef(false);
     const tooltipTimerRef = useRef<number | null>(null);
     const syncTimerRef = useRef<number | null>(null);
@@ -39,6 +40,23 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
     const { colors } = useTheme();
     const station = STATIONS[currentStation];
     const bgAccent = mode === 'focus' ? colors.focus : colors.break;
+    const audioStateRef = useRef({ volume, isMuted, isPlaying });
+    audioStateRef.current = { volume, isMuted, isPlaying };
+
+    const sendPlayerCommand = (func: string, args?: unknown[]) => {
+        if (!playerReadyRef.current || !iframeRef.current?.contentWindow) return;
+        iframeRef.current.contentWindow.postMessage(
+            JSON.stringify({ event: 'command', func, ...(args ? { args } : {}) }),
+            'https://www.youtube.com'
+        );
+    };
+
+    const syncPlayerState = () => {
+        const state = audioStateRef.current;
+        sendPlayerCommand('setVolume', [state.volume]);
+        sendPlayerCommand(state.isMuted || state.volume === 0 ? 'mute' : 'unMute');
+        sendPlayerCommand(state.isPlaying ? 'playVideo' : 'pauseVideo');
+    };
 
     // Helper to add opacity to hex color
     const getGlowColor = (hex: string, opacity: number) => {
@@ -100,60 +118,43 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
         };
     }, [showTooltip]);
 
+    // The embed accepts commands only after it has posted its onReady event.
+    // Retaining the desired state lets a click made during loading play once ready.
+    useEffect(() => {
+        playerReadyRef.current = false;
+
+        const handlePlayerMessage = (event: MessageEvent<string>) => {
+            if (event.origin !== 'https://www.youtube.com') return;
+            if (event.source !== iframeRef.current?.contentWindow) return;
+
+            try {
+                const message = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                if (message?.event !== 'onReady') return;
+
+                playerReadyRef.current = true;
+                syncPlayerState();
+            } catch {
+                // Ignore non-JSON messages from the YouTube embed.
+            }
+        };
+
+        window.addEventListener('message', handlePlayerMessage);
+        return () => window.removeEventListener('message', handlePlayerMessage);
+    }, [station.youtubeId]);
+
     // YouTube Player API control
     useEffect(() => {
-        if (iframeRef.current && iframeRef.current.contentWindow) {
-            const command = isPlaying ? 'playVideo' : 'pauseVideo';
-            iframeRef.current.contentWindow.postMessage(
-                JSON.stringify({ event: 'command', func: command }),
-                '*'
-            );
-        }
+        sendPlayerCommand(isPlaying ? 'playVideo' : 'pauseVideo');
     }, [isPlaying]);
 
     useEffect(() => {
-        if (iframeRef.current && iframeRef.current.contentWindow) {
-            const command = isMuted ? 'mute' : 'unMute';
-            iframeRef.current.contentWindow.postMessage(
-                JSON.stringify({ event: 'command', func: command }),
-                '*'
-            );
-        }
+        sendPlayerCommand(isMuted ? 'mute' : 'unMute');
     }, [isMuted]);
 
     // Volume control
     useEffect(() => {
-        if (iframeRef.current && iframeRef.current.contentWindow) {
-            iframeRef.current.contentWindow.postMessage(
-                JSON.stringify({ event: 'command', func: 'setVolume', args: [volume] }),
-                '*'
-            );
-        }
+        sendPlayerCommand('setVolume', [volume]);
     }, [volume]);
-
-    // Track latest audio state
-    const audioStateRef = useRef({ volume, isMuted, isPlaying });
-    useEffect(() => {
-        audioStateRef.current = { volume, isMuted, isPlaying };
-    }, [volume, isMuted, isPlaying]);
-
-    // Resync complete state whenever station changes, making sure the new iframe applies latest settings
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            if (iframeRef.current && iframeRef.current.contentWindow) {
-                const state = audioStateRef.current;
-                const cw = iframeRef.current.contentWindow;
-                cw.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [state.volume] }), '*');
-                cw.postMessage(JSON.stringify({ event: 'command', func: state.isMuted || state.volume === 0 ? 'mute' : 'unMute' }), '*');
-                if (state.isPlaying) {
-                    cw.postMessage(JSON.stringify({ event: 'command', func: 'playVideo' }), '*');
-                } else {
-                    cw.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo' }), '*');
-                }
-            }
-        }, 1500);
-        return () => clearTimeout(timer);
-    }, [currentStation]);
 
     const nextStation = () => {
         setCurrentStation((prev) => (prev + 1) % STATIONS.length);
@@ -199,12 +200,13 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
     return (
         <>
             {/* Hidden YouTube Player */}
-            <div className="fixed -left-[9999px] -top-[9999px] w-0 h-0 overflow-hidden">
+            <div className="fixed -left-[9999px] -top-[9999px] h-[200px] w-[200px] overflow-hidden pointer-events-none opacity-0" aria-hidden="true">
                 <iframe
+                    key={station.youtubeId}
                     ref={iframeRef}
-                    width="1"
-                    height="1"
-                    src={`https://www.youtube.com/embed/${station.youtubeId}?enablejsapi=1&autoplay=0&loop=1&playlist=${station.youtubeId}`}
+                    width="200"
+                    height="200"
+                    src={`https://www.youtube.com/embed/${station.youtubeId}?enablejsapi=1&autoplay=0&loop=1&playlist=${station.youtubeId}&origin=${encodeURIComponent(window.location.origin)}`}
                     allow="autoplay; encrypted-media"
                     title="Radio Player"
                 />
