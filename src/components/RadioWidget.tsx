@@ -13,7 +13,7 @@ interface RadioStation {
 }
 
 const STATIONS: RadioStation[] = [
-    { id: '1', name: 'Lofi Girl', shortName: 'LOFI', youtubeId: 'jfKfPfyJRdk' },
+    { id: '1', name: 'Lofi Girl', shortName: 'LOFI', youtubeId: '4xDzrJKXOOY' },
     { id: '2', name: 'Chillhop Music', shortName: 'CHILL', youtubeId: '5yx6BWlEVcY' },
     { id: '3', name: 'Lofi Cafe', shortName: 'CAFE', youtubeId: 'h2zkV-l_TbY' },
     { id: '4', name: 'Jazz Hop Café', shortName: 'JAZZ', youtubeId: 'Dx5qFachd3A' },
@@ -32,7 +32,6 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
     const [showVolumeSlider, setShowVolumeSlider] = useState(false);
     const [showTooltip, setShowTooltip] = useState(false);
     const iframeRef = useRef<HTMLIFrameElement>(null);
-    const playerReadyRef = useRef(false);
     const hasHydratedRef = useRef(false);
     const tooltipTimerRef = useRef<number | null>(null);
     const syncTimerRef = useRef<number | null>(null);
@@ -41,13 +40,12 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
     const station = STATIONS[currentStation];
     const bgAccent = mode === 'focus' ? colors.focus : colors.break;
     const audioStateRef = useRef({ volume, isMuted, isPlaying });
-    audioStateRef.current = { volume, isMuted, isPlaying };
 
     const sendPlayerCommand = (func: string, args?: unknown[]) => {
-        if (!playerReadyRef.current || !iframeRef.current?.contentWindow) return;
+        if (!iframeRef.current?.contentWindow) return;
         iframeRef.current.contentWindow.postMessage(
             JSON.stringify({ event: 'command', func, ...(args ? { args } : {}) }),
-            'https://www.youtube.com'
+            '*'
         );
     };
 
@@ -118,29 +116,15 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
         };
     }, [showTooltip]);
 
-    // The embed accepts commands only after it has posted its onReady event.
-    // Retaining the desired state lets a click made during loading play once ready.
+    const handlePlayerLoad = () => {
+        // The embed can finish loading before its player is command-ready.
+        // Retry the desired state while preserving clicks made during loading.
+        [0, 500, 1500].forEach(delay => window.setTimeout(syncPlayerState, delay));
+    };
+
     useEffect(() => {
-        playerReadyRef.current = false;
-
-        const handlePlayerMessage = (event: MessageEvent<string>) => {
-            if (event.origin !== 'https://www.youtube.com') return;
-            if (event.source !== iframeRef.current?.contentWindow) return;
-
-            try {
-                const message = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-                if (message?.event !== 'onReady') return;
-
-                playerReadyRef.current = true;
-                syncPlayerState();
-            } catch {
-                // Ignore non-JSON messages from the YouTube embed.
-            }
-        };
-
-        window.addEventListener('message', handlePlayerMessage);
-        return () => window.removeEventListener('message', handlePlayerMessage);
-    }, [station.youtubeId]);
+        audioStateRef.current = { volume, isMuted, isPlaying };
+    }, [volume, isMuted, isPlaying]);
 
     // YouTube Player API control
     useEffect(() => {
@@ -204,6 +188,7 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
                 <iframe
                     key={station.youtubeId}
                     ref={iframeRef}
+                    onLoad={handlePlayerLoad}
                     width="200"
                     height="200"
                     src={`https://www.youtube.com/embed/${station.youtubeId}?enablejsapi=1&autoplay=0&loop=1&playlist=${station.youtubeId}&origin=${encodeURIComponent(window.location.origin)}`}
