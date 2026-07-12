@@ -319,7 +319,7 @@ export function DisciplineDashboard({
         label: 'MORE FOCUS TODAY / YES',
         headline: 'Start the first focused block.',
         doCopy: nextTask
-          ? `Run one ${focusSessionMinutes}-minute session on โ€${nextTask.title}โ€.`
+          ? `Run one ${focusSessionMinutes}-minute session on เน€เธยเนยเธเธขย${nextTask.title}เน€เธยเนยเธเธขย.`
           : `Choose one outcome, then run one ${focusSessionMinutes}-minute session.`,
         stopCopy: 'Do not reorganize the whole list before the first block.',
         actionLabel: `Start ${focusSessionMinutes} min focus`,
@@ -331,7 +331,7 @@ export function DisciplineDashboard({
         shouldFocus: true,
         label: 'MORE FOCUS TODAY / YES',
         headline: nextTask.status === 'doing' ? 'Finish what is already in motion.' : 'One useful block is still available.',
-        doCopy: `Use the next ${focusSessionMinutes} minutes for โ€${nextTask.title}โ€.`,
+        doCopy: `Use the next ${focusSessionMinutes} minutes for เน€เธยเนยเธเธขย${nextTask.title}เน€เธยเนยเธเธขย.`,
         stopCopy: 'Stop after the block if the next outcome is not obvious.',
         actionLabel: 'Continue focused work',
       };
@@ -619,7 +619,7 @@ export function DisciplineDashboard({
                     <div className="mt-6">
                       <div className="mb-2 flex items-center justify-between gap-3 text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
                         <span>{taskProgress === null ? 'Task plan not set' : 'Today progress'}</span>
-                        <span>{taskProgress === null ? 'โ€”' : `${taskProgress}%`}</span>
+                        <span>{taskProgress === null ? 'เน€เธยเนยเธเนโฌย' : `${taskProgress}%`}</span>
                       </div>
                       <div className="h-2 overflow-hidden bg-white/10">
                         <div
@@ -699,7 +699,7 @@ export function DisciplineDashboard({
                 <div>
                   <div className="text-sm font-black text-white">Last 30 days / focus timeline</div>
                   <div className="mt-1 text-xs text-white/45">
-                    {trend.length ? `${formatShortDate(trend[0].date)} โ€“ ${formatShortDate(trend[trend.length - 1].date)}` : 'Waiting for recorded days'}
+                    {trend.length ? `${formatShortDate(trend[0].date)} เน€เธยเนยเธเนโฌย ${formatShortDate(trend[trend.length - 1].date)}` : 'Waiting for recorded days'}
                   </div>
                 </div>
                 <HeatmapLegend />
@@ -734,12 +734,12 @@ export function DisciplineDashboard({
               <div className="mt-6 space-y-3 border-t border-white/10 pt-5">
                 <SignalRow
                   label="Strongest signal"
-                  value={habitSignals.strongest ? `${habitSignals.strongest.label} ยท ${habitSignals.strongest.average.toFixed(1)}/10` : 'Waiting for scores'}
+                  value={habitSignals.strongest ? `${habitSignals.strongest.label} เน€เธเธเน€เธโ€” ${habitSignals.strongest.average.toFixed(1)}/10` : 'Waiting for scores'}
                   tone="text-accent-green"
                 />
                 <SignalRow
                   label="Needs consistency"
-                  value={habitSignals.weakest ? `${habitSignals.weakest.label} ยท ${habitSignals.weakest.average.toFixed(1)}/10` : 'Waiting for scores'}
+                  value={habitSignals.weakest ? `${habitSignals.weakest.label} เน€เธเธเน€เธโ€” ${habitSignals.weakest.average.toFixed(1)}/10` : 'Waiting for scores'}
                   tone="text-amber-300"
                 />
               </div>
@@ -1007,7 +1007,7 @@ export function DisciplineDashboard({
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="truncate text-sm font-semibold text-white/75">{entry.title || 'Untitled'}</div>
-                            <div className="mt-1 text-xs text-white/40">{entry.pages} pages ยท {entry.minutes} min</div>
+                            <div className="mt-1 text-xs text-white/40">{entry.pages} pages เน€เธเธเน€เธโ€” {entry.minutes} min</div>
                           </div>
                           <span className="shrink-0 text-xs text-white/35">{formatShortDate(entry.date)}</span>
                         </div>
@@ -1058,7 +1058,7 @@ export function DisciplineDashboard({
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="truncate text-sm font-semibold text-white/75">{entry.type || 'Exercise'}</div>
-                            <div className="mt-1 text-xs text-white/40">{entry.durationMinutes} min{entry.intensity ? ` ยท ${entry.intensity}` : ''}</div>
+                            <div className="mt-1 text-xs text-white/40">{entry.durationMinutes} min{entry.intensity ? ` เน€เธเธเน€เธโ€” ${entry.intensity}` : ''}</div>
                           </div>
                           <span className="shrink-0 text-xs text-white/35">{formatShortDate(entry.date)}</span>
                         </div>
@@ -1215,6 +1215,7 @@ export function AccountMenu({
               )}
               <AccountMenuItem icon={Settings2} label="Settings" onClick={() => runAction(onOpenSettings)} />
               <AccountMenuItem icon={BarChart3} label="Insights" onClick={() => runAction(onOpenAnalytics)} />
+              <AccountMenuItem icon={HistoryIcon} label="History" onClick={() => runAction(onOpenHistory)} />
             </div>
 
             <div className="border-t border-white/10 pt-2">
@@ -1280,7 +1281,7 @@ function ScoreDial({ value, total }: { value: number | null; total: number | nul
         </svg>
         <div className="absolute inset-0 grid place-items-center text-center">
           <div>
-            <div className="font-grotesk text-3xl font-black leading-none text-white">{value === null ? 'โ€”' : value}</div>
+            <div className="font-grotesk text-3xl font-black leading-none text-white">{value === null ? 'เน€เธยเนยเธเนโฌย' : value}</div>
             <div className="mt-1 text-[9px] font-black uppercase tracking-[0.18em] text-white/40">{value === null ? 'Pending' : 'Percent'}</div>
           </div>
         </div>
