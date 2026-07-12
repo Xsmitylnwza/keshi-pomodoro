@@ -5,11 +5,12 @@ import { CustomCursor } from './components/CustomCursor';
 import Background from './components/Background';
 import { AccountMenu, DisciplineDashboard } from './components/DisciplineDashboard';
 
-// Lazy load modals for smaller initial bundle
-const SettingsModal = lazy(() => import('./components/Modals').then(m => ({ default: m.SettingsModal })));
-const HistoryModal = lazy(() => import('./components/Modals').then(m => ({ default: m.HistoryModal })));
-const AnalyticsModal = lazy(() => import('./components/AnalyticsModal').then(m => ({ default: m.AnalyticsModal })));
+import type { InsightsTab } from './components/AppPanels';
 import { RadioWidget } from './components/RadioWidget';
+
+// Lazy load modals for smaller initial bundle
+const SettingsModal = lazy(() => import('./components/AppPanels').then(m => ({ default: m.SettingsModal })));
+const InsightsModal = lazy(() => import('./components/AppPanels').then(m => ({ default: m.InsightsModal })));
 import { useAuth } from './context/useAuth';
 import { useTheme } from './context/useTheme';
 import {
@@ -160,8 +161,12 @@ function App() {
 
   // Modals
   const [showSettings, setShowSettings] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
+  const [insightsTab, setInsightsTab] = useState<InsightsTab>('overview');
+  const openInsights = (tab: InsightsTab = 'overview') => {
+    setInsightsTab(tab);
+    setShowInsights(true);
+  };
   const [hasMounted, setHasMounted] = useState(false);
 
   // Refs
@@ -316,7 +321,7 @@ function App() {
   useEffect(() => {
     const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
     const s = (timeLeft % 60).toString().padStart(2, '0');
-    document.title = isDisciplineRoute ? `Discipline • ${m}:${s}` : `${m}:${s} • ${mode.toUpperCase()}`;
+    document.title = isDisciplineRoute ? `Discipline โ€ข ${m}:${s}` : `${m}:${s} โ€ข ${mode.toUpperCase()}`;
   }, [timeLeft, mode, isDisciplineRoute]);
 
   function handleComplete() {
@@ -610,7 +615,7 @@ function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger if user is typing in an input or modal is open
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (isDisciplineRoute || showSettings || showHistory || taskPendingDelete) return;
+      if (isDisciplineRoute || showSettings || showInsights || taskPendingDelete) return;
 
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
@@ -621,7 +626,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isDisciplineRoute, showSettings, showHistory, soundEnabled, taskPendingDelete]);
+  }, [isDisciplineRoute, showSettings, showInsights, soundEnabled, taskPendingDelete]);
 
   const addTask = () => {
     const title = newTaskTitle.trim();
@@ -832,31 +837,19 @@ function App() {
             setBreakTime={setBreakTime}
             soundEnabled={soundEnabled}
             toggleSound={() => setSoundEnabled(!soundEnabled)}
-            openHistory={() => setShowHistory(true)}
-            openAnalytics={() => setShowAnalytics(true)}
+            openInsights={(tab) => openInsights(tab ?? 'overview')}
           />
         )}
       </Suspense>
 
       <Suspense fallback={null}>
-        {showHistory && (
-          <HistoryModal
-            isOpen={showHistory}
-            onClose={() => setShowHistory(false)}
+        {showInsights && (
+          <InsightsModal
+            isOpen={showInsights}
+            onClose={() => setShowInsights(false)}
             history={history}
             clearHistory={clearHistory}
-            onBack={() => { setShowHistory(false); setShowSettings(true); }}
-          />
-        )}
-      </Suspense>
-
-      <Suspense fallback={null}>
-        {showAnalytics && (
-          <AnalyticsModal
-            isOpen={showAnalytics}
-            onClose={() => setShowAnalytics(false)}
-            history={history}
-            onBack={() => { setShowAnalytics(false); setShowSettings(true); }}
+            initialTab={insightsTab}
           />
         )}
       </Suspense>
@@ -879,8 +872,8 @@ function App() {
         <DisciplineDashboard
           onNavigateHome={() => navigateTo('/')}
           onOpenSettings={() => { setShowSettings(true); playClick(); }}
-          onOpenHistory={() => { setShowHistory(true); playClick(); }}
-          onOpenAnalytics={() => { setShowAnalytics(true); playClick(); }}
+          onOpenHistory={() => { openInsights('history'); playClick(); }}
+          onOpenAnalytics={() => { openInsights('overview'); playClick(); }}
           onLogout={() => { playClick(); auth.logout(); }}
           user={auth.user}
           focusSessionMinutes={focusTime}
@@ -936,8 +929,8 @@ function App() {
                 user={auth.user}
                 onOpenDiscipline={() => { playClick(); navigateTo('/discipline'); }}
                 onOpenSettings={() => { setShowSettings(true); playClick(); }}
-                onOpenHistory={() => { setShowHistory(true); playClick(); }}
-                onOpenAnalytics={() => { setShowAnalytics(true); playClick(); }}
+                onOpenHistory={() => { openInsights('history'); playClick(); }}
+                onOpenAnalytics={() => { openInsights('overview'); playClick(); }}
                 onLogout={() => { playClick(); auth.logout(); }}
                 compactOnMobile
               />
