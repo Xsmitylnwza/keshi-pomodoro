@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BarChart3, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Clock3, GripVertical, ListTodo, LogIn, Menu, Pause, Play, Plus, RotateCcw, Trash2, UserCircle, Wifi, WifiOff, X } from 'lucide-react';
+import { CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Clock3, GripVertical, ListTodo, LogIn, Pause, Play, Plus, RotateCcw, Trash2, UserCircle, Wifi, WifiOff, X } from 'lucide-react';
 import { CustomCursor } from './components/CustomCursor';
 import Background from './components/Background';
 import { AccountMenu, DisciplineDashboard } from './components/DisciplineDashboard';
@@ -926,39 +926,15 @@ function App() {
 
         <div className="flex flex-col gap-2 items-end">
           <div className="flex items-center gap-2">
-            <motion.button
-              onClick={() => { setShowSettings(true); playClick(); }}
-              className={`text-sm tracking-widest uppercase transition-all font-bold flex items-center gap-2 group p-2 border-2 border-transparent hover:border-current rounded-sm ${mode === 'focus' ? 'hover:text-accent-red hover:bg-accent-red/10' : 'hover:text-accent-green hover:bg-accent-green/10'}`}
-              variants={fadeDown}
-              initial="initial"
-              animate="animate"
-              transition={{ delay: entranceDelays.menu }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <span>Menu</span>
-              <Menu className="w-5 h-5 group-hover:rotate-90 transition-transform" strokeWidth={3} />
-            </motion.button>
-            <motion.button
-              onClick={() => { playClick(); navigateTo('/discipline'); }}
-              className="inline-flex items-center gap-2 border-2 border-transparent px-3 py-2 text-sm font-black uppercase tracking-widest text-white/65 transition-all hover:border-accent-green/40 hover:bg-accent-green/10 hover:text-accent-green"
-              variants={fadeDown}
-              initial="initial"
-              animate="animate"
-              transition={{ delay: entranceDelays.menu + 0.05 }}
-              whileTap={{ scale: 0.95 }}
-              aria-label="Open discipline dashboard"
-              title="Discipline dashboard"
-            >
-              <BarChart3 className="w-5 h-5" strokeWidth={3} />
-            </motion.button>
             <motion.div
               variants={fadeDown}
               initial="initial"
               animate="animate"
-              transition={{ delay: entranceDelays.menu + 0.1 }}
+              transition={{ delay: entranceDelays.menu }}
             >
               <AccountMenu
                 user={auth.user}
+                onOpenDiscipline={() => { playClick(); navigateTo('/discipline'); }}
                 onOpenSettings={() => { setShowSettings(true); playClick(); }}
                 onOpenHistory={() => { setShowHistory(true); playClick(); }}
                 onOpenAnalytics={() => { setShowAnalytics(true); playClick(); }}

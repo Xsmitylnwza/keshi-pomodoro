@@ -1081,6 +1081,7 @@ export function DisciplineDashboard({
 
 export function AccountMenu({
   user,
+  onOpenDiscipline,
   onOpenSettings,
   onOpenHistory,
   onOpenAnalytics,
@@ -1088,6 +1089,7 @@ export function AccountMenu({
   compactOnMobile = false,
 }: {
   user: CentralAuthUser | null;
+  onOpenDiscipline?: () => void;
   onOpenSettings: () => void;
   onOpenHistory: () => void;
   onOpenAnalytics: () => void;
@@ -1194,7 +1196,7 @@ export function AccountMenu({
             id="discipline-account-menu"
             ref={menuRef}
             role="menu"
-            aria-label="Profile and account"
+            aria-label="Profile and navigation"
             onKeyDown={handleMenuKeyDown}
             className="absolute right-0 top-[calc(100%+0.65rem)] z-[80] w-[min(18rem,calc(100vw-2rem))] border-2 border-white/20 bg-[#0b0b0b] p-2 shadow-[8px_8px_0_rgba(0,0,0,0.85)]"
             initial={{ opacity: 0, y: -6, scale: 0.98 }}
@@ -1208,6 +1210,9 @@ export function AccountMenu({
             </div>
 
             <div className="py-2">
+              {onOpenDiscipline && (
+                <AccountMenuItem icon={Activity} label="Discipline dashboard" onClick={() => runAction(onOpenDiscipline)} />
+              )}
               <AccountMenuItem icon={Settings2} label="Settings" onClick={() => runAction(onOpenSettings)} />
               <AccountMenuItem icon={HistoryIcon} label="History" onClick={() => runAction(onOpenHistory)} />
               <AccountMenuItem icon={BarChart3} label="Analytics" onClick={() => runAction(onOpenAnalytics)} />
