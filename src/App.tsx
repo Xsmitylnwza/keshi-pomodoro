@@ -321,7 +321,7 @@ function App() {
   useEffect(() => {
     const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
     const s = (timeLeft % 60).toString().padStart(2, '0');
-    document.title = isDisciplineRoute ? `Discipline โ€ข ${m}:${s}` : `${m}:${s} โ€ข ${mode.toUpperCase()}`;
+    document.title = isDisciplineRoute ? `Discipline / ${m}:${s}` : `${m}:${s} / ${mode.toUpperCase()}`;
   }, [timeLeft, mode, isDisciplineRoute]);
 
   function handleComplete() {

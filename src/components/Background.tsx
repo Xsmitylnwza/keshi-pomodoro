@@ -170,21 +170,21 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                             animate={{ scale: [1, 1.3, 1], opacity: [0.8, 1, 0.8] }}
                             transition={{ duration: 2, repeat: Infinity }}
                         >
-                            ✦
+                            *
                         </motion.div>
                         <motion.div
                             className="absolute top-1/4 -left-5 text-white/70 text-sm"
                             animate={{ scale: [1, 1.2, 1], opacity: [0.6, 1, 0.6] }}
                             transition={{ duration: 1.5, repeat: Infinity, delay: 0.3 }}
                         >
-                            ✧
+                            *
                         </motion.div>
                         <motion.div
                             className="absolute bottom-1/3 -right-8 text-white/60 text-xs"
                             animate={{ scale: [1, 1.4, 1], opacity: [0.5, 0.9, 0.5] }}
                             transition={{ duration: 2.5, repeat: Infinity, delay: 0.7 }}
                         >
-                            ❋
+                            *
                         </motion.div>
                     </div>
                 </motion.div>
@@ -230,7 +230,7 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: entranceDelays.collageRight + 0.5, duration: 0.5 }}
                     >
-                        stay ✿
+                        stay *
                         <svg className="absolute -bottom-2 left-0 w-full h-3 overflow-visible" viewBox="0 0 100 12" preserveAspectRatio="none">
                             <motion.path
                                 d="M5,8 Q 50,0 95,6"
@@ -257,21 +257,21 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                         animate={{ scale: [1, 1.2, 1], opacity: [0.7, 1, 0.7], rotate: [0, 15, 0] }}
                         transition={{ duration: 3, repeat: Infinity }}
                     >
-                        ✦
+                        *
                     </motion.div>
                     <motion.div
                         className="absolute top-1/2 -right-4 text-white/80 text-sm"
                         animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0.9, 0.5] }}
                         transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
                     >
-                        ❀
+                        *
                     </motion.div>
                     <motion.div
                         className="absolute -top-2 right-1/4 text-white/60 text-xs"
                         animate={{ scale: [1, 1.5, 1], opacity: [0.4, 0.8, 0.4] }}
                         transition={{ duration: 2.2, repeat: Infinity, delay: 1 }}
                     >
-                        ✧
+                        *
                     </motion.div>
                 </div>
             </motion.div >

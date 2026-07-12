@@ -16,7 +16,7 @@ const STATIONS: RadioStation[] = [
     { id: '1', name: 'Lofi Girl', shortName: 'LOFI', youtubeId: '4xDzrJKXOOY' },
     { id: '2', name: 'Chillhop Music', shortName: 'CHILL', youtubeId: '5yx6BWlEVcY' },
     { id: '3', name: 'Lofi Cafe', shortName: 'CAFE', youtubeId: 'h2zkV-l_TbY' },
-    { id: '4', name: 'Jazz Hop Café', shortName: 'JAZZ', youtubeId: 'Dx5qFachd3A' },
+    { id: '4', name: 'Jazz Hop Cafe', shortName: 'JAZZ', youtubeId: 'Dx5qFachd3A' },
 ];
 
 interface RadioWidgetProps {
@@ -211,8 +211,8 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
                         {/* Tape effect on top */}
                         <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-12 h-3 bg-[#dbd8d0] opacity-80 transform rotate-1"></div>
                         {/* Close X */}
-                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-black text-white rounded-full flex items-center justify-center text-[8px] font-bold opacity-60 group-hover:opacity-100 transition-opacity">×</div>
-                        <span className="tracking-wider uppercase text-xs">♪ play lo-fi</span>
+                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-black text-white rounded-full flex items-center justify-center text-[8px] font-bold opacity-60 group-hover:opacity-100 transition-opacity">x</div>
+                        <span className="tracking-wider uppercase text-xs">play lo-fi</span>
                         <div className="text-[8px] text-black/50 mt-0.5 tracking-wide">click to dismiss</div>
                         {/* Arrow pointing to widget */}
                         <div className="absolute -bottom-2 right-6 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-paper-cream"></div>
@@ -412,7 +412,7 @@ export const RadioWidget: React.FC<RadioWidgetProps> = ({ mode }) => {
                 {/* Frequency Display */}
                 <div className="mt-1 text-center">
                     <span className="text-[8px] font-mono text-white/30 tracking-widest">
-                        {station.shortName} • 88.{currentStation + 1} FM
+                        {station.shortName} / 88.{currentStation + 1} FM
                     </span>
                 </div>
             </motion.div>
