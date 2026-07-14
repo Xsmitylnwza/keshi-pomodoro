@@ -6,35 +6,67 @@ import {
   BadgeCheck,
   BarChart3,
   BookOpen,
+  Brain,
   CalendarDays,
+  Camera,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Code2,
+  Coffee,
   Dumbbell,
   Flame,
+  Globe,
+  Heart,
   History as HistoryIcon,
+  Home,
+  Leaf,
   LogOut,
   Moon,
+  Music,
   Pause,
+  PenLine,
+  Phone,
   Play,
   Plus,
   RefreshCcw,
   RotateCcw,
   Settings2,
+  Sparkles,
+  Star,
+  Sun,
   Target,
+  Timer,
+  Trash2,
   TrendingUp,
   UserCircle,
+  Users,
+  Wallet,
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { CustomCursor } from './CustomCursor';
 import {
-  DISCIPLINE_SCORE_BLOCKS,
+  DEFAULT_HABIT_DEFINITIONS,
+  HABIT_COLOR_KEYS,
+  HABIT_ICON_KEYS,
+  HABIT_SCORE_MAX,
+  createDisciplineHabit,
+  deleteDisciplineHabit,
+  fetchDisciplineHabits,
+  getActiveHabits,
+  getHabitVisual,
+  normalizeHabitDefinitions,
+  toBinaryHabitScore,
+  updateDisciplineHabit,
+  type DisciplineHabitDefinition,
   type DisciplineReviewPayload,
   type DisciplineScoreKey,
   type DisciplineTrendPoint,
+  type HabitColorKey,
+  type HabitIconKey,
   addDisciplineExercise,
   addDisciplineReading,
   fetchDisciplineReview,
@@ -50,8 +82,6 @@ import {
 } from '../lib/disciplineDashboardModel';
 import type { CentralAuthUser } from '../lib/centralAuth';
 
-const SCORE_MAX = 10;
-const DAY_SCORE_MAX = DISCIPLINE_SCORE_BLOCKS.length * SCORE_MAX;
 const HEATMAP_DAYS = 30;
 const CONSISTENCY_RANGE_OPTIONS = [
   { days: 7 as const, label: '7 days', shortLabel: '7D' },
@@ -61,60 +91,63 @@ type ConsistencyRangeDays = (typeof CONSISTENCY_RANGE_OPTIONS)[number]['days'];
 const DEFAULT_CONSISTENCY_DAYS: ConsistencyRangeDays = 7;
 
 type ScoreDraft = Record<DisciplineScoreKey, number>;
-
-const SCORE_META: Record<
-  DisciplineScoreKey,
-  {
-    icon: LucideIcon;
-    accent: string;
-    track: string;
-    fill: string;
-    tint: string;
-  }
-> = {
-  deep_work: {
-    icon: BarChart3,
-    accent: 'text-accent-red',
-    track: 'bg-accent-red/15',
-    fill: 'bg-accent-red',
-    tint: 'bg-accent-red/10',
-  },
-  reading: {
-    icon: BookOpen,
-    accent: 'text-amber-300',
-    track: 'bg-amber-400/15',
-    fill: 'bg-amber-400',
-    tint: 'bg-amber-400/10',
-  },
-  exercise: {
-    icon: Dumbbell,
-    accent: 'text-accent-green',
-    track: 'bg-accent-green/15',
-    fill: 'bg-accent-green',
-    tint: 'bg-accent-green/10',
-  },
-  sleep: {
-    icon: Moon,
-    accent: 'text-sky-300',
-    track: 'bg-sky-400/15',
-    fill: 'bg-sky-400',
-    tint: 'bg-sky-400/10',
-  },
-  nutrition: {
-    icon: Apple,
-    accent: 'text-lime-300',
-    track: 'bg-lime-400/15',
-    fill: 'bg-lime-400',
-    tint: 'bg-lime-400/10',
-  },
-  discipline: {
-    icon: BadgeCheck,
-    accent: 'text-white',
-    track: 'bg-white/10',
-    fill: 'bg-white',
-    tint: 'bg-white/10',
-  },
+type HabitVisualMeta = {
+  icon: LucideIcon;
+  accent: string;
+  track: string;
+  fill: string;
+  tint: string;
+  swatch: string;
+  soft: string;
 };
+
+const HABIT_ICON_MAP: Record<HabitIconKey, LucideIcon> = {
+  'bar-chart-3': BarChart3,
+  'book-open': BookOpen,
+  dumbbell: Dumbbell,
+  moon: Moon,
+  apple: Apple,
+  'badge-check': BadgeCheck,
+  target: Target,
+  brain: Brain,
+  heart: Heart,
+  coffee: Coffee,
+  'code-2': Code2,
+  'pen-line': PenLine,
+  music: Music,
+  sun: Sun,
+  leaf: Leaf,
+  flame: Flame,
+  timer: Timer,
+  'check-circle-2': CheckCircle2,
+  sparkles: Sparkles,
+  wallet: Wallet,
+  users: Users,
+  phone: Phone,
+  camera: Camera,
+  globe: Globe,
+  home: Home,
+  star: Star,
+};
+
+function resolveHabitIcon(icon?: string | null): LucideIcon {
+  if (icon && icon in HABIT_ICON_MAP) return HABIT_ICON_MAP[icon as HabitIconKey];
+  return Target;
+}
+
+function getHabitMeta(habit: Pick<DisciplineHabitDefinition, 'key' | 'icon' | 'color'> | string): HabitVisualMeta {
+  if (typeof habit === 'string') {
+    const fallback = DEFAULT_HABIT_DEFINITIONS.find((item) => item.key === habit);
+    return {
+      icon: resolveHabitIcon(fallback?.icon),
+      ...getHabitVisual(fallback?.color ?? habit),
+    };
+  }
+  return {
+    icon: resolveHabitIcon(habit.icon),
+    ...getHabitVisual(habit.color || habit.key),
+  };
+}
 
 const EVENT_ICON: Record<DisciplineReviewPayload['events'][number]['type'], LucideIcon> = {
   pomodoro_started: Play,
@@ -123,6 +156,114 @@ const EVENT_ICON: Record<DisciplineReviewPayload['events'][number]['type'], Luci
   pomodoro_cancelled: X,
   pomodoro_completed: CheckCircle2,
 };
+
+type HabitMatrixView = 'grid' | 'lanes' | 'weeks' | 'rank';
+type FocusMatrixView = 'timeline' | 'days' | 'rank';
+
+const HABIT_MATRIX_VIEW_OPTIONS: Array<{ id: HabitMatrixView; label: string; shortLabel: string }> = [
+  { id: 'grid', label: 'Day grid', shortLabel: 'Grid' },
+  { id: 'lanes', label: 'Habit lanes', shortLabel: 'Lanes' },
+  { id: 'weeks', label: 'Week blocks', shortLabel: 'Weeks' },
+  { id: 'rank', label: 'Rank list', shortLabel: 'Rank' },
+];
+
+const FOCUS_MATRIX_VIEW_OPTIONS: Array<{ id: FocusMatrixView; label: string; shortLabel: string }> = [
+  { id: 'timeline', label: 'Hour timeline', shortLabel: 'Hours' },
+  { id: 'days', label: 'Day intensity', shortLabel: 'Days' },
+  { id: 'rank', label: 'Rank list', shortLabel: 'Rank' },
+];
+
+const MATRIX_VIEW_STORAGE_PREFIX = {
+  habit: 'discipline.matrixView.habit',
+  focus: 'discipline.matrixView.focus',
+} as const;
+
+const MOBILE_MATRIX_MAX_WIDTH = 768;
+
+function isMobileViewport() {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia(`(max-width: ${MOBILE_MATRIX_MAX_WIDTH - 1}px)`).matches;
+}
+
+function matrixViewStorageKey(kind: 'habit' | 'focus', days: ConsistencyRangeDays) {
+  return `${MATRIX_VIEW_STORAGE_PREFIX[kind]}.${days}`;
+}
+
+function defaultHabitMatrixView(days: ConsistencyRangeDays, mobile = isMobileViewport()): HabitMatrixView {
+  if (mobile) return 'rank';
+  return days === 30 ? 'lanes' : 'grid';
+}
+
+function defaultFocusMatrixView(days: ConsistencyRangeDays, mobile = isMobileViewport()): FocusMatrixView {
+  if (mobile) return 'rank';
+  return days === 30 ? 'days' : 'timeline';
+}
+
+function writeStoredView(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function readOptionalStoredView<T extends string>(key: string, allowed: readonly T[]): T | null {
+  try {
+    const value = window.localStorage.getItem(key);
+    if (value && (allowed as readonly string[]).includes(value)) return value as T;
+  } catch {
+    // ignore storage failures
+  }
+  return null;
+}
+
+function resolveHabitMatrixView(days: ConsistencyRangeDays): HabitMatrixView {
+  const allowed = HABIT_MATRIX_VIEW_OPTIONS.map((option) => option.id) as HabitMatrixView[];
+  return (
+    readOptionalStoredView(matrixViewStorageKey('habit', days), allowed) ??
+    readOptionalStoredView(MATRIX_VIEW_STORAGE_PREFIX.habit, allowed) ??
+    defaultHabitMatrixView(days)
+  );
+}
+
+function resolveFocusMatrixView(days: ConsistencyRangeDays): FocusMatrixView {
+  const allowed = FOCUS_MATRIX_VIEW_OPTIONS.map((option) => option.id) as FocusMatrixView[];
+  return (
+    readOptionalStoredView(matrixViewStorageKey('focus', days), allowed) ??
+    readOptionalStoredView(MATRIX_VIEW_STORAGE_PREFIX.focus, allowed) ??
+    defaultFocusMatrixView(days)
+  );
+}
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const onChange = () => setReduced(media.matches);
+    onChange();
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', onChange);
+      return () => media.removeEventListener('change', onChange);
+    }
+    media.addListener(onChange);
+    return () => media.removeListener(onChange);
+  }, []);
+
+  return reduced;
+}
+
+function chunkTrendByWeeks(trend: readonly DisciplineTrendPoint[]) {
+  const chunks: DisciplineTrendPoint[][] = [];
+  for (let index = 0; index < trend.length; index += 7) {
+    chunks.push(trend.slice(index, index + 7));
+  }
+  return chunks;
+}
 
 const toDateKey = (date: Date) => {
   const year = date.getFullYear();
@@ -170,19 +311,23 @@ const formatTime = (value: string) =>
     minute: '2-digit',
   });
 
-const createEmptyScores = (): ScoreDraft =>
-  Object.fromEntries(DISCIPLINE_SCORE_BLOCKS.map(block => [block.key, 0])) as ScoreDraft;
+const createEmptyScores = (habits: readonly DisciplineHabitDefinition[] = DEFAULT_HABIT_DEFINITIONS): ScoreDraft =>
+  Object.fromEntries(habits.map((habit) => [habit.key, 0])) as ScoreDraft;
 
-const normalizeScores = (scores?: Record<string, number> | null): ScoreDraft => {
-  const next = createEmptyScores();
-  for (const block of DISCIPLINE_SCORE_BLOCKS) {
-    const value = Number(scores?.[block.key] ?? 0);
-    next[block.key] = Number.isFinite(value) ? Math.min(SCORE_MAX, Math.max(0, value)) : 0;
+const normalizeScores = (
+  scores?: Record<string, number> | null,
+  habits: readonly DisciplineHabitDefinition[] = DEFAULT_HABIT_DEFINITIONS,
+): ScoreDraft => {
+  const next = createEmptyScores(habits);
+  for (const habit of habits) {
+    next[habit.key] = toBinaryHabitScore(scores?.[habit.key]);
   }
   return next;
 };
 
 const clampDateKey = (dateKey: string, maxDateKey: string) => (dateKey > maxDateKey ? maxDateKey : dateKey);
+
+const dayScoreMax = (habits: readonly DisciplineHabitDefinition[]) => Math.max(1, habits.length * HABIT_SCORE_MAX);
 
 const summarizeReview = (review: DisciplineReviewPayload | null) => {
   const tasks = review?.tasks ?? [];
@@ -208,10 +353,23 @@ const getTimelineTone = (minutes: number) => {
   return 'bg-white/[0.045]';
 };
 
-const scorePercent = (review: DisciplineReviewPayload | null) => {
-  if (!review?.score) return null;
-  return Math.round(Math.max(0, Math.min(1, review.score.total / DAY_SCORE_MAX)) * 100);
+const sumBinaryHabits = (
+  scores?: Record<string, number> | null,
+  habits: readonly DisciplineHabitDefinition[] = DEFAULT_HABIT_DEFINITIONS,
+) => {
+  const normalized = normalizeScores(scores, habits);
+  return habits.reduce((sum, habit) => sum + normalized[habit.key], 0);
 };
+
+const scorePercent = (
+  review: DisciplineReviewPayload | null,
+  habits: readonly DisciplineHabitDefinition[] = DEFAULT_HABIT_DEFINITIONS,
+) => {
+  if (!review?.score) return null;
+  const total = sumBinaryHabits(review.score.scores, habits);
+  return Math.round(Math.max(0, Math.min(1, total / dayScoreMax(habits))) * 100);
+};
+
 
 interface DisciplineDashboardProps {
   onNavigateHome: () => void;
@@ -237,6 +395,16 @@ export function DisciplineDashboard({
   const [selectedReview, setSelectedReview] = useState<DisciplineReviewPayload | null>(null);
   const [trend, setTrend] = useState<DisciplineTrendPoint[]>([]);
   const [consistencyDays, setConsistencyDays] = useState<ConsistencyRangeDays>(DEFAULT_CONSISTENCY_DAYS);
+  const [habitMatrixView, setHabitMatrixView] = useState<HabitMatrixView>(() => defaultHabitMatrixView(DEFAULT_CONSISTENCY_DAYS));
+  const [focusMatrixView, setFocusMatrixView] = useState<FocusMatrixView>(() => defaultFocusMatrixView(DEFAULT_CONSISTENCY_DAYS));
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const motionFade = prefersReducedMotion
+    ? { initial: false as const, animate: { opacity: 1 }, exit: { opacity: 1 }, transition: { duration: 0 } }
+    : { initial: { opacity: 0, y: -8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.18 } };
+  const motionPanel = prefersReducedMotion
+    ? { initial: false as const, animate: { opacity: 1, height: 'auto' }, exit: { opacity: 1 }, transition: { duration: 0 } }
+    : { initial: { opacity: 0, height: 0 }, animate: { opacity: 1, height: 'auto' }, exit: { opacity: 0, height: 0 }, transition: { duration: 0.18 } };
+  const spinClass = prefersReducedMotion ? '' : 'animate-spin';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [scoreDraft, setScoreDraft] = useState<ScoreDraft>(createEmptyScores());
@@ -256,7 +424,22 @@ export function DisciplineDashboard({
   const [savingExercise, setSavingExercise] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusTone, setStatusTone] = useState<'success' | 'error'>('success');
+  const [habits, setHabits] = useState<DisciplineHabitDefinition[]>(DEFAULT_HABIT_DEFINITIONS);
+  const [habitManagerOpen, setHabitManagerOpen] = useState(false);
+  const [newHabitLabel, setNewHabitLabel] = useState('');
+  const [newHabitIcon, setNewHabitIcon] = useState<HabitIconKey>('target');
+  const [newHabitColor, setNewHabitColor] = useState<HabitColorKey>('violet');
+  const [savingHabit, setSavingHabit] = useState(false);
   const loadRequestRef = useRef(0);
+
+  const activeHabits = useMemo(() => getActiveHabits(habits), [habits]);
+  const dayMax = useMemo(() => dayScoreMax(activeHabits), [activeHabits]);
+
+  const applyHabits = useCallback((nextHabits?: DisciplineHabitDefinition[] | null) => {
+    const normalized = normalizeHabitDefinitions(nextHabits);
+    setHabits(normalized);
+    return getActiveHabits(normalized);
+  }, []);
 
   const loadData = useCallback(async (reviewDate: string, trendEndDate: string, liveDate: string) => {
     const requestId = loadRequestRef.current + 1;
@@ -268,19 +451,28 @@ export function DisciplineDashboard({
     try {
       const selectedRequest = fetchDisciplineReview(clampedReviewDate);
       const todayRequest = clampedReviewDate === liveDate ? selectedRequest : fetchDisciplineReview(liveDate);
-      const [reviewPayload, livePayload, trendPayload] = await Promise.all([
+      const [reviewPayload, livePayload, trendPayload, habitsPayload] = await Promise.all([
         selectedRequest,
         todayRequest,
         fetchDisciplineTrend(HEATMAP_DAYS, liveDate),
+        fetchDisciplineHabits(true).catch(() => null),
       ]);
 
       if (loadRequestRef.current !== requestId) return;
+
+      const nextHabits = applyHabits(
+        habitsPayload?.habits
+          ?? reviewPayload.habits
+          ?? livePayload.habits
+          ?? trendPayload.habits
+          ?? DEFAULT_HABIT_DEFINITIONS,
+      );
 
       setSelectedDate(clampedReviewDate);
       setSelectedReview(reviewPayload);
       setTodayReview(livePayload);
       setTrend(trendPayload.trend);
-      setScoreDraft(normalizeScores(reviewPayload.score?.scores));
+      setScoreDraft(normalizeScores(reviewPayload.score?.scores, nextHabits));
       setScoreNotes(reviewPayload.score?.notes ?? '');
     } catch (fetchError) {
       if (loadRequestRef.current !== requestId) return;
@@ -288,7 +480,7 @@ export function DisciplineDashboard({
     } finally {
       if (loadRequestRef.current === requestId) setLoading(false);
     }
-  }, []);
+  }, [applyHabits]);
 
   useEffect(() => {
     void loadData(selectedDate, dataThroughDate, todayDate);
@@ -298,13 +490,49 @@ export function DisciplineDashboard({
     setStatusMessage(null);
   }, [selectedDate]);
 
+  useEffect(() => {
+    setHabitMatrixView(resolveHabitMatrixView(consistencyDays));
+    setFocusMatrixView(resolveFocusMatrixView(consistencyDays));
+  }, [consistencyDays]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia(`(max-width: ${MOBILE_MATRIX_MAX_WIDTH - 1}px)`);
+    const syncViewportDefaults = () => {
+      // Only auto-switch when user has no explicit stored preference for this range.
+      const habitAllowed = HABIT_MATRIX_VIEW_OPTIONS.map((option) => option.id) as HabitMatrixView[];
+      const focusAllowed = FOCUS_MATRIX_VIEW_OPTIONS.map((option) => option.id) as FocusMatrixView[];
+      const habitStored = readOptionalStoredView(matrixViewStorageKey('habit', consistencyDays), habitAllowed);
+      const focusStored = readOptionalStoredView(matrixViewStorageKey('focus', consistencyDays), focusAllowed);
+      if (!habitStored) setHabitMatrixView(defaultHabitMatrixView(consistencyDays, media.matches));
+      if (!focusStored) setFocusMatrixView(defaultFocusMatrixView(consistencyDays, media.matches));
+    };
+    syncViewportDefaults();
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', syncViewportDefaults);
+      return () => media.removeEventListener('change', syncViewportDefaults);
+    }
+    media.addListener(syncViewportDefaults);
+    return () => media.removeListener(syncViewportDefaults);
+  }, [consistencyDays]);
+
+  const handleHabitMatrixViewChange = useCallback((view: HabitMatrixView) => {
+    setHabitMatrixView(view);
+    writeStoredView(matrixViewStorageKey('habit', consistencyDays), view);
+  }, [consistencyDays]);
+
+  const handleFocusMatrixViewChange = useCallback((view: FocusMatrixView) => {
+    setFocusMatrixView(view);
+    writeStoredView(matrixViewStorageKey('focus', consistencyDays), view);
+  }, [consistencyDays]);
+
   const todaySummary = useMemo(() => summarizeReview(todayReview), [todayReview]);
   const selectedSummary = useMemo(() => summarizeReview(selectedReview), [selectedReview]);
 
   const taskProgress = todaySummary.taskCount
     ? Math.round((todaySummary.completedTasks / todaySummary.taskCount) * 100)
     : null;
-  const todayScore = scorePercent(todayReview);
+  const todayScore = scorePercent(todayReview, activeHabits);
   const currentStreak = todayReview?.streak.current ?? todayReview?.streak.current_streak ?? selectedReview?.streak.current ?? 0;
 
   const consistencyTrend = useMemo(() => trend.slice(-consistencyDays), [trend, consistencyDays]);
@@ -315,24 +543,27 @@ export function DisciplineDashboard({
         momentumDays: consistencyDays,
         heatmapDays: consistencyDays,
         habitTrendDays: consistencyDays,
+        habits: activeHabits,
       }),
-    [trend, dataThroughDate, consistencyDays],
+    [trend, dataThroughDate, consistencyDays, activeHabits],
   );
   const recoveryRisk = useMemo(
     () =>
       getRecoveryRiskSummary(trend, {
         days: consistencyDays,
         endDate: dataThroughDate,
+        habits: activeHabits,
       }),
-    [trend, consistencyDays, dataThroughDate],
+    [trend, consistencyDays, dataThroughDate, activeHabits],
   );
   const habitTrends = useMemo(
     () =>
       buildHabitTrendSummaries(trend, {
         days: consistencyDays,
         endDate: dataThroughDate,
+        habits: activeHabits,
       }),
-    [trend, consistencyDays, dataThroughDate],
+    [trend, consistencyDays, dataThroughDate, activeHabits],
   );
   const readiness = useMemo(() => getReadinessPresentation(recoveryRisk.level, recoveryRisk), [recoveryRisk]);
   const shownUpDays = patternModel.momentum.shownUpDays;
@@ -364,34 +595,57 @@ export function DisciplineDashboard({
     const focusMinutes = consistencyTrend.reduce((sum, day) => sum + Number(day.activity?.focusMinutes ?? 0), 0);
     const sessions = consistencyTrend.reduce((sum, day) => sum + Number(day.activity?.completedSessions ?? 0), 0);
     const focusedDays = consistencyTrend.filter(day => Number(day.activity?.focusMinutes ?? 0) > 0).length;
-    const scoredDays = consistencyTrend.filter(day => Number(day.total ?? 0) > 0).length;
+    const scoredDays = consistencyTrend.filter(day => sumBinaryHabits(day.scores, activeHabits) > 0 || Number(day.activity?.focusMinutes ?? 0) > 0).length;
     const avgDeepWork =
       consistencyTrend.length > 0
-        ? consistencyTrend.reduce((sum, day) => sum + Number(day.scores?.deep_work ?? 0), 0) / consistencyTrend.length
+        ? consistencyTrend.reduce((sum, day) => sum + toBinaryHabitScore(day.scores?.deep_work), 0) / consistencyTrend.length
         : 0;
     return { focusMinutes, sessions, focusedDays, scoredDays, avgDeepWork };
-  }, [consistencyTrend]);
+  }, [consistencyTrend, activeHabits]);
 
   const selectedScoreStats = useMemo(() => {
-    const values = DISCIPLINE_SCORE_BLOCKS.map(block => Number(scoreDraft[block.key] ?? 0));
-    const total = selectedReview?.score?.total ?? values.reduce((sum, value) => sum + value, 0);
+    const values = activeHabits.map((habit) => Number(scoreDraft[habit.key] ?? 0));
+    const total = values.reduce((sum, value) => sum + toBinaryHabitScore(value), 0);
     return {
       total,
       average: values.length ? total / values.length : 0,
     };
-  }, [scoreDraft, selectedReview]);
+  }, [scoreDraft, activeHabits]);
+
+  const evidenceDetailsRef = useRef<HTMLDetailsElement | null>(null);
+
+  const openEvidencePanel = useCallback(() => {
+    const panel = evidenceDetailsRef.current;
+    if (!panel) return;
+    panel.open = true;
+    window.requestAnimationFrame(() => {
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, []);
 
   const selectReviewDate = useCallback(
-    (dateKey: string) => {
+    (dateKey: string, options?: { openEvidence?: boolean }) => {
       if (!dateKey) return;
       const nextDate = clampDateKey(dateKey, dataThroughDate);
-      if (nextDate === selectedDate) return;
-      setSelectedReview(null);
-      setScoreDraft(createEmptyScores());
-      setScoreNotes('');
-      setSelectedDate(nextDate);
+      const shouldOpenEvidence = Boolean(options?.openEvidence);
+      if (nextDate !== selectedDate) {
+        setSelectedReview(null);
+        setScoreDraft(createEmptyScores(activeHabits));
+        setScoreNotes('');
+        setSelectedDate(nextDate);
+      }
+      if (shouldOpenEvidence) {
+        openEvidencePanel();
+      }
     },
-    [dataThroughDate, selectedDate],
+    [activeHabits, dataThroughDate, openEvidencePanel, selectedDate],
+  );
+
+  const selectReviewDateFromMatrix = useCallback(
+    (dateKey: string) => {
+      selectReviewDate(dateKey, { openEvidence: true });
+    },
+    [selectReviewDate],
   );
 
   const refreshDashboard = async () => {
@@ -416,13 +670,80 @@ export function DisciplineDashboard({
     try {
       await saveDisciplineScores(selectedDate, scoreDraft, scoreNotes.trim());
       setStatusTone('success');
-      setStatusMessage('Daily score saved.');
+      setStatusMessage('Habit checks saved.');
       await loadData(selectedDate, dataThroughDate, todayDate);
     } catch (saveError) {
       setStatusTone('error');
       setStatusMessage(saveError instanceof Error ? saveError.message : 'Unable to save scores');
     } finally {
       setIsSavingScores(false);
+    }
+  };
+
+  const handleCreateHabit = async () => {
+    const label = newHabitLabel.trim();
+    if (!label) {
+      setStatusTone('error');
+      setStatusMessage('Habit label is required.');
+      return;
+    }
+    setSavingHabit(true);
+    setStatusMessage(null);
+    try {
+      const result = await createDisciplineHabit({
+        label,
+        icon: newHabitIcon,
+        color: newHabitColor,
+      });
+      const nextHabits = applyHabits(result.habits);
+      setScoreDraft((previous) => normalizeScores(previous, nextHabits));
+      setNewHabitLabel('');
+      setNewHabitIcon('target');
+      setNewHabitColor(HABIT_COLOR_KEYS[nextHabits.length % HABIT_COLOR_KEYS.length] || 'violet');
+      setStatusTone('success');
+      setStatusMessage(`Habit added: ${result.habit?.label || label}`);
+      await loadData(selectedDate, dataThroughDate, todayDate);
+    } catch (saveError) {
+      setStatusTone('error');
+      setStatusMessage(saveError instanceof Error ? saveError.message : 'Unable to create habit');
+    } finally {
+      setSavingHabit(false);
+    }
+  };
+
+  const handleToggleHabitActive = async (habit: DisciplineHabitDefinition) => {
+    setSavingHabit(true);
+    setStatusMessage(null);
+    try {
+      const result = await updateDisciplineHabit(habit.key, { active: !habit.active });
+      const nextHabits = applyHabits(result.habits);
+      setScoreDraft((previous) => normalizeScores(previous, nextHabits));
+      setStatusTone('success');
+      setStatusMessage(`${habit.label} ${habit.active ? 'deactivated' : 'activated'}.`);
+      await loadData(selectedDate, dataThroughDate, todayDate);
+    } catch (saveError) {
+      setStatusTone('error');
+      setStatusMessage(saveError instanceof Error ? saveError.message : 'Unable to update habit');
+    } finally {
+      setSavingHabit(false);
+    }
+  };
+
+  const handleDeleteHabit = async (habit: DisciplineHabitDefinition) => {
+    setSavingHabit(true);
+    setStatusMessage(null);
+    try {
+      const result = await deleteDisciplineHabit(habit.key);
+      const nextHabits = applyHabits(result.habits);
+      setScoreDraft((previous) => normalizeScores(previous, nextHabits));
+      setStatusTone('success');
+      setStatusMessage(habit.system ? `${habit.label} deactivated.` : `${habit.label} removed.`);
+      await loadData(selectedDate, dataThroughDate, todayDate);
+    } catch (saveError) {
+      setStatusTone('error');
+      setStatusMessage(saveError instanceof Error ? saveError.message : 'Unable to delete habit');
+    } finally {
+      setSavingHabit(false);
     }
   };
 
@@ -503,7 +824,7 @@ export function DisciplineDashboard({
       <div className="noise-overlay" />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top_left,rgba(52,211,153,0.08),transparent_55%)]" />
 
-      <header className="sticky top-0 z-[60] border-b border-white/10 bg-bg-dark/92 backdrop-blur-xl">
+      <header className="sticky top-0 z-[60] border-b border-white/10 bg-bg-dark/92 pt-[env(safe-area-inset-top,0px)] backdrop-blur-xl">
         <div className="mx-auto flex min-h-[72px] w-full max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <button
@@ -529,7 +850,7 @@ export function DisciplineDashboard({
               aria-label="Refresh discipline data"
               title="Refresh discipline data"
             >
-              <RotateCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} strokeWidth={3} />
+              <RotateCcw className={`h-4 w-4 ${loading ? spinClass : ''}`} strokeWidth={3} />
             </button>
             <AccountMenu
               user={user}
@@ -541,7 +862,7 @@ export function DisciplineDashboard({
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto w-full max-w-7xl px-4 py-6 pb-20 sm:px-6 sm:py-8">
+      <main className="relative z-10 mx-auto w-full max-w-7xl px-3 py-5 pb-[max(5rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-8">
         <div className="sr-only" aria-live="polite">
           {loading ? 'Refreshing discipline data' : 'Discipline data loaded'}
         </div>
@@ -554,9 +875,10 @@ export function DisciplineDashboard({
                   ? 'border-accent-red/50 bg-accent-red/10 text-red-200'
                   : 'border-accent-green/40 bg-accent-green/10 text-accent-green'
               }`}
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
+              initial={motionFade.initial}
+              animate={motionFade.animate}
+              exit={motionFade.exit}
+              transition={motionFade.transition}
               role={error || statusTone === 'error' ? 'alert' : 'status'}
             >
               <div className="flex items-center gap-2">
@@ -576,6 +898,97 @@ export function DisciplineDashboard({
           )}
         </AnimatePresence>
 
+
+        <div className="sticky top-[calc(4.5rem+env(safe-area-inset-top,0px))] z-50 mb-6 border-2 border-white/10 bg-bg-dark/95 p-2 backdrop-blur-xl supports-[backdrop-filter]:bg-bg-dark/90 sm:top-[72px] sm:p-3">
+          <div className="flex flex-col gap-2 sm:gap-3">
+            <div className="flex items-center gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div
+                className="inline-flex shrink-0 border-2 border-white/10 bg-black/30 p-1"
+                role="group"
+                aria-label="Discipline range"
+              >
+                {CONSISTENCY_RANGE_OPTIONS.map(option => {
+                  const active = consistencyDays === option.days;
+                  return (
+                    <button
+                      key={option.days}
+                      type="button"
+                      onClick={() => setConsistencyDays(option.days)}
+                      className={`min-h-11 min-w-[3.25rem] px-3 text-[11px] font-black uppercase tracking-[0.14em] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green active:translate-y-px sm:min-w-[4.5rem] ${
+                        active
+                          ? 'border border-white/20 bg-white text-black'
+                          : 'border border-transparent text-white/60 hover:bg-white/[0.05] hover:text-white'
+                      }`}
+                      aria-pressed={active}
+                    >
+                      {option.shortLabel}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex shrink-0 items-center border-2 border-white/10 bg-white/[0.03] p-1">
+                <button
+                  type="button"
+                  onClick={() => selectReviewDate(shiftDateKey(selectedDate, -1))}
+                  className="grid h-11 w-11 place-items-center text-white/65 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-green"
+                  aria-label="Previous completed day"
+                >
+                  <ChevronLeft className="h-4 w-4" strokeWidth={3} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selectReviewDate(dataThroughDate)}
+                  className={`min-h-11 px-3 text-[11px] font-black uppercase tracking-[0.14em] transition ${
+                    selectedDate === dataThroughDate ? 'bg-accent-green text-black' : 'text-white/65 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  Latest
+                </button>
+                <button
+                  type="button"
+                  onClick={() => canMoveForward && selectReviewDate(shiftDateKey(selectedDate, 1))}
+                  disabled={!canMoveForward}
+                  className="grid h-11 w-11 place-items-center text-white/65 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-green disabled:cursor-not-allowed disabled:text-white/20"
+                  aria-label="Next completed day"
+                >
+                  <ChevronRight className="h-4 w-4" strokeWidth={3} />
+                </button>
+              </div>
+
+              <div className="min-w-0 flex-1 border border-white/10 bg-black/25 px-3 py-2 sm:min-w-[12rem] sm:flex-none">
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/50">Selected day</div>
+                <div className="truncate text-sm font-black text-white sm:hidden">{formatShortDate(selectedDate)}</div>
+                <div className="hidden truncate text-sm font-black text-white sm:block">{formatLongDate(selectedDate)}</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+              <button
+                type="button"
+                onClick={openEvidencePanel}
+                className="inline-flex min-h-11 items-center justify-center gap-2 border-2 border-white/15 bg-white/[0.03] px-3 text-[11px] font-black uppercase tracking-[0.14em] text-white/70 transition hover:border-white/35 hover:bg-white/[0.07] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green"
+              >
+                <HistoryIcon className="h-4 w-4 shrink-0" strokeWidth={2.5} />
+                <span className="truncate">Evidence</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setHabitManagerOpen(true);
+                  window.requestAnimationFrame(() => {
+                    document.getElementById('habit-catalog-heading')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  });
+                }}
+                className="inline-flex min-h-11 items-center justify-center gap-2 border-2 border-white/15 bg-white/[0.03] px-3 text-[11px] font-black uppercase tracking-[0.14em] text-white/70 transition hover:border-white/35 hover:bg-white/[0.07] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green"
+              >
+                <Settings2 className="h-4 w-4 shrink-0" strokeWidth={2.5} />
+                <span className="truncate">Habits</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
         <section aria-labelledby="today-heading" aria-busy={initialLoading}>
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -584,7 +997,7 @@ export function DisciplineDashboard({
                 Pattern mirror.
               </h1>
             </div>
-            <div className="border border-white/10 bg-white/[0.03] px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-white/45">
+            <div className="hidden border border-white/10 bg-white/[0.03] px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-white/45 sm:block">
               Quiet signals from recorded data only
             </div>
           </div>
@@ -612,25 +1025,33 @@ export function DisciplineDashboard({
                     </p>
 
                     <div className="mt-6">
-                      <div className="mb-2 flex items-center justify-between gap-3 text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
+                      <div className="mb-2 flex items-center justify-between gap-3 text-[10px] font-black uppercase tracking-[0.18em] text-white/60">
                         <span>{taskProgress === null ? 'Task plan not set' : 'Today progress'}</span>
                         <span>{taskProgress === null ? '-' : `${taskProgress}%`}</span>
                       </div>
-                      <div className="h-2 overflow-hidden bg-white/10">
+                      <div
+                        className="h-2 overflow-hidden bg-white/10"
+                        role="progressbar"
+                        aria-label="Today task progress"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={taskProgress ?? 0}
+                        aria-valuetext={taskProgress === null ? 'No task plan' : `${taskProgress} percent complete`}
+                      >
                         <div
-                          className="h-full bg-accent-green transition-[width] duration-500"
+                          className={`h-full bg-accent-green ${prefersReducedMotion ? '' : 'transition-[width] duration-500'}`}
                           style={{ width: `${taskProgress ?? 0}%` }}
                         />
                       </div>
                     </div>
                   </div>
 
-                  <ScoreDial value={todayScore} total={todayReview?.score?.total ?? null} />
+                  <ScoreDial value={todayScore} total={todayReview?.score ? sumBinaryHabits(todayReview.score.scores, activeHabits) : null} maxHabits={dayMax} />
                 </div>
               )}
             </article>
 
-                        <article className={`relative border-2 p-5 sm:p-6 ${readiness.cardClass}`}>
+            <article className={`relative border-2 p-5 sm:p-6 ${readiness.cardClass}`}>
               <div className={`text-[10px] font-black uppercase tracking-[0.22em] ${readiness.labelClass}`}>
                 Readiness signal
               </div>
@@ -639,12 +1060,12 @@ export function DisciplineDashboard({
 
               <div className="mt-5 grid grid-cols-2 gap-3">
                 <div className="border border-white/10 bg-black/25 px-3 py-3">
-                  <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Deep work avg</div>
-                  <div className="mt-1 font-grotesk text-xl font-black text-white">{recoveryRisk.deepWorkAverage.toFixed(1)}</div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/60">Deep work rate</div>
+                  <div className="mt-1 font-grotesk text-xl font-black text-white">{Math.round(recoveryRisk.deepWorkAverage * 100)}%</div>
                 </div>
                 <div className="border border-white/10 bg-black/25 px-3 py-3">
-                  <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Recovery avg</div>
-                  <div className="mt-1 font-grotesk text-xl font-black text-white">{recoveryRisk.recoveryAverage.toFixed(1)}</div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/60">Recovery rate</div>
+                  <div className="mt-1 font-grotesk text-xl font-black text-white">{Math.round(recoveryRisk.recoveryAverage * 100)}%</div>
                 </div>
               </div>
 
@@ -670,10 +1091,10 @@ export function DisciplineDashboard({
           <article className="mt-4 border-2 border-white/15 bg-white/[0.03] p-5 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/45">Pattern brief</div>
+                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/60">Pattern brief</div>
                 <h2 className="mt-2 font-grotesk text-xl font-black text-white sm:text-2xl">{patternBrief.headline}</h2>
               </div>
-              <div className="border border-white/10 bg-black/25 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">
+              <div className="border border-white/10 bg-black/25 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-white/55">
                 Through {formatShortDate(patternModel.dataThroughDate)}
               </div>
             </div>
@@ -686,7 +1107,7 @@ export function DisciplineDashboard({
             </ul>
             {patternBrief.signal ? (
               <p className="mt-4 border border-white/10 bg-black/25 px-4 py-3 text-sm leading-relaxed text-white/55">
-                <span className="mr-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Observed signal</span>
+                <span className="mr-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/60">Observed signal</span>
                 {patternBrief.signal}
               </p>
             ) : null}
@@ -706,155 +1127,13 @@ export function DisciplineDashboard({
         </section>
 
         <section className="mt-10" aria-labelledby="consistency-heading">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <SectionHeading
-              icon={CalendarDays}
-              title="Learning consistency"
-              subtitle="Completed focus sessions and scored days across the selected window"
-              id="consistency-heading"
-            />
-            <div
-              className="inline-flex shrink-0 border-2 border-white/10 bg-black/30 p-1"
-              role="group"
-              aria-label="Learning consistency range"
-            >
-              {CONSISTENCY_RANGE_OPTIONS.map(option => {
-                const active = consistencyDays === option.days;
-                return (
-                  <button
-                    key={option.days}
-                    type="button"
-                    onClick={() => setConsistencyDays(option.days)}
-                    className={`min-h-10 min-w-[4.5rem] px-3 text-[11px] font-black uppercase tracking-[0.14em] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green active:translate-y-px ${
-                      active
-                        ? 'border border-white/20 bg-white text-black'
-                        : 'border border-transparent text-white/45 hover:bg-white/[0.05] hover:text-white'
-                    }`}
-                    aria-pressed={active}
-                  >
-                    {option.shortLabel}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
-            <article className="border-2 border-white/15 bg-white/[0.03] p-4 sm:p-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-black text-white">Last {consistencyDays} days / focus timeline</div>
-                  <div className="mt-1 text-xs text-white/45">{consistencyWindowLabel}</div>
-                </div>
-                <HeatmapLegend />
-              </div>
-
-              <div className="mt-6">
-                <ContributionHeatmap
-                  trend={consistencyTrend}
-                  selectedDate={selectedDate}
-                  onSelectDate={selectReviewDate}
-                  loading={loading && consistencyTrend.length === 0}
-                />
-              </div>
-
-              {!hasTrendHistory && !loading && (
-                <div className="mt-5 border border-dashed border-white/15 bg-black/20 p-4 text-sm leading-relaxed text-white/45">
-                  No daily scores are recorded in this window yet. The cells will fill from the existing score review; unscored days stay visibly empty.
-                </div>
-              )}
-            </article>
-
-            <article className="border-2 border-white/15 bg-white/[0.03] p-5 sm:p-6">
-              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/45">{consistencyRangeLabel} consistency score</div>
-              <div className="mt-3 flex items-end gap-2">
-                <div className="font-grotesk text-5xl font-black leading-none text-white">{consistencyScore}</div>
-                <div className="pb-1 text-lg font-black text-accent-green">%</div>
-              </div>
-              <p className="mt-3 text-sm leading-relaxed text-white/55">
-                {shownUpDays} of {consistencyTrend.length || consistencyDays} days have recorded focus activity or a discipline score.
-              </p>
-
-              <div className="mt-6 space-y-3 border-t border-white/10 pt-5">
-                <SignalRow
-                  label="Highest average"
-                  value={strongestHabit ? `${strongestHabit.label} / ${strongestHabit.average.toFixed(1)}/10` : 'Waiting for scores'}
-                  tone="text-accent-green"
-                />
-                <SignalRow
-                  label="Lowest average"
-                  value={softestHabit ? `${softestHabit.label} / ${softestHabit.average.toFixed(1)}/10` : 'Waiting for scores'}
-                  tone="text-amber-300"
-                />
-                <SignalRow
-                  label="Window average"
-                  value={hasTrendHistory ? `${patternModel.momentum.averageScore.toFixed(1)} / ${DAY_SCORE_MAX}` : 'Waiting for scores'}
-                  tone="text-white/70"
-                />
-              </div>
-
-              <div className="mt-5 border-l-2 border-white/25 bg-black/25 px-4 py-3 text-sm leading-relaxed text-white/65">
-                {hasTrendHistory
-                  ? `${shownUpDays} scored or active days in this ${consistencyDays}-day window. Consistency sits at ${consistencyScore}%.`
-                  : 'No scored days are available in this window yet.'}
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <section className="mt-10" aria-labelledby="habit-momentum-heading">
           <SectionHeading
-            icon={TrendingUp}
-            title="Habit momentum"
-            subtitle={`Direction of scored habits over the last ${consistencyDays} days`}
-            id="habit-momentum-heading"
+            icon={CalendarDays}
+            title="Learning consistency"
+            subtitle="Completed focus sessions and scored days across the selected window"
+            id="consistency-heading"
           />
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {habitTrends.length > 0 ? (
-              habitTrends.map(habit => <HabitMomentumCard key={habit.key} habit={habit} />)
-            ) : (
-              <div className="border border-dashed border-white/15 bg-black/20 p-4 text-sm text-white/45 md:col-span-2 xl:col-span-3">
-                Habit direction will appear after completed-day scores exist in this window.
-              </div>
-            )}
-          </div>
-          {(risingHabits.length > 0 || fallingHabits.length > 0) && (
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div className="border border-white/10 bg-white/[0.025] p-4">
-                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-accent-green">Rising</div>
-                <div className="mt-2 space-y-1 text-sm text-white/70">
-                  {risingHabits.length > 0
-                    ? risingHabits.map(habit => (
-                        <div key={habit.key}>
-                          {habit.label} · +{habit.delta.toFixed(1)}
-                        </div>
-                      ))
-                    : 'No rising habit in this window.'}
-                </div>
-              </div>
-              <div className="border border-white/10 bg-white/[0.025] p-4">
-                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-amber-300">Softening</div>
-                <div className="mt-2 space-y-1 text-sm text-white/70">
-                  {fallingHabits.length > 0
-                    ? fallingHabits.map(habit => (
-                        <div key={habit.key}>
-                          {habit.label} · {habit.delta.toFixed(1)}
-                        </div>
-                      ))
-                    : 'No softening habit in this window.'}
-                </div>
-              </div>
-            </div>
-          )}
-        </section>
 
-        <section className="mt-10" aria-labelledby="focus-reality-heading">
-          <SectionHeading
-            icon={Clock3}
-            title="Focus reality"
-            subtitle={`Actual focus volume across the last ${consistencyDays} days`}
-            id="focus-reality-heading"
-          />
           <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <MetricCard
               icon={Clock3}
@@ -877,13 +1156,214 @@ export function DisciplineDashboard({
             <MetricCard
               icon={BarChart3}
               label="Deep work avg"
-              value={focusReality.avgDeepWork.toFixed(1)}
-              detail={`${focusReality.scoredDays} scored days in window`}
+              value={`${Math.round(focusReality.avgDeepWork * 100)}%`}
+              detail={`${focusReality.scoredDays} checked days in window`}
             />
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
+            <article className="border-2 border-white/15 bg-white/[0.03] p-4 sm:p-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <div className="text-sm font-black text-white">Last {consistencyDays} days / focus matrix</div>
+                  <div className="mt-1 text-xs text-white/55">{consistencyWindowLabel}</div>
+                </div>
+                <div className="w-full sm:ml-auto sm:w-auto sm:max-w-full sm:shrink-0">
+                  <MatrixViewSwitcher
+                    label="Focus matrix view"
+                    options={FOCUS_MATRIX_VIEW_OPTIONS}
+                    value={focusMatrixView}
+                    onChange={handleFocusMatrixViewChange}
+                  />
+                </div>
+              </div>
+
+              {focusMatrixView === 'timeline' ? (
+                <div className="mt-3 flex justify-end">
+                  <HeatmapLegend />
+                </div>
+              ) : null}
+
+              <div className="mt-5" aria-busy={loading && consistencyTrend.length === 0}>
+                <ContributionHeatmap
+                  view={focusMatrixView}
+                  trend={consistencyTrend}
+                  selectedDate={selectedDate}
+                  onSelectDate={selectReviewDateFromMatrix}
+                  loading={loading && consistencyTrend.length === 0}
+                />
+              </div>
+
+              {!hasTrendHistory && !loading && (
+                <div className="mt-5 border border-dashed border-white/15 bg-black/20 p-4 text-sm leading-relaxed text-white/45">
+                  No habit checks are recorded in this window yet. Colored cells appear after daily checks are saved.
+                </div>
+              )}
+            </article>
+
+            <article className="border-2 border-white/15 bg-white/[0.03] p-5 sm:p-6">
+              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/60">{consistencyRangeLabel} consistency score</div>
+              <div className="mt-3 flex items-end gap-2">
+                <div className="font-grotesk text-5xl font-black leading-none text-white">{consistencyScore}</div>
+                <div className="pb-1 text-lg font-black text-accent-green">%</div>
+              </div>
+              <p className="mt-3 text-sm leading-relaxed text-white/55">
+                {shownUpDays} of {consistencyTrend.length || consistencyDays} days have recorded focus activity or a discipline score.
+              </p>
+
+              <div className="mt-6 space-y-3 border-t border-white/10 pt-5">
+                <SignalRow
+                  label="Highest completion"
+                  value={strongestHabit ? `${strongestHabit.label} / ${Math.round(strongestHabit.average * 100)}%` : 'Waiting for checks'}
+                  tone="text-accent-green"
+                />
+                <SignalRow
+                  label="Lowest completion"
+                  value={softestHabit ? `${softestHabit.label} / ${Math.round(softestHabit.average * 100)}%` : 'Waiting for checks'}
+                  tone="text-amber-300"
+                />
+                <SignalRow
+                  label="Habits / day"
+                  value={hasTrendHistory ? `${patternModel.momentum.averageScore.toFixed(1)} / ${dayMax}` : 'Waiting for checks'}
+                  tone="text-white/70"
+                />
+              </div>
+
+              <div className="mt-5 border-l-2 border-white/25 bg-black/25 px-4 py-3 text-sm leading-relaxed text-white/65">
+                {hasTrendHistory
+                  ? `${shownUpDays} scored or active days in this ${consistencyDays}-day window. Consistency sits at ${consistencyScore}%.`
+                  : 'No scored days are available in this window yet.'}
+              </div>
+            </article>
           </div>
         </section>
 
-        <details className="group mt-10 border-2 border-white/15 bg-white/[0.02]">
+        <section className="mt-10" aria-labelledby="habit-matrix-heading">
+          <SectionHeading
+            icon={BarChart3}
+            title="Habit completion matrix"
+            subtitle={`Did / did not checks for each habit across the last ${consistencyDays} days`}
+            id="habit-matrix-heading"
+          />
+          <article className="mt-4 border-2 border-white/15 bg-white/[0.03] p-4 sm:p-6">
+            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0 pr-0 text-sm text-white/65 sm:pr-2">
+                {habitMatrixView === 'grid' && 'Check mark = done. Dot = not done. Habit color is secondary.'}
+                {habitMatrixView === 'lanes' && 'Each lane is one habit. Check marks show consecutive done days.'}
+                {habitMatrixView === 'weeks' && 'Full-width week columns. Each day fills the row with habit checks.'}
+                {habitMatrixView === 'rank' && 'Habits ranked by completion rate in this window.'}
+              </div>
+              <div className="w-full sm:ml-auto sm:w-auto sm:max-w-full sm:shrink-0">
+                <MatrixViewSwitcher
+                  label="Habit matrix view"
+                  options={HABIT_MATRIX_VIEW_OPTIONS}
+                  value={habitMatrixView}
+                  onChange={handleHabitMatrixViewChange}
+                />
+              </div>
+            </div>
+            <div className="mb-4 flex gap-2 overflow-x-auto overscroll-x-contain pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:flex-wrap sm:overflow-visible">
+              {activeHabits.map((habit) => {
+                const meta = getHabitMeta(habit);
+                const Icon = meta.icon;
+                return (
+                  <span key={habit.key} className="inline-flex shrink-0 items-center gap-2 border border-white/10 bg-black/25 px-2 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-white/70">
+                    <span className={`grid h-4 w-4 place-items-center ${meta.tint}`}>
+                      <Icon className={`h-3 w-3 ${meta.accent}`} strokeWidth={2.5} />
+                    </span>
+                    {habit.label}
+                  </span>
+                );
+              })}
+            </div>
+            <div aria-busy={loading && consistencyTrend.length === 0}>
+            <HabitCompletionMatrix
+              view={habitMatrixView}
+              habits={activeHabits}
+              habitTrends={habitTrends}
+              trend={consistencyTrend}
+              selectedDate={selectedDate}
+              onSelectDate={selectReviewDateFromMatrix}
+              loading={loading && consistencyTrend.length === 0}
+            />
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {habitTrends.map((habit) => {
+                const rate = Math.round(habit.average * 100);
+                const definition = activeHabits.find((item) => item.key === habit.key);
+                const meta = getHabitMeta(definition ?? habit.key);
+                const Icon = meta.icon;
+                return (
+                  <div key={habit.key} className="border border-white/10 bg-black/20 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`grid h-7 w-7 place-items-center ${meta.tint}`}>
+                          <Icon className={`h-3.5 w-3.5 ${meta.accent}`} strokeWidth={2.5} />
+                        </span>
+                        <span className="text-sm font-semibold text-white/80">{habit.label}</span>
+                      </div>
+                      <span className={`text-sm font-black ${meta.accent}`}>{rate}%</span>
+                    </div>
+                    <div className={`mt-3 h-1.5 overflow-hidden ${meta.track}`}>
+                      <div className={`h-full ${meta.fill}`} style={{ width: `${rate}%` }} />
+                    </div>
+                    <div className="mt-2 text-[11px] text-white/40">
+                      {habit.activeDays}/{consistencyTrend.length || consistencyDays} days done
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </article>
+        </section>
+
+        <section className="mt-10" aria-labelledby="habit-momentum-heading">
+          <SectionHeading
+            icon={TrendingUp}
+            title="Habit momentum"
+            subtitle={`Completion direction over the last ${consistencyDays} days`}
+            id="habit-momentum-heading"
+          />
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {habitTrends.length > 0 ? (
+              habitTrends.map((habit) => <HabitMomentumCard key={habit.key} habit={habit} definition={activeHabits.find((item) => item.key === habit.key)} />)
+            ) : (
+              <div className="border border-dashed border-white/15 bg-black/20 p-4 text-sm text-white/45 md:col-span-2 xl:col-span-3">
+                Habit direction will appear after completed-day checks exist in this window.
+              </div>
+            )}
+          </div>
+          {(risingHabits.length > 0 || fallingHabits.length > 0) && (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="border border-white/10 bg-white/[0.025] p-4">
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-accent-green">Rising</div>
+                <div className="mt-2 space-y-1 text-sm text-white/70">
+                  {risingHabits.length > 0
+                    ? risingHabits.map(habit => (
+                        <div key={habit.key}>
+                          {habit.label} · +{Math.round(habit.delta * 100)} pts
+                        </div>
+                      ))
+                    : 'No rising habit in this window.'}
+                </div>
+              </div>
+              <div className="border border-white/10 bg-white/[0.025] p-4">
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-amber-300">Softening</div>
+                <div className="mt-2 space-y-1 text-sm text-white/70">
+                  {fallingHabits.length > 0
+                    ? fallingHabits.map(habit => (
+                        <div key={habit.key}>
+                          {habit.label} · {Math.round(habit.delta * 100)} pts
+                        </div>
+                      ))
+                    : 'No softening habit in this window.'}
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <details ref={evidenceDetailsRef} id="discipline-evidence" className="group mt-10 border-2 border-white/15 bg-white/[0.02]">
           <summary className="flex min-h-20 cursor-pointer list-none items-center justify-between gap-4 p-4 transition hover:bg-white/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-accent-green sm:p-6 [&::-webkit-details-marker]:hidden">
             <div className="flex min-w-0 items-center gap-3">
               <div className="grid h-10 w-10 shrink-0 place-items-center border border-white/15 bg-white/[0.04] text-white/65">
@@ -952,7 +1432,7 @@ export function DisciplineDashboard({
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
-              <MetricCard icon={BarChart3} label="Daily score" value={`${selectedScoreStats.total}/${DAY_SCORE_MAX}`} detail={`${selectedScoreStats.average.toFixed(1)}/10 average`} />
+              <MetricCard icon={BarChart3} label="Habits done" value={`${selectedScoreStats.total}/${dayMax}`} detail={`${Math.round(selectedScoreStats.average * 100)}% of daily checks`} />
               <MetricCard icon={Clock3} label="Focus volume" value={`${selectedSummary.focusMinutes} min`} detail={`${selectedSummary.pomodoroCount} completed sessions`} />
               <MetricCard icon={BookOpen} label="Reading" value={`${selectedSummary.readingPages} pages`} detail={`${selectedSummary.readingMinutes} minutes`} />
               <MetricCard icon={Dumbbell} label="Exercise" value={`${selectedSummary.exerciseMinutes} min`} detail={`${selectedReview?.exercise.length ?? 0} entries`} />
@@ -962,29 +1442,32 @@ export function DisciplineDashboard({
               <div className="space-y-6">
                 <section className="border border-white/10 bg-black/20 p-4 sm:p-5">
                   <div className="flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-black text-white">Score breakdown</h3>
-                    <span className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-white/40">Recorded / 10</span>
+                    <h3 className="text-sm font-black text-white">Habit checks</h3>
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-white/40">Done / not done</span>
                   </div>
                   <p className="mt-3 border-l-2 border-white/15 pl-3 text-sm leading-relaxed text-white/55">
                     {selectedReview?.score?.notes?.trim() || 'No reflection was recorded for this day.'}
                   </p>
                   <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                    {DISCIPLINE_SCORE_BLOCKS.map(block => {
-                      const meta = SCORE_META[block.key];
+                    {activeHabits.map((habit) => {
+                      const meta = getHabitMeta(habit);
                       const Icon = meta.icon;
-                      const value = Number(selectedReview?.score?.scores?.[block.key] ?? scoreDraft[block.key] ?? 0);
+                      const value = toBinaryHabitScore(selectedReview?.score?.scores?.[habit.key] ?? scoreDraft[habit.key] ?? 0);
+                      const done = value === 1;
                       return (
-                        <div key={block.key} className="border border-white/10 bg-white/[0.025] p-3">
+                        <div key={habit.key} className={`border p-3 ${done ? 'border-white/20 bg-white/[0.04]' : 'border-white/10 bg-white/[0.015]'}`}>
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex items-center gap-2">
-                              <Icon className={`h-4 w-4 ${meta.accent}`} strokeWidth={2.5} />
-                              <span className="text-sm font-semibold text-white/75">{block.label}</span>
+                              <span className={`grid h-8 w-8 place-items-center ${meta.tint}`}>
+                                <Icon className={`h-4 w-4 ${meta.accent}`} strokeWidth={2.5} />
+                              </span>
+                              <span className="text-sm font-semibold text-white/75">{habit.label}</span>
                             </div>
-                            <span className="text-sm font-black text-white">{value}/10</span>
+                            <span className={`text-[11px] font-black uppercase tracking-[0.14em] ${done ? meta.accent : 'text-white/35'}`}>
+                              {done ? 'Done' : 'Not done'}
+                            </span>
                           </div>
-                          <div className={`mt-3 h-1.5 overflow-hidden ${meta.track}`}>
-                            <div className={`h-full ${meta.fill}`} style={{ width: `${value * 10}%` }} />
-                          </div>
+                          <div className={`mt-3 h-2 ${done ? meta.fill : 'bg-white/10'}`} />
                         </div>
                       );
                     })}
@@ -1057,19 +1540,19 @@ export function DisciplineDashboard({
                 <section className="border border-white/10 bg-black/20 p-4 sm:p-5">
                   <div className="mb-5 flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="text-sm font-black text-white">Update daily score</h3>
-                      <p className="mt-1 text-xs text-white/45">Uses the existing six score blocks.</p>
+                      <h3 className="text-sm font-black text-white">Update habit checks</h3>
+                      <p className="mt-1 text-xs text-white/45">Mark each habit as done or not done for this day.</p>
                     </div>
                     <span className="font-mono text-[10px] text-white/35">{selectedDate}</span>
                   </div>
 
                   <div className="space-y-4">
-                    {DISCIPLINE_SCORE_BLOCKS.map(block => (
+                    {activeHabits.map((habit) => (
                       <ScoreRow
-                        key={block.key}
-                        block={block}
-                        value={scoreDraft[block.key]}
-                        onChange={value => setScoreDraft(previous => ({ ...previous, [block.key]: value }))}
+                        key={habit.key}
+                        habit={habit}
+                        value={scoreDraft[habit.key] ?? 0}
+                        onChange={(value) => setScoreDraft((previous) => ({ ...previous, [habit.key]: value }))}
                       />
                     ))}
                     <label className="block">
@@ -1089,8 +1572,8 @@ export function DisciplineDashboard({
                       className="inline-flex min-h-11 items-center gap-2 border-2 border-black bg-accent-green px-4 text-sm font-black text-black transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-cream active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
                       style={{ boxShadow: '4px 4px 0 rgba(0,0,0,0.85)' }}
                     >
-                      {isSavingScores ? <RotateCcw className="h-4 w-4 animate-spin" /> : <BadgeCheck className="h-4 w-4" />}
-                      Save score
+                      {isSavingScores ? <RotateCcw className={`h-4 w-4 ${spinClass}`} /> : <BadgeCheck className="h-4 w-4" />}
+                      Save checks
                     </button>
                   </div>
                 </section>
@@ -1105,9 +1588,10 @@ export function DisciplineDashboard({
                   <AnimatePresence initial={false}>
                     {isAddingReading && (
                       <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
+                        initial={motionPanel.initial}
+                        animate={motionPanel.animate}
+                        exit={motionPanel.exit}
+                        transition={motionPanel.transition}
                         className="mb-4 overflow-hidden border border-amber-400/20 bg-amber-400/5 p-4"
                       >
                         <div className="grid gap-3 sm:grid-cols-2">
@@ -1156,9 +1640,10 @@ export function DisciplineDashboard({
                   <AnimatePresence initial={false}>
                     {isAddingExercise && (
                       <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
+                        initial={motionPanel.initial}
+                        animate={motionPanel.animate}
+                        exit={motionPanel.exit}
+                        transition={motionPanel.transition}
                         className="mb-4 overflow-hidden border border-accent-green/20 bg-accent-green/5 p-4"
                       >
                         <div className="grid gap-3 sm:grid-cols-2">
@@ -1200,6 +1685,128 @@ export function DisciplineDashboard({
             </div>
           </div>
         </details>
+
+        <section className="mt-10" aria-labelledby="habit-catalog-heading" id="habit-catalog-section">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <SectionHeading
+              icon={Settings2}
+              title="Habit catalog"
+              subtitle="Icons, colors, and personal tracking targets for this account"
+              id="habit-catalog-heading"
+            />
+            <button
+              type="button"
+              onClick={() => setHabitManagerOpen((open) => !open)}
+              className="inline-flex min-h-11 items-center gap-2 border-2 border-white/15 bg-white/[0.03] px-4 text-xs font-black uppercase tracking-[0.14em] text-white/70 transition hover:border-white/35 hover:bg-white/[0.07] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-green"
+            >
+              {habitManagerOpen ? 'Hide manager' : 'Manage habits'}
+            </button>
+          </div>
+
+          {habitManagerOpen && (
+            <article className="mt-4 border-2 border-white/15 bg-white/[0.03] p-4 sm:p-6">
+              <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+                <div className="space-y-3">
+                  {habits.map((habit) => {
+                    const meta = getHabitMeta(habit);
+                    const Icon = meta.icon;
+                    return (
+                      <div key={habit.key} className={`flex flex-wrap items-center justify-between gap-3 border p-3 ${habit.active ? 'border-white/15 bg-black/20' : 'border-white/10 bg-black/10 opacity-70'}`}>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className={`grid h-10 w-10 place-items-center ${meta.tint}`}>
+                            <Icon className={`h-4 w-4 ${meta.accent}`} strokeWidth={2.5} />
+                          </span>
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-white/85">{habit.label}</div>
+                            <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.14em] text-white/35">
+                              {habit.key} · {habit.icon} · {habit.color}{habit.system ? ' · system' : ' · custom'}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={savingHabit}
+                            onClick={() => void handleToggleHabitActive(habit)}
+                            className="min-h-10 border border-white/15 px-3 text-[10px] font-black uppercase tracking-[0.14em] text-white/65 transition hover:bg-white/10 disabled:opacity-50"
+                          >
+                            {habit.active ? 'Deactivate' : 'Activate'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={savingHabit}
+                            onClick={() => void handleDeleteHabit(habit)}
+                            className="grid h-10 w-10 place-items-center border border-white/15 text-white/55 transition hover:bg-accent-red/10 hover:text-red-300 disabled:opacity-50"
+                            aria-label={`Remove ${habit.label}`}
+                          >
+                            <Trash2 className="h-4 w-4" strokeWidth={2.5} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="border border-white/10 bg-black/20 p-4">
+                  <div className="text-sm font-black text-white">Add habit</div>
+                  <p className="mt-1 text-xs text-white/45">Create a personal tracking target with its own icon and color.</p>
+                  <label className="mt-4 block">
+                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Label</span>
+                    <input
+                      value={newHabitLabel}
+                      onChange={(event) => setNewHabitLabel(event.target.value)}
+                      className="w-full border-2 border-white/10 bg-black/35 px-3 py-3 text-sm text-white outline-none transition focus:border-accent-green/50"
+                      placeholder="e.g. No social media"
+                    />
+                  </label>
+                  <label className="mt-3 block">
+                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Icon</span>
+                    <select
+                      value={newHabitIcon}
+                      onChange={(event) => setNewHabitIcon(event.target.value as HabitIconKey)}
+                      className="w-full border-2 border-white/10 bg-black/35 px-3 py-3 text-sm text-white outline-none transition focus:border-accent-green/50"
+                    >
+                      {HABIT_ICON_KEYS.map((icon) => (
+                        <option key={icon} value={icon}>{icon}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="mt-3 block">
+                    <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Color</span>
+                    <select
+                      value={newHabitColor}
+                      onChange={(event) => setNewHabitColor(event.target.value as HabitColorKey)}
+                      className="w-full border-2 border-white/10 bg-black/35 px-3 py-3 text-sm text-white outline-none transition focus:border-accent-green/50"
+                    >
+                      {HABIT_COLOR_KEYS.map((color) => (
+                        <option key={color} value={color}>{color}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="mt-4 flex items-center gap-3">
+                    <span className={`grid h-10 w-10 place-items-center ${getHabitVisual(newHabitColor).tint}`}>
+                      {(() => {
+                        const PreviewIcon = resolveHabitIcon(newHabitIcon);
+                        return <PreviewIcon className={`h-4 w-4 ${getHabitVisual(newHabitColor).accent}`} strokeWidth={2.5} />;
+                      })()}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={savingHabit}
+                      onClick={() => void handleCreateHabit()}
+                      className="inline-flex min-h-11 items-center gap-2 border-2 border-black bg-accent-green px-4 text-sm font-black text-black transition hover:-translate-y-0.5 disabled:opacity-50"
+                      style={{ boxShadow: '4px 4px 0 rgba(0,0,0,0.85)' }}
+                    >
+                      <Plus className="h-4 w-4" strokeWidth={3} />
+                      Add habit
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </article>
+          )}
+        </section>
+
       </main>
     </div>
   );
@@ -1222,6 +1829,7 @@ export function AccountMenu({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
+  const prefersReducedMotion = usePrefersReducedMotion();
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -1323,10 +1931,10 @@ export function AccountMenu({
             aria-label="Profile and navigation"
             onKeyDown={handleMenuKeyDown}
             className="absolute right-0 top-[calc(100%+0.65rem)] z-[80] w-[min(18rem,calc(100vw-2rem))] border-2 border-white/20 bg-[#0b0b0b] p-2 shadow-[8px_8px_0_rgba(0,0,0,0.85)]"
-            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+            initial={prefersReducedMotion ? false : { opacity: 0, y: -6, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.98 }}
-            transition={{ duration: 0.15 }}
+            exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: -4, scale: 0.98 }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.15 }}
           >
             <div className="border-b border-white/10 px-3 py-3">
               <div className="truncate text-sm font-black text-white">{name}</div>
@@ -1458,23 +2066,36 @@ function formatRiskFlag(flag: string) {
   }
 }
 
-function HabitMomentumCard({ habit }: { habit: HabitTrendSummary }) {
+function HabitMomentumCard({
+  habit,
+  definition,
+}: {
+  habit: HabitTrendSummary;
+  definition?: DisciplineHabitDefinition;
+}) {
+  const meta = getHabitMeta(definition ?? habit.key);
   const directionLabel = habit.direction === 'up' ? 'Rising' : habit.direction === 'down' ? 'Softening' : 'Stable';
   const directionTone =
     habit.direction === 'up' ? 'text-accent-green' : habit.direction === 'down' ? 'text-amber-300' : 'text-white/55';
-  const deltaLabel =
-    habit.delta === 0 ? '0.0' : habit.delta > 0 ? `+${habit.delta.toFixed(1)}` : habit.delta.toFixed(1);
-  const maxSpark = Math.max(...habit.sparkline, 1);
+  const rate = Math.round(habit.average * 100);
+  const deltaPts = Math.round(habit.delta * 100);
+  const deltaLabel = deltaPts === 0 ? '0 pts' : deltaPts > 0 ? `+${deltaPts} pts` : `${deltaPts} pts`;
 
+  const Icon = meta.icon;
   return (
     <article className="border border-white/10 bg-white/[0.025] p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-black text-white">{habit.label}</div>
+          <div className="flex items-center gap-2">
+            <span className={`grid h-7 w-7 place-items-center ${meta.tint}`}>
+              <Icon className={`h-3.5 w-3.5 ${meta.accent}`} strokeWidth={2.5} />
+            </span>
+            <div className="text-sm font-black text-white">{habit.label}</div>
+          </div>
           <div className={`mt-1 text-[10px] font-black uppercase tracking-[0.16em] ${directionTone}`}>{directionLabel}</div>
         </div>
         <div className="text-right">
-          <div className="font-grotesk text-xl font-black text-white">{habit.average.toFixed(1)}</div>
+          <div className={`font-grotesk text-xl font-black ${meta.accent}`}>{rate}%</div>
           <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">{deltaLabel} vs earlier</div>
         </div>
       </div>
@@ -1482,19 +2103,310 @@ function HabitMomentumCard({ habit }: { habit: HabitTrendSummary }) {
         {habit.sparkline.map((value, index) => (
           <span
             key={`${habit.key}-${index}`}
-            className="min-w-0 flex-1 bg-white/25"
-            style={{ height: `${Math.max(8, (value / maxSpark) * 100)}%` }}
+            className={`min-w-0 flex-1 ${value > 0 ? meta.fill : 'bg-white/10'}`}
+            style={{ height: value > 0 ? '100%' : '30%' }}
           />
         ))}
       </div>
       <div className="mt-3 text-xs text-white/45">
-        {habit.activeDays} active day{habit.activeDays === 1 ? '' : 's'} · recent {habit.recentAverage.toFixed(1)} / baseline {habit.baselineAverage.toFixed(1)}
+        {habit.activeDays} done day{habit.activeDays === 1 ? '' : 's'} · recent {Math.round(habit.recentAverage * 100)}% / baseline {Math.round(habit.baselineAverage * 100)}%
       </div>
     </article>
   );
 }
 
-function ScoreDial({ value, total }: { value: number | null; total: number | null }) {
+function HabitCompletionMatrix({
+  view,
+  habits,
+  habitTrends,
+  trend,
+  selectedDate,
+  onSelectDate,
+  loading,
+}: {
+  view: HabitMatrixView;
+  habits: readonly DisciplineHabitDefinition[];
+  habitTrends: readonly HabitTrendSummary[];
+  trend: DisciplineTrendPoint[];
+  selectedDate: string;
+  onSelectDate: (date: string) => void;
+  loading: boolean;
+}) {
+  const maxHabits = Math.max(1, habits.length);
+  const trendByKey = useMemo(() => new Map(habitTrends.map((item) => [item.key, item])), [habitTrends]);
+
+  if (loading) {
+    return (
+      <div className="space-y-2" aria-label="Loading habit matrix">
+        {Array.from({ length: 7 }, (_, index) => (
+          <div key={index} className="h-8 animate-pulse bg-white/10" />
+        ))}
+      </div>
+    );
+  }
+
+  if (trend.length === 0) {
+    return (
+      <div className="border border-dashed border-white/15 bg-black/20 p-4 text-sm text-white/45">
+        No days in this window yet.
+      </div>
+    );
+  }
+
+  if (view === 'rank') {
+    const ranked = habits
+      .map((habit) => {
+        const summary = trendByKey.get(habit.key);
+        const activeDays = summary?.activeDays ?? trend.reduce((sum, day) => sum + toBinaryHabitScore(day.scores?.[habit.key]), 0);
+        const average = summary?.average ?? (trend.length ? activeDays / trend.length : 0);
+        return { habit, activeDays, average };
+      })
+      .sort((a, b) => b.average - a.average || b.activeDays - a.activeDays || a.habit.sortOrder - b.habit.sortOrder);
+
+    return (
+      <div className="space-y-2" role="list" aria-label="Habit rank list">
+        {ranked.map((item, index) => {
+          const meta = getHabitMeta(item.habit);
+          const Icon = meta.icon;
+          const rate = Math.round(item.average * 100);
+          return (
+            <div key={item.habit.key} role="listitem" className="flex items-center gap-3 border border-white/10 bg-black/20 p-3">
+              <span className="w-8 font-mono text-xs font-black text-white/35">#{index + 1}</span>
+              <span className={`grid h-9 w-9 place-items-center ${meta.tint}`}>
+                <Icon className={`h-4 w-4 ${meta.accent}`} strokeWidth={2.5} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="truncate text-sm font-semibold text-white/80">{item.habit.label}</span>
+                  <span className={`text-sm font-black ${meta.accent}`}>{rate}%</span>
+                </div>
+                <div className={`mt-2 h-1.5 overflow-hidden ${meta.track}`}>
+                  <div className={`h-full ${meta.fill}`} style={{ width: `${rate}%` }} />
+                </div>
+                <div className="mt-1 text-[11px] text-white/40">{item.activeDays}/{trend.length} days done</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (view === 'lanes') {
+    return (
+      <div className="space-y-3" aria-label="Habit lanes">
+        {habits.map((habit) => {
+          const meta = getHabitMeta(habit);
+          const Icon = meta.icon;
+          const summary = trendByKey.get(habit.key);
+          return (
+            <div key={habit.key} className="border border-white/10 bg-black/20 p-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className={`grid h-8 w-8 place-items-center ${meta.tint}`}>
+                    <Icon className={`h-3.5 w-3.5 ${meta.accent}`} strokeWidth={2.5} />
+                  </span>
+                  <span className="truncate text-sm font-semibold text-white/80">{habit.label}</span>
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-white/40">
+                  {summary ? `${summary.activeDays}/${trend.length}` : `${trend.length} days`}
+                </span>
+              </div>
+              <div className="flex gap-1 overflow-x-auto">
+                {trend.map((day) => {
+                  const done = toBinaryHabitScore(day.scores?.[habit.key]) === 1;
+                  const selected = day.date === selectedDate;
+                  return (
+                    <button
+                      key={`${habit.key}-${day.date}`}
+                      type="button"
+                      onClick={() => onSelectDate(day.date)}
+                      className={`grid h-10 min-w-10 flex-1 place-items-center border text-[11px] font-black transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-cream sm:h-8 sm:min-w-8 ${
+                        done ? `${meta.fill} text-black` : 'border-white/20 bg-transparent text-white/45'
+                      } ${selected ? 'ring-2 ring-paper-cream/70' : ''}`}
+                      title={`${habit.label} · ${formatShortDate(day.date)} · ${done ? 'done' : 'not done'}`}
+                      aria-label={`${habit.label} on ${formatLongDate(day.date)}: ${done ? 'done' : 'not done'}`}
+                      aria-pressed={selected}
+                    >
+                      <span aria-hidden="true">{done ? '✓' : '·'}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (view === 'weeks') {
+    const weeks = chunkTrendByWeeks(trend);
+    const weekCount = Math.max(weeks.length, 1);
+    return (
+      <div className="space-y-3" aria-label="Habit week blocks">
+        <div
+          className={`grid gap-3 ${
+            weekCount <= 1
+              ? 'grid-cols-1'
+              : weekCount === 2
+                ? 'grid-cols-1 sm:grid-cols-2'
+                : weekCount === 3
+                  ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3'
+                  : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-4'
+          }`}
+        >
+          {weeks.map((week, weekIndex) => {
+            const start = week[0]?.date;
+            const end = week[week.length - 1]?.date;
+            const weekDone = week.reduce((sum, day) => {
+              const scores = normalizeScores(day.scores, habits);
+              return sum + habits.reduce((habitSum, habit) => habitSum + scores[habit.key], 0);
+            }, 0);
+            const weekPossible = week.length * maxHabits;
+            const weekRate = weekPossible > 0 ? Math.round((weekDone / weekPossible) * 100) : 0;
+
+            return (
+              <div key={`week-${weekIndex}-${start}`} className="min-w-0 border border-white/10 bg-black/20 p-3">
+                <div className="mb-3 flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-black uppercase tracking-[0.14em] text-white/60">Week {weekIndex + 1}</div>
+                    <div className="mt-1 truncate font-mono text-[10px] text-white/55">
+                      {start ? formatShortDate(start) : '—'}
+                      {end && end !== start ? ` - ${formatShortDate(end)}` : ''}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="text-sm font-black text-white">{weekRate}%</div>
+                    <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/50">{weekDone}/{weekPossible}</div>
+                  </div>
+                </div>
+
+                <div className="mb-2 h-1.5 overflow-hidden bg-white/10" aria-hidden="true">
+                  <div className="h-full bg-accent-green" style={{ width: `${weekRate}%` }} />
+                </div>
+
+                <div className="space-y-1.5">
+                  {week.map((day) => {
+                    const scores = normalizeScores(day.scores, habits);
+                    const doneCount = habits.reduce((sum, habit) => sum + scores[habit.key], 0);
+                    const selected = day.date === selectedDate;
+                    const dayRate = maxHabits > 0 ? Math.round((doneCount / maxHabits) * 100) : 0;
+                    return (
+                      <button
+                        key={day.date}
+                        type="button"
+                        onClick={() => onSelectDate(day.date)}
+                        className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)_2rem] items-center gap-1.5 border px-1.5 py-2 text-left transition hover:border-white/40 hover:bg-white/[0.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-cream sm:grid-cols-[3.25rem_minmax(0,1fr)_2.25rem] sm:gap-2 sm:px-2 ${
+                          selected ? 'border-paper-cream bg-white/[0.05] ring-1 ring-paper-cream/40' : 'border-white/10'
+                        }`}
+                        aria-label={`${formatLongDate(day.date)}, ${doneCount} of ${maxHabits} habits done`}
+                        aria-pressed={selected}
+                      >
+                        <span className="font-mono text-[10px] font-bold text-white/65">{formatShortDate(day.date)}</span>
+                        <span className="min-w-0">
+                          <span
+                            className="grid gap-1"
+                            style={{ gridTemplateColumns: `repeat(${Math.max(maxHabits, 1)}, minmax(0, 1fr))` }}
+                          >
+                            {habits.map((habit) => {
+                              const done = scores[habit.key] === 1;
+                              const meta = getHabitMeta(habit);
+                              return (
+                                <span
+                                  key={`${day.date}-${habit.key}`}
+                                  className={`inline-grid h-8 w-full min-h-8 place-items-center border text-[11px] font-black sm:h-7 ${
+                                    done ? `${meta.fill} text-black` : 'border-white/20 bg-transparent text-white/45'
+                                  }`}
+                                  title={`${habit.label}: ${done ? 'done' : 'not done'}`}
+                                  aria-label={`${habit.label}: ${done ? 'done' : 'not done'}`}
+                                >
+                                  <span aria-hidden="true">{done ? '✓' : '·'}</span>
+                                </span>
+                              );
+                            })}
+                          </span>
+                          <span className="mt-1 block h-1 overflow-hidden bg-white/10" aria-hidden="true">
+                            <span className="block h-full bg-white/45" style={{ width: `${dayRate}%` }} />
+                          </span>
+                        </span>
+                        <span className="text-right text-[10px] font-black text-white/60">{doneCount}/{maxHabits}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // Default: day grid (day rows x habit columns)
+  return (
+    <div className="-mx-1 overflow-x-auto overscroll-x-contain px-1 pb-1 touch-pan-x">
+      <div style={{ minWidth: `${Math.max(18, 4.5 + maxHabits * 3.75)}rem` }}>
+        <div
+          className="mb-2 grid gap-1 text-[9px] font-black uppercase tracking-[0.1em] text-white/60"
+          style={{ gridTemplateColumns: `4.25rem repeat(${maxHabits}, minmax(2.75rem, 1fr))` }}
+        >
+          <span className="sticky left-0 z-[1] bg-bg-dark/95 pr-1">Day</span>
+          {habits.map((habit) => {
+            const meta = getHabitMeta(habit);
+            const Icon = meta.icon;
+            return (
+              <span key={habit.key} className="flex items-center justify-center gap-1 truncate" title={habit.label}>
+                <Icon className={`h-3 w-3 ${meta.accent}`} strokeWidth={2.5} />
+                <span className="truncate">{habit.label}</span>
+              </span>
+            );
+          })}
+        </div>
+        <div className="space-y-1">
+          {trend.map((day) => {
+            const selected = day.date === selectedDate;
+            const scores = normalizeScores(day.scores, habits);
+            const doneCount = habits.reduce((sum, habit) => sum + scores[habit.key], 0);
+            return (
+              <button
+                key={day.date}
+                type="button"
+                onClick={() => onSelectDate(day.date)}
+                className={`grid w-full items-center gap-1 border px-1.5 py-1.5 text-left transition hover:border-white/40 hover:bg-white/[0.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-cream ${
+                  selected ? 'border-paper-cream bg-white/[0.05] ring-1 ring-paper-cream/40' : 'border-transparent'
+                }`}
+                style={{ gridTemplateColumns: `4.25rem repeat(${maxHabits}, minmax(2.75rem, 1fr))` }}
+                aria-label={`${formatLongDate(day.date)}, ${doneCount} of ${maxHabits} habits done`}
+                aria-pressed={selected}
+              >
+                <span className="sticky left-0 z-[1] bg-bg-dark/95 pr-1 font-mono text-[10px] font-bold text-white/65">{formatShortDate(day.date)}</span>
+                {habits.map((habit) => {
+                  const done = scores[habit.key] === 1;
+                  const meta = getHabitMeta(habit);
+                  return (
+                    <span
+                      key={`${day.date}-${habit.key}`}
+                      className={`inline-grid h-9 place-items-center border text-[11px] font-black sm:h-7 ${
+                        done ? `${meta.fill} text-black` : 'border-white/20 bg-transparent text-white/45'
+                      }`}
+                      title={`${habit.label}: ${done ? 'done' : 'not done'}`}
+                      aria-label={`${habit.label}: ${done ? 'done' : 'not done'}`}
+                    >
+                      <span aria-hidden="true">{done ? '✓' : '·'}</span>
+                    </span>
+                  );
+                })}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScoreDial({ value, total, maxHabits }: { value: number | null; total: number | null; maxHabits: number }) {
   const progress = value ?? 0;
   const circumference = 2 * Math.PI * 52;
   const dashOffset = circumference - (progress / 100) * circumference;
@@ -1520,22 +2432,24 @@ function ScoreDial({ value, total }: { value: number | null; total: number | nul
         <div className="absolute inset-0 grid place-items-center text-center">
           <div>
             <div className="font-grotesk text-3xl font-black leading-none text-white">{value === null ? '-' : value}</div>
-            <div className="mt-1 text-[9px] font-black uppercase tracking-[0.18em] text-white/40">{value === null ? 'Pending' : 'Percent'}</div>
+            <div className="mt-1 text-[9px] font-black uppercase tracking-[0.18em] text-white/40">{value === null ? 'Pending' : 'Done %'}</div>
           </div>
         </div>
       </div>
       <div className="mt-2 text-center text-[10px] font-black uppercase tracking-[0.16em] text-white/45">Today discipline score</div>
-      <div className="mt-1 text-center text-xs text-white/35">{total === null ? 'Not recorded yet' : `${total}/${DAY_SCORE_MAX} existing total`}</div>
+      <div className="mt-1 text-center text-xs text-white/35">{total === null ? 'Not recorded yet' : `${total}/${maxHabits} habits done`}</div>
     </div>
   );
 }
 
 function ContributionHeatmap({
+  view = 'timeline',
   trend,
   selectedDate,
   onSelectDate,
   loading,
 }: {
+  view?: FocusMatrixView;
   trend: DisciplineTrendPoint[];
   selectedDate: string;
   onSelectDate: (date: string) => void;
@@ -1555,11 +2469,95 @@ function ContributionHeatmap({
     );
   }
 
+  if (trend.length === 0) {
+    return (
+      <div className="border border-dashed border-white/15 bg-black/20 p-4 text-sm text-white/45">
+        No days in this window yet.
+      </div>
+    );
+  }
+
+  if (view === 'rank') {
+    const ranked = [...trend]
+      .map((day) => ({
+        day,
+        minutes: Number(day.activity?.focusMinutes ?? 0),
+        sessions: Number(day.activity?.completedSessions ?? 0),
+      }))
+      .sort((a, b) => b.minutes - a.minutes || b.sessions - a.sessions || b.day.date.localeCompare(a.day.date));
+    const maxMinutes = Math.max(1, ...ranked.map((item) => item.minutes));
+
+    return (
+      <div className="space-y-2" role="list" aria-label="Focus rank list">
+        {ranked.map((item, index) => {
+          const selected = item.day.date === selectedDate;
+          const width = Math.round((item.minutes / maxMinutes) * 100);
+          return (
+            <button
+              key={item.day.date}
+              type="button"
+              role="listitem"
+              onClick={() => onSelectDate(item.day.date)}
+              className={`flex w-full items-center gap-3 border px-3 py-3 text-left transition hover:border-white/40 hover:bg-white/[0.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-cream ${
+                selected ? 'border-paper-cream bg-white/[0.05] ring-1 ring-paper-cream/40' : 'border-white/10 bg-black/20'
+              }`}
+              aria-pressed={selected}
+            >
+              <span className="w-8 font-mono text-xs font-black text-white/35">#{index + 1}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-white/80">{formatShortDate(item.day.date)}</span>
+                  <span className="text-sm font-black text-accent-green">{item.minutes} min</span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden bg-white/10">
+                  <div className="h-full bg-accent-green" style={{ width: `${width}%` }} />
+                </div>
+                <div className="mt-1 text-[11px] text-white/40">{item.sessions} session{item.sessions === 1 ? '' : 's'}</div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (view === 'days') {
+    const maxMinutes = Math.max(1, ...trend.map((day) => Number(day.activity?.focusMinutes ?? 0)));
+    return (
+      <div className="space-y-2" aria-label="Focus day intensity">
+        {trend.map((day) => {
+          const minutes = Number(day.activity?.focusMinutes ?? 0);
+          const selected = day.date === selectedDate;
+          const width = Math.round((minutes / maxMinutes) * 100);
+          const tone = minutes >= 100 ? 'bg-accent-green' : minutes >= 50 ? 'bg-accent-green/70' : minutes > 0 ? 'bg-accent-green/40' : 'bg-white/10';
+          return (
+            <button
+              key={day.date}
+              type="button"
+              onClick={() => onSelectDate(day.date)}
+              className={`grid w-full grid-cols-[3.75rem_minmax(0,1fr)_3.25rem] items-center gap-2 border px-2 py-2.5 text-left transition hover:border-white/40 hover:bg-white/[0.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-cream sm:grid-cols-[4.5rem_1fr_4rem] ${
+                selected ? 'border-paper-cream bg-white/[0.05] ring-1 ring-paper-cream/40' : 'border-transparent'
+              }`}
+              aria-label={`${formatLongDate(day.date)}, ${minutes} focused minutes`}
+              aria-pressed={selected}
+            >
+              <span className="font-mono text-[10px] font-bold text-white/55">{formatShortDate(day.date)}</span>
+              <span className="h-4 overflow-hidden bg-white/[0.06]">
+                <span className={`block h-full ${tone}`} style={{ width: `${minutes > 0 ? Math.max(width, 8) : 0}%` }} />
+              </span>
+              <span className="text-right text-[11px] font-black text-white/55">{minutes}</span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
-    <div className="overflow-x-auto pb-2">
-      <div className="min-w-[38rem]">
-        <div className="mb-2 grid grid-cols-[4.5rem_1fr] gap-2 text-[9px] font-black uppercase tracking-[0.12em] text-white/30" aria-hidden="true">
-          <span>Day</span>
+    <div className="-mx-1 overflow-x-auto overscroll-x-contain px-1 pb-2 touch-pan-x">
+      <div className="min-w-[min(38rem,100%)] sm:min-w-[38rem]">
+        <div className="mb-2 grid grid-cols-[3.75rem_1fr] gap-2 text-[9px] font-black uppercase tracking-[0.12em] text-white/55 sm:grid-cols-[4.5rem_1fr]" aria-hidden="true">
+          <span className="sticky left-0 z-[1] bg-bg-dark/95">Day</span>
           <div className="grid grid-cols-[repeat(24,minmax(0,1fr))] gap-px">
             {Array.from({ length: 24 }, (_, hour) => (
               <span key={hour} className="text-center">{hour % 3 === 0 ? String(hour).padStart(2, '0') : ''}</span>
@@ -1567,28 +2565,28 @@ function ContributionHeatmap({
           </div>
         </div>
         <div className="space-y-1">
-          {trend.map(day => {
+          {trend.map((day) => {
             const activity = day.activity;
             const hours = activity?.hourlyMinutes ?? Array.from({ length: 24 }, () => 0);
             const selected = day.date === selectedDate;
             const summary = activity?.focusMinutes
               ? `${activity.focusMinutes} focused min${activity.firstStartedAt ? `, started ${formatTime(activity.firstStartedAt)}` : ''}`
               : day.total > 0
-                ? `discipline score ${day.total}/${DAY_SCORE_MAX}`
+                ? `habits done ${day.total}`
                 : 'no recorded focus activity';
             return (
               <button
                 key={day.date}
                 type="button"
                 onClick={() => onSelectDate(day.date)}
-                className={`grid w-full grid-cols-[4.5rem_1fr] items-center gap-2 border px-1.5 py-1 text-left transition hover:border-white/50 hover:bg-white/[0.035] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-cream ${
+                className={`grid w-full grid-cols-[3.75rem_1fr] items-center gap-2 border px-1.5 py-1.5 text-left transition hover:border-white/50 hover:bg-white/[0.035] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-cream sm:grid-cols-[4.5rem_1fr] ${
                   selected ? 'border-paper-cream bg-white/[0.06] ring-1 ring-paper-cream/50' : 'border-transparent'
                 }`}
                 title={`${formatLongDate(day.date)}: ${summary}`}
                 aria-label={`${formatLongDate(day.date)}, ${summary}`}
                 aria-pressed={selected}
               >
-                <span className="font-mono text-[9px] font-bold text-white/55">{formatShortDate(day.date)}</span>
+                <span className="sticky left-0 z-[1] bg-bg-dark/95 font-mono text-[9px] font-bold text-white/65">{formatShortDate(day.date)}</span>
                 <span className="grid grid-cols-[repeat(24,minmax(0,1fr))] gap-px" aria-hidden="true">
                   {hours.map((minutes, hour) => (
                     <span key={hour} className={`h-3 min-w-0 border border-black/20 ${getTimelineTone(Number(minutes) || 0)}`} />
@@ -1603,9 +2601,53 @@ function ContributionHeatmap({
   );
 }
 
+
+
+function MatrixViewSwitcher<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: readonly { id: T; label: string; shortLabel: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="max-w-full overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div
+        className="inline-flex min-w-full flex-nowrap border-2 border-white/10 bg-black/30 p-1 sm:min-w-0"
+        role="group"
+        aria-label={label}
+      >
+        {options.map((option) => {
+          const active = value === option.id;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => onChange(option.id)}
+              className={`min-h-11 min-w-0 flex-1 px-2.5 text-[10px] font-black uppercase tracking-[0.12em] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green active:translate-y-px sm:min-h-9 sm:min-w-[3.75rem] sm:flex-none ${
+                active
+                  ? 'border border-white/20 bg-white text-black'
+                  : 'border border-transparent text-white/60 hover:bg-white/[0.05] hover:text-white'
+              }`}
+              aria-pressed={active}
+              title={option.label}
+            >
+              {option.shortLabel}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function HeatmapLegend() {
   return (
-    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.14em] text-white/35" aria-label="Focus timeline intensity from no focus time to a full focus block">
+    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.14em] text-white/60" aria-label="Focus timeline intensity from no focus time to a full focus block">
       <span>None</span>
       <div className="flex gap-1" aria-hidden="true">
         {[0, 5, 12, 20].map(minutes => (
@@ -1688,42 +2730,41 @@ function SignalRow({ label, value, tone }: { label: string; value: string; tone:
 }
 
 function ScoreRow({
-  block,
+  habit,
   value,
   onChange,
 }: {
-  block: (typeof DISCIPLINE_SCORE_BLOCKS)[number];
+  habit: DisciplineHabitDefinition;
   value: number;
   onChange: (value: number) => void;
 }) {
-  const meta = SCORE_META[block.key];
+  const meta = getHabitMeta(habit);
   const Icon = meta.icon;
+  const done = toBinaryHabitScore(value) === 1;
 
   return (
-    <label className="flex items-center gap-3">
+    <button
+      type="button"
+      onClick={() => onChange(done ? 0 : 1)}
+      className={`flex w-full items-center gap-3 border px-3 py-3 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green ${
+        done ? 'border-white/25 bg-white/[0.05]' : 'border-white/10 bg-black/20 hover:bg-white/[0.03]'
+      }`}
+      aria-pressed={done}
+      aria-label={`${habit.label} ${done ? 'done' : 'not done'}`}
+    >
       <span className={`grid h-9 w-9 shrink-0 place-items-center ${meta.tint}`}>
         <Icon className={`h-4 w-4 ${meta.accent}`} strokeWidth={2.5} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="mb-2 flex items-center justify-between gap-3">
-          <span className="truncate text-sm font-semibold text-white/75">{block.label}</span>
-          <span className="text-sm font-black text-white">{value}/10</span>
+        <span className="flex items-center justify-between gap-3">
+          <span className="truncate text-sm font-semibold text-white/80">{habit.label}</span>
+          <span className={`text-[11px] font-black uppercase tracking-[0.14em] ${done ? meta.accent : 'text-white/35'}`}>
+            {done ? 'Done' : 'Not done'}
+          </span>
         </span>
-        <span className={`relative block h-2 ${meta.track}`}>
-          <span className={`absolute inset-y-0 left-0 ${meta.fill}`} style={{ width: `${value * 10}%` }} />
-          <input
-            type="range"
-            min="0"
-            max="10"
-            step="1"
-            value={value}
-            onChange={event => onChange(Number(event.target.value))}
-            className="absolute -inset-y-3 inset-x-0 w-full cursor-pointer opacity-0"
-            aria-label={`${block.label} score`}
-          />
-        </span>
+        <span className={`mt-2 block h-1.5 ${done ? meta.fill : 'bg-white/10'}`} />
       </span>
-    </label>
+    </button>
   );
 }
 

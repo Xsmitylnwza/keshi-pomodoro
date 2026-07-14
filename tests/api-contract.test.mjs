@@ -284,7 +284,10 @@ test('spec score keys are stored as canonical lowercase dashboard keys', async (
     'reading',
     'sleep',
   ]);
-  assert.equal(result.body.score.total, 33);
+  // Legacy 1-10 values map to binary done (1)
+  assert.equal(result.body.score.total, 6);
+  assert.equal(result.body.score.scores.deep_work, 1);
+  assert.equal(result.body.score.scores.sleep, 1);
 
   const invalid = await post('/api/discipline/scores', {
     date: '2026-07-06',
@@ -298,6 +301,62 @@ test('spec score keys are stored as canonical lowercase dashboard keys', async (
     },
   });
   assert.equal(invalid.response.status, 400);
+});
+
+test('habit catalog supports create update and binary custom scores', async () => {
+  const listed = await api('/api/discipline/habits');
+  assert.equal(listed.response.status, 200);
+  assert.ok(Array.isArray(listed.body.habits));
+  assert.ok(listed.body.habits.length >= 6);
+  assert.ok(listed.body.icons.includes('target'));
+  assert.ok(listed.body.colors.includes('violet'));
+
+  const created = await post('/api/discipline/habits', {
+    label: 'No social media',
+    icon: 'phone',
+    color: 'orange',
+    key: 'no_social',
+  });
+  assert.equal(created.response.status, 201);
+  assert.equal(created.body.habit.key, 'no_social');
+  assert.equal(created.body.habit.icon, 'phone');
+  assert.equal(created.body.habit.color, 'orange');
+  assert.equal(created.body.habit.system, false);
+
+  const updated = await api('/api/discipline/habits/no_social', {
+    method: 'PATCH',
+    body: JSON.stringify({ label: 'Phone free', icon: 'phone', color: 'cyan', active: true }),
+  });
+  assert.equal(updated.response.status, 200);
+  assert.equal(updated.body.habit.label, 'Phone free');
+  assert.equal(updated.body.habit.color, 'cyan');
+
+  const scored = await post('/api/discipline/scores', {
+    date: '2026-07-07',
+    scores: {
+      deep_work: 1,
+      reading: 0,
+      exercise: 1,
+      sleep: 1,
+      nutrition: 0,
+      discipline: 1,
+      no_social: 1,
+    },
+    notes: 'custom habit day',
+  });
+  assert.equal(scored.response.status, 200);
+  assert.equal(scored.body.score.scores.no_social, 1);
+  assert.equal(scored.body.score.total, 5);
+
+  const review = await api('/api/discipline/review?date=2026-07-07');
+  assert.equal(review.response.status, 200);
+  assert.ok(review.body.habits.some((habit) => habit.key === 'no_social'));
+  assert.equal(review.body.score.scores.no_social, 1);
+
+  const deleted = await api('/api/discipline/habits/no_social', { method: 'DELETE' });
+  assert.equal(deleted.response.status, 200);
+  assert.equal(deleted.body.deleted, true);
+  assert.equal(deleted.body.habits.some((habit) => habit.key === 'no_social'), false);
 });
 
 test('task snapshots stabilize review task state', async () => {

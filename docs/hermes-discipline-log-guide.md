@@ -112,6 +112,59 @@ Returns:
 - `events`
 - `generatedAt`
 
+### Habit Catalog
+
+Habits are per-user and binary:
+
+- `0` = not done
+- `1` = done
+- Legacy values `2-10` still map as done
+
+List habits for the authenticated user:
+
+```http
+GET /discipline/habits?includeInactive=1
+```
+
+Create a habit:
+
+```http
+POST /discipline/habits
+```
+
+```json
+{
+  "label": "No social media",
+  "icon": "phone",
+  "color": "orange"
+}
+```
+
+Update a habit:
+
+```http
+PATCH /discipline/habits/:key
+```
+
+```json
+{
+  "label": "Phone free evening",
+  "icon": "phone",
+  "color": "orange",
+  "active": true
+}
+```
+
+Delete / deactivate:
+
+```http
+DELETE /discipline/habits/:key
+```
+
+- System habits soft-deactivate
+- Custom habits hard-delete
+- Allowed icons and colors are returned by `GET /discipline/habits`
+
 ### Save Daily Scores
 
 ```http
@@ -124,46 +177,47 @@ Body:
 {
   "date": "2026-07-08",
   "scores": {
-    "deep_work": 8,
-    "reading": 6,
-    "exercise": 5,
-    "sleep": 7,
-    "nutrition": 6,
-    "discipline": 8
+    "deep_work": 1,
+    "reading": 1,
+    "exercise": 0,
+    "sleep": 1,
+    "nutrition": 1,
+    "discipline": 1
   },
   "notes": "Good focus day"
 }
 ```
 
-Accepted score keys are either the current set:
+Preferred shape: active habit keys from `GET /discipline/habits` with values `0` or `1`.
+
+Partial maps are accepted and merge into existing same-day scores.
+
+Legacy complete sets still work:
 
 ```txt
-deep_work
-reading
-exercise
-sleep
-nutrition
-discipline
+deep_work, reading, exercise, sleep, nutrition, discipline
 ```
 
-or the Hermes spec set:
+and Hermes upper-case aliases:
 
 ```txt
-BUILD
-JOB_APPS
-FLEX
-EXERCISE
-FOCUS
-SLEEP
+BUILD, JOB_APPS, FLEX, EXERCISE, FOCUS, SLEEP
 ```
 
-Only send one complete set per request. Each score must be `0` to `10`.
+Any positive legacy value `1-10` is stored as done (`1`).
+
+Recommended Hermes flow:
+
+1. `GET /discipline/habits`
+2. create missing habits if needed
+3. `POST /discipline/scores` with those keys as `0|1`
 
 Response includes:
 
 - `score`
 - `streak`
 - camelCase and snake_case aliases such as `isGoodDay` and `is_good_day`
+- good-day threshold is dynamic: `ceil(activeHabitCount * 0.66)`
 
 ### Read Daily Scores
 
@@ -398,12 +452,12 @@ curl -sS -X POST \
   -d '{
     "date": "2026-07-08",
     "scores": {
-      "BUILD": 8,
-      "JOB_APPS": 6,
-      "FLEX": 6,
-      "EXERCISE": 5,
-      "FOCUS": 8,
-      "SLEEP": 7
+      "BUILD": 1,
+      "JOB_APPS": 1,
+      "FLEX": 1,
+      "EXERCISE": 0,
+      "FOCUS": 1,
+      "SLEEP": 1
     },
     "notes": "Good focus day"
   }'

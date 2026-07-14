@@ -1,28 +1,26 @@
 import {
-  DISCIPLINE_SCORE_BLOCKS,
-  type DisciplineScoreKey,
+  DEFAULT_HABIT_DEFINITIONS,
+  HABIT_SCORE_MAX,
+  getActiveHabits,
+  normalizeHabitDefinitions,
+  toBinaryHabitScore,
+  type DisciplineHabitDefinition,
   type DisciplineTrendPoint,
 } from './disciplineApi';
 
 const DATE_KEY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
-const MAX_HABIT_SCORE = 10;
-const MAX_TOTAL_SCORE = DISCIPLINE_SCORE_BLOCKS.length * MAX_HABIT_SCORE;
+const MAX_HABIT_SCORE = HABIT_SCORE_MAX;
 const DEFAULT_MOMENTUM_DAYS = 7;
 const DEFAULT_HEATMAP_DAYS = 30;
-const TREND_DIRECTION_THRESHOLD = 0.5;
-const LOW_RECOVERY_THRESHOLD = 4.5;
-const HIGH_DEEP_WORK_THRESHOLD = 7;
-const MODERATE_DEEP_WORK_THRESHOLD = 6;
+// Binary completion rates live in 0..1 space.
+const TREND_DIRECTION_THRESHOLD = 0.12;
+const LOW_RECOVERY_THRESHOLD = 0.45;
+const HIGH_DEEP_WORK_THRESHOLD = 0.7;
+const MODERATE_DEEP_WORK_THRESHOLD = 0.55;
 
 const RECOVERY_HABIT_KEYS = ['sleep', 'exercise', 'nutrition'] as const;
-const HABIT_ORDER = Object.fromEntries(
-  DISCIPLINE_SCORE_BLOCKS.map((block, index) => [block.key, index]),
-) as Record<DisciplineScoreKey, number>;
-const HABIT_LABELS = Object.fromEntries(
-  DISCIPLINE_SCORE_BLOCKS.map((block) => [block.key, block.label]),
-) as Record<DisciplineScoreKey, string>;
 
-export type DisciplineHabitScoreMap = Record<DisciplineScoreKey, number>;
+export type DisciplineHabitScoreMap = Record<string, number>;
 export type HabitTrendDirection = 'up' | 'flat' | 'down';
 export type RecoveryRiskLevel = 'low' | 'moderate' | 'high';
 export type RecoveryRiskFlag =
@@ -40,6 +38,7 @@ export interface TrendWindowOptions {
   days?: number;
   endDate?: string | null;
   referenceDate?: Date | string | number;
+  habits?: DisciplineHabitDefinition[] | null;
 }
 
 export interface DisciplineMomentumDay {
@@ -49,13 +48,13 @@ export interface DisciplineMomentumDay {
   intensityLevel: 0 | 1 | 2 | 3 | 4;
   shownUp: boolean;
   scores: DisciplineHabitScoreMap;
-  touchedHabits: DisciplineScoreKey[];
-  topHabitKey: DisciplineScoreKey | null;
+  touchedHabits: string[];
+  topHabitKey: string | null;
   topHabitLabel: string | null;
 }
 
 export interface HabitTrendSummary {
-  key: DisciplineScoreKey;
+  key: string;
   label: string;
   average: number;
   total: number;
@@ -97,7 +96,7 @@ export interface DisciplineHeatmapCell {
   intensityLevel: 0 | 1 | 2 | 3 | 4;
   shownUp: boolean;
   scores: DisciplineHabitScoreMap;
-  topHabitKey: DisciplineScoreKey | null;
+  topHabitKey: string | null;
   topHabitLabel: string | null;
 }
 
@@ -114,6 +113,7 @@ export interface DisciplineDashboardModelOptions {
   momentumDays?: number;
   heatmapDays?: number;
   habitTrendDays?: number;
+  habits?: DisciplineHabitDefinition[] | null;
 }
 
 export interface DisciplineDashboardModel {
@@ -129,8 +129,8 @@ interface NormalizedTrendDay {
   total: number;
   scores: DisciplineHabitScoreMap;
   shownUp: boolean;
-  touchedHabits: DisciplineScoreKey[];
-  topHabitKey: DisciplineScoreKey | null;
+  touchedHabits: string[];
+  topHabitKey: string | null;
   topHabitLabel: string | null;
 }
 
@@ -185,54 +185,61 @@ function formatLocalDateKey(date: Date) {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
-function createEmptyScores(): DisciplineHabitScoreMap {
+function resolveHabits(habits?: DisciplineHabitDefinition[] | null) {
+  const all = normalizeHabitDefinitions(habits);
+  const active = getActiveHabits(all);
+  const list = active.length > 0 ? active : all;
   return {
-    deep_work: 0,
-    reading: 0,
-    exercise: 0,
-    sleep: 0,
-    nutrition: 0,
-    discipline: 0,
+    all,
+    active: list,
+    labels: Object.fromEntries(list.map((habit) => [habit.key, habit.label])) as Record<string, string>,
+    order: Object.fromEntries(list.map((habit, index) => [habit.key, habit.sortOrder ?? index])) as Record<string, number>,
   };
 }
 
-function normalizeScores(scores: Record<string, number> | null | undefined) {
-  const normalized = createEmptyScores();
+function createEmptyScores(habits: readonly DisciplineHabitDefinition[] = DEFAULT_HABIT_DEFINITIONS): DisciplineHabitScoreMap {
+  return Object.fromEntries(habits.map((habit) => [habit.key, 0]));
+}
 
-  for (const block of DISCIPLINE_SCORE_BLOCKS) {
-    normalized[block.key] = clamp(toFiniteNumber(scores?.[block.key], 0), 0, MAX_HABIT_SCORE);
+function normalizeScores(
+  scores: Record<string, number> | null | undefined,
+  habits: readonly DisciplineHabitDefinition[] = DEFAULT_HABIT_DEFINITIONS,
+) {
+  const normalized = createEmptyScores(habits);
+  for (const habit of habits) {
+    normalized[habit.key] = toBinaryHabitScore(scores?.[habit.key]);
   }
-
   return normalized;
 }
 
-function resolveTopHabit(scores: DisciplineHabitScoreMap) {
-  let topHabitKey: DisciplineScoreKey | null = null;
+function resolveTopHabit(scores: DisciplineHabitScoreMap, habits: readonly DisciplineHabitDefinition[]) {
+  let topHabitKey: string | null = null;
   let topHabitValue = 0;
-
-  for (const block of DISCIPLINE_SCORE_BLOCKS) {
-    const value = scores[block.key];
+  for (const habit of habits) {
+    const value = scores[habit.key] ?? 0;
     if (value > topHabitValue) {
-      topHabitKey = block.key;
+      topHabitKey = habit.key;
       topHabitValue = value;
     }
   }
-
   return {
     topHabitKey,
-    topHabitLabel: topHabitKey ? HABIT_LABELS[topHabitKey] : null,
+    topHabitLabel: topHabitKey ? (habits.find((habit) => habit.key === topHabitKey)?.label ?? topHabitKey) : null,
   };
 }
 
-function normalizeTrendDay(point: DisciplineTrendPoint): NormalizedTrendDay {
-  const scores = normalizeScores(point.scores);
-  const touchedHabits = DISCIPLINE_SCORE_BLOCKS
-    .filter((block) => scores[block.key] > 0)
-    .map((block) => block.key);
-  const scoreTotal = DISCIPLINE_SCORE_BLOCKS.reduce((sum, block) => sum + scores[block.key], 0);
-  const total = Math.max(scoreTotal, toFiniteNumber(point.total, scoreTotal), 0);
+function normalizeTrendDay(
+  point: DisciplineTrendPoint,
+  habits: readonly DisciplineHabitDefinition[] = DEFAULT_HABIT_DEFINITIONS,
+): NormalizedTrendDay {
+  const scores = normalizeScores(point.scores, habits);
+  const touchedHabits = habits
+    .filter((habit) => scores[habit.key] > 0)
+    .map((habit) => habit.key);
+  const scoreTotal = habits.reduce((sum, habit) => sum + scores[habit.key], 0);
+  const total = scoreTotal;
   const shownUp = total > 0 || touchedHabits.length > 0;
-  const topHabit = resolveTopHabit(scores);
+  const topHabit = resolveTopHabit(scores, habits);
 
   return {
     date: toLocalDateKey(point.date),
@@ -245,11 +252,14 @@ function normalizeTrendDay(point: DisciplineTrendPoint): NormalizedTrendDay {
   };
 }
 
-function createEmptyTrendDay(date: string): NormalizedTrendDay {
+function createEmptyTrendDay(
+  date: string,
+  habits: readonly DisciplineHabitDefinition[] = DEFAULT_HABIT_DEFINITIONS,
+): NormalizedTrendDay {
   return {
     date,
     total: 0,
-    scores: createEmptyScores(),
+    scores: createEmptyScores(habits),
     shownUp: false,
     touchedHabits: [],
     topHabitKey: null,
@@ -257,11 +267,14 @@ function createEmptyTrendDay(date: string): NormalizedTrendDay {
   };
 }
 
-function buildTrendLookup(trendPoints: readonly DisciplineTrendPoint[]) {
+function buildTrendLookup(
+  trendPoints: readonly DisciplineTrendPoint[],
+  habits: readonly DisciplineHabitDefinition[] = DEFAULT_HABIT_DEFINITIONS,
+) {
   const lookup = new Map<string, NormalizedTrendDay>();
 
   for (const point of trendPoints) {
-    const normalized = normalizeTrendDay(point);
+    const normalized = normalizeTrendDay(point, habits);
     lookup.set(normalized.date, normalized);
   }
 
@@ -298,15 +311,16 @@ function buildTrendWindow(
   options: TrendWindowOptions,
   fallbackDays: number,
 ) {
+  const habits = resolveHabits(options.habits).active;
   const days = resolveWindowDays(options.days, fallbackDays);
   const endDate = resolveWindowEndDate(trendPoints, options.endDate, options.referenceDate);
   const startDate = shiftDateKey(endDate, -(days - 1));
-  const lookup = buildTrendLookup(trendPoints);
+  const lookup = buildTrendLookup(trendPoints, habits);
   const window: NormalizedTrendDay[] = [];
 
   for (let offset = 0; offset < days; offset += 1) {
     const date = shiftDateKey(startDate, offset);
-    window.push(lookup.get(date) ?? createEmptyTrendDay(date));
+    window.push(lookup.get(date) ?? createEmptyTrendDay(date, habits));
   }
 
   return {
@@ -314,6 +328,8 @@ function buildTrendWindow(
     startDate,
     endDate,
     window,
+    habits,
+    maxTotal: Math.max(1, habits.length * MAX_HABIT_SCORE),
   };
 }
 
@@ -325,8 +341,8 @@ function toIntensityLevel(intensity: number): 0 | 1 | 2 | 3 | 4 {
   return 4;
 }
 
-function mapWindowDay(day: NormalizedTrendDay): DisciplineMomentumDay {
-  const intensity = clamp(day.total / MAX_TOTAL_SCORE, 0, 1);
+function mapWindowDay(day: NormalizedTrendDay, maxTotal: number): DisciplineMomentumDay {
+  const intensity = clamp(day.total / Math.max(1, maxTotal), 0, 1);
 
   return {
     date: day.date,
@@ -341,11 +357,14 @@ function mapWindowDay(day: NormalizedTrendDay): DisciplineMomentumDay {
   };
 }
 
-function buildHabitSummariesFromWindow(window: readonly NormalizedTrendDay[]) {
+function buildHabitSummariesFromWindow(
+  window: readonly NormalizedTrendDay[],
+  habits: readonly DisciplineHabitDefinition[],
+) {
   const splitIndex = Math.floor(window.length / 2);
 
-  return DISCIPLINE_SCORE_BLOCKS.map((block) => {
-    const sparkline = window.map((day) => day.scores[block.key]);
+  return habits.map((habit) => {
+    const sparkline = window.map((day) => day.scores[habit.key] ?? 0);
     const total = sparkline.reduce((sum, value) => sum + value, 0);
     const average = window.length > 0 ? roundTo(total / window.length, 2) : 0;
     const activeDays = sparkline.filter((value) => value > 0).length;
@@ -364,8 +383,8 @@ function buildHabitSummariesFromWindow(window: readonly NormalizedTrendDay[]) {
           'flat';
 
     return {
-      key: block.key,
-      label: block.label,
+      key: habit.key,
+      label: habit.label,
       average,
       total,
       activeDays,
@@ -378,7 +397,10 @@ function buildHabitSummariesFromWindow(window: readonly NormalizedTrendDay[]) {
   });
 }
 
-function chooseBestHabit(habits: readonly HabitTrendSummary[]) {
+function chooseBestHabit(
+  habits: readonly HabitTrendSummary[],
+  order: Record<string, number> = {},
+) {
   if (!habits.some((habit) => habit.total > 0)) {
     return null;
   }
@@ -389,11 +411,14 @@ function chooseBestHabit(habits: readonly HabitTrendSummary[]) {
     if (candidate.average < best.average) return best;
     if (candidate.activeDays > best.activeDays) return candidate;
     if (candidate.activeDays < best.activeDays) return best;
-    return HABIT_ORDER[candidate.key] < HABIT_ORDER[best.key] ? candidate : best;
+    return (order[candidate.key] ?? 999) < (order[best.key] ?? 999) ? candidate : best;
   }, null as HabitTrendSummary | null);
 }
 
-function chooseWeakestHabit(habits: readonly HabitTrendSummary[]) {
+function chooseWeakestHabit(
+  habits: readonly HabitTrendSummary[],
+  order: Record<string, number> = {},
+) {
   if (!habits.some((habit) => habit.total > 0)) {
     return null;
   }
@@ -404,7 +429,7 @@ function chooseWeakestHabit(habits: readonly HabitTrendSummary[]) {
     if (candidate.average > weakest.average) return weakest;
     if (candidate.activeDays < weakest.activeDays) return candidate;
     if (candidate.activeDays > weakest.activeDays) return weakest;
-    return HABIT_ORDER[candidate.key] > HABIT_ORDER[weakest.key] ? candidate : weakest;
+    return (order[candidate.key] ?? 999) > (order[weakest.key] ?? 999) ? candidate : weakest;
   }, null as HabitTrendSummary | null);
 }
 
@@ -451,13 +476,16 @@ export function buildSevenDayMomentumSummary(
   options: TrendWindowOptions = {},
 ): SevenDayMomentumSummary {
   const windowResult = buildTrendWindow(trendPoints, options, DEFAULT_MOMENTUM_DAYS);
-  const days = windowResult.window.map(mapWindowDay);
+  const days = windowResult.window.map((day) => mapWindowDay(day, windowResult.maxTotal));
   const shownUpDays = days.filter((day) => day.shownUp).length;
   const consistencyRate = days.length > 0 ? roundTo(shownUpDays / days.length, 4) : 0;
   const averageScore = days.length > 0
     ? roundTo(days.reduce((sum, day) => sum + day.total, 0) / days.length, 2)
     : 0;
-  const habitSummaries = buildHabitSummariesFromWindow(windowResult.window);
+  const habitSummaries = buildHabitSummariesFromWindow(windowResult.window, windowResult.habits);
+  const habitOrder = Object.fromEntries(
+    windowResult.habits.map((habit, index) => [habit.key, habit.sortOrder ?? index]),
+  );
 
   return {
     startDate: windowResult.startDate,
@@ -468,8 +496,8 @@ export function buildSevenDayMomentumSummary(
     consistencyPercent: roundTo(consistencyRate * 100, 1),
     averageScore,
     days,
-    bestHabit: chooseBestHabit(habitSummaries),
-    weakestHabit: chooseWeakestHabit(habitSummaries),
+    bestHabit: chooseBestHabit(habitSummaries, habitOrder),
+    weakestHabit: chooseWeakestHabit(habitSummaries, habitOrder),
     recoveryRisk: getRecoveryRiskSummary(trendPoints, {
       ...options,
       days: windowResult.days,
@@ -485,7 +513,7 @@ export function buildThirtyDayHeatmapCells(
   const windowResult = buildTrendWindow(trendPoints, options, DEFAULT_HEATMAP_DAYS);
 
   return windowResult.window.map((day) => {
-    const intensity = clamp(day.total / MAX_TOTAL_SCORE, 0, 1);
+    const intensity = clamp(day.total / windowResult.maxTotal, 0, 1);
     return {
       date: day.date,
       total: day.total,
@@ -504,21 +532,23 @@ export function buildHabitTrendSummaries(
   options: TrendWindowOptions = {},
 ): HabitTrendSummary[] {
   const windowResult = buildTrendWindow(trendPoints, options, DEFAULT_HEATMAP_DAYS);
-  return buildHabitSummariesFromWindow(windowResult.window);
+  return buildHabitSummariesFromWindow(windowResult.window, windowResult.habits);
 }
 
 export function getBestHabitSummary(
   trendPoints: readonly DisciplineTrendPoint[],
   options: TrendWindowOptions = {},
 ): HabitTrendSummary | null {
-  return chooseBestHabit(buildHabitTrendSummaries(trendPoints, options));
+  const resolved = resolveHabits(options.habits);
+  return chooseBestHabit(buildHabitTrendSummaries(trendPoints, options), resolved.order);
 }
 
 export function getWeakestHabitSummary(
   trendPoints: readonly DisciplineTrendPoint[],
   options: TrendWindowOptions = {},
 ): HabitTrendSummary | null {
-  return chooseWeakestHabit(buildHabitTrendSummaries(trendPoints, options));
+  const resolved = resolveHabits(options.habits);
+  return chooseWeakestHabit(buildHabitTrendSummaries(trendPoints, options), resolved.order);
 }
 
 export function getRecoveryRiskSummary(
@@ -526,7 +556,7 @@ export function getRecoveryRiskSummary(
   options: TrendWindowOptions = {},
 ): RecoveryRiskSummary {
   const windowResult = buildTrendWindow(trendPoints, options, DEFAULT_MOMENTUM_DAYS);
-  const habits = buildHabitSummariesFromWindow(windowResult.window);
+  const habits = buildHabitSummariesFromWindow(windowResult.window, windowResult.habits);
   const habitMap = new Map(habits.map((habit) => [habit.key, habit]));
   const deepWorkAverage = habitMap.get('deep_work')?.average ?? 0;
   const lowRecoveryFlags: RecoveryRiskFlag[] = [];
@@ -536,7 +566,8 @@ export function getRecoveryRiskSummary(
     const average = habitMap.get(key)?.average ?? 0;
     if (average < LOW_RECOVERY_THRESHOLD) {
       lowRecoveryFlags.push(`low_${key}` as RecoveryRiskFlag);
-      lowRecoveryLabels.push(HABIT_LABELS[key].toLowerCase());
+      const label = windowResult.habits.find((habit) => habit.key === key)?.label || key;
+      lowRecoveryLabels.push(label.toLowerCase());
     }
   }
 
@@ -554,7 +585,7 @@ export function getRecoveryRiskSummary(
   let level: RecoveryRiskLevel = 'low';
   if (highDeepWork && lowRecoveryCount >= 2) {
     level = 'high';
-  } else if ((highDeepWork && lowRecoveryCount >= 1) || (moderateDeepWork && recoveryAverage < 4)) {
+  } else if ((highDeepWork && lowRecoveryCount >= 1) || (moderateDeepWork && recoveryAverage < 0.4)) {
     level = 'moderate';
   }
 
@@ -634,7 +665,7 @@ export function buildHermesInsightPanel(
       consistencyLine,
       habitLine,
       recoveryLine,
-      `Average daily score sits at ${momentum.averageScore.toFixed(1)}.`,
+      `Average habits done per day sits at ${momentum.averageScore.toFixed(1)}.`,
     ],
     tomorrowFocus,
   };
@@ -652,6 +683,7 @@ export function buildDisciplineDashboardModel(
   const momentumDays = resolveWindowDays(options.momentumDays, DEFAULT_MOMENTUM_DAYS);
   const heatmapDays = resolveWindowDays(options.heatmapDays, DEFAULT_HEATMAP_DAYS);
   const habitTrendDays = resolveWindowDays(options.habitTrendDays, DEFAULT_HEATMAP_DAYS);
+  const habitOptions = { habits: options.habits };
 
   return {
     dataThroughDate,
@@ -659,21 +691,25 @@ export function buildDisciplineDashboardModel(
       endDate: dataThroughDate,
       days: momentumDays,
       referenceDate: options.referenceDate,
+      ...habitOptions,
     }),
     heatmap: buildThirtyDayHeatmapCells(trendPoints, {
       endDate: dataThroughDate,
       days: heatmapDays,
       referenceDate: options.referenceDate,
+      ...habitOptions,
     }),
     habitTrends: buildHabitTrendSummaries(trendPoints, {
       endDate: dataThroughDate,
       days: habitTrendDays,
       referenceDate: options.referenceDate,
+      ...habitOptions,
     }),
     insights: buildHermesInsightPanel(trendPoints, {
       endDate: dataThroughDate,
       days: momentumDays,
       referenceDate: options.referenceDate,
+      ...habitOptions,
     }),
   };
 }

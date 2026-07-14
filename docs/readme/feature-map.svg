@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="300" viewBox="0 0 960 300" role="img" aria-label="Feature map">
+  <rect width="960" height="300" fill="#080808"/>
+  <text x="40" y="48" fill="#f2efe9" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="700">What you get</text>
+
+  <rect x="40" y="80" width="200" height="170" rx="12" fill="#121212" stroke="#b91c1c" stroke-width="2"/>
+  <text x="60" y="120" fill="#fb7185" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700">Focus Timer</text>
+  <text x="60" y="150" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13">Pomodoro ring</text>
+  <text x="60" y="172" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13">Focus / Break modes</text>
+  <text x="60" y="194" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13">Keyboard shortcuts</text>
+  <text x="60" y="216" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13">Session history</text>
+
+  <rect x="270" y="80" width="200" height="170" rx="12" fill="#121212" stroke="#34d399" stroke-width="2"/>
+  <text x="290" y="120" fill="#34d399" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700">Atmosphere</text>
+  <text x="290" y="150" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13">Lo-fi aesthetic</text>
+  <text x="290" y="172" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13">Theme studio</text>
+  <text x="290" y="194" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13">Radio widget</text>
+  <text x="290" y="216" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13">Motion entrance</text>
+
+  <rect x="500" y="80" width="200" height="170" rx="12" fill="#121212" stroke="#a78bfa" stroke-width="2"/>
+  <text x="520" y="120" fill="#a78bfa" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700">Discipline</text>
+  <text x="520" y="150" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13">Habit matrix</text>
+  <text x="520" y="172" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13">Focus reality</text>
+  <text x="520" y="194" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13">7D / 30D signals</text>
+  <text x="520" y="216" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13">Evidence logs</text>
+
+  <rect x="730" y="80" width="190" height="170" rx="12" fill="#121212" stroke="#f59e0b" stroke-width="2"/>
+  <text x="750" y="120" fill="#f59e0b" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700">Automation</text>
+  <text x="750" y="150" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13">Hermes agent API</text>
+  <text x="750" y="172" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13">Habit catalog CRUD</text>
+  <text x="750" y="194" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13">Idempotent writes</text>
+  <text x="750" y="216" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13">Per-user stores</text>
+</svg>

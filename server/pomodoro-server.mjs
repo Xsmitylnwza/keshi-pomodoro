@@ -33,7 +33,21 @@ const specScoreKeyMap = {
   FOCUS: 'discipline',
   SLEEP: 'sleep',
 };
-const goodDayThreshold = 35;
+const HABIT_COLOR_KEYS = ['rose', 'amber', 'emerald', 'sky', 'lime', 'violet', 'orange', 'cyan', 'fuchsia', 'teal', 'indigo', 'pink'];
+const HABIT_ICON_KEYS = [
+  'bar-chart-3', 'book-open', 'dumbbell', 'moon', 'apple', 'badge-check',
+  'target', 'brain', 'heart', 'coffee', 'code-2', 'pen-line', 'music',
+  'sun', 'leaf', 'flame', 'timer', 'check-circle-2', 'sparkles', 'wallet',
+  'users', 'phone', 'camera', 'globe', 'home', 'star',
+];
+const DEFAULT_HABITS = [
+  { key: 'deep_work', label: 'Deep work', icon: 'bar-chart-3', color: 'rose', sortOrder: 0, active: true, system: true },
+  { key: 'reading', label: 'Reading', icon: 'book-open', color: 'amber', sortOrder: 1, active: true, system: true },
+  { key: 'exercise', label: 'Exercise', icon: 'dumbbell', color: 'emerald', sortOrder: 2, active: true, system: true },
+  { key: 'sleep', label: 'Sleep', icon: 'moon', color: 'sky', sortOrder: 3, active: true, system: true },
+  { key: 'nutrition', label: 'Nutrition', icon: 'apple', color: 'lime', sortOrder: 4, active: true, system: true },
+  { key: 'discipline', label: 'Discipline', icon: 'badge-check', color: 'violet', sortOrder: 5, active: true, system: true },
+];
 const businessTimeZone = process.env.BUSINESS_TIME_ZONE || 'Asia/Bangkok';
 const centralAuthEnabled = isTruthyEnv(process.env.CENTRAL_AUTH_ENABLED);
 const centralAuthBaseUrl = centralAuthEnabled ? normalizeCentralAuthUrl(process.env.CENTRAL_AUTH_URL) : '';
@@ -334,40 +348,256 @@ function isExactKeySet(source, allowedKeys) {
   return keys.length === allowedKeys.length && allowedKeys.every(key => Object.hasOwn(source, key));
 }
 
-function normalizeScoreValue(value) {
+function toBinaryHabitScore(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0 || number > 10) {
     const error = new Error('invalid_score_value');
     error.statusCode = 400;
     throw error;
   }
-  return number;
+  // Accept legacy 0-10 history and current 0/1 checks. Any positive mark counts as done.
+  return number > 0 ? 1 : 0;
 }
 
-function validateScoresPayload(scores) {
+function normalizeScoreValue(value) {
+  return toBinaryHabitScore(value);
+}
+
+function slugifyHabitKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+}
+
+function normalizeHabitIcon(value, fallback = 'target') {
+  const icon = String(value || '').trim().toLowerCase();
+  return HABIT_ICON_KEYS.includes(icon) ? icon : fallback;
+}
+
+function normalizeHabitColor(value, fallback = 'violet') {
+  const color = String(value || '').trim().toLowerCase();
+  return HABIT_COLOR_KEYS.includes(color) ? color : fallback;
+}
+
+function colorForIndex(index) {
+  return HABIT_COLOR_KEYS[index % HABIT_COLOR_KEYS.length];
+}
+
+function goodDayThresholdForCount(count) {
+  const total = Math.max(0, Number(count) || 0);
+  if (total <= 0) return 0;
+  return Math.max(1, Math.ceil(total * 0.66));
+}
+
+function mapHabitRow(row) {
+  if (!row) return null;
+  return {
+    key: row.key,
+    label: row.label,
+    icon: row.icon,
+    color: row.color,
+    sortOrder: Number(row.sort_order || 0),
+    active: Number(row.active) === 1,
+    system: Number(row.system) === 1,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  };
+}
+
+async function ensureHabitDefinitions(db) {
+  const now = new Date().toISOString();
+  const count = db.prepare('SELECT COUNT(*) AS count FROM habit_definitions').get()?.count || 0;
+  if (count > 0) return;
+  const insert = db.prepare(`
+    INSERT INTO habit_definitions (key, label, icon, color, sort_order, active, system, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const habit of DEFAULT_HABITS) {
+    insert.run(
+      habit.key,
+      habit.label,
+      habit.icon,
+      habit.color,
+      habit.sortOrder,
+      habit.active ? 1 : 0,
+      habit.system ? 1 : 0,
+      now,
+      now,
+    );
+  }
+}
+
+async function listHabitDefinitions(userKey, { includeInactive = true } = {}) {
+  const db = await getDisciplineDb(userKey);
+  await ensureHabitDefinitions(db);
+  const rows = includeInactive
+    ? db.prepare('SELECT * FROM habit_definitions ORDER BY sort_order ASC, key ASC').all()
+    : db.prepare('SELECT * FROM habit_definitions WHERE active = 1 ORDER BY sort_order ASC, key ASC').all();
+  return rows.map(mapHabitRow);
+}
+
+async function createHabitDefinition(userKey, input = {}) {
+  const db = await getDisciplineDb(userKey);
+  await ensureHabitDefinitions(db);
+  const label = String(input.label || '').trim();
+  if (!label) {
+    const error = new Error('habit_label_required');
+    error.statusCode = 400;
+    throw error;
+  }
+  let key = slugifyHabitKey(input.key || label);
+  if (!key) {
+    const error = new Error('habit_key_invalid');
+    error.statusCode = 400;
+    throw error;
+  }
+  const existing = db.prepare('SELECT key FROM habit_definitions WHERE key = ?').get(key);
+  if (existing) {
+    if (input.key) {
+      const error = new Error('habit_key_exists');
+      error.statusCode = 409;
+      throw error;
+    }
+    key = `${key}_${Math.random().toString(36).slice(2, 6)}`;
+  }
+
+  const maxSort = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS maxSort FROM habit_definitions').get()?.maxSort ?? -1;
+  const now = new Date().toISOString();
+  const habit = {
+    key,
+    label,
+    icon: normalizeHabitIcon(input.icon, 'target'),
+    color: normalizeHabitColor(input.color, colorForIndex(maxSort + 1)),
+    sortOrder: Number.isFinite(Number(input.sortOrder)) ? Math.trunc(Number(input.sortOrder)) : maxSort + 1,
+    active: input.active === false ? 0 : 1,
+    system: 0,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  db.prepare(`
+    INSERT INTO habit_definitions (key, label, icon, color, sort_order, active, system, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(habit.key, habit.label, habit.icon, habit.color, habit.sortOrder, habit.active, habit.system, habit.createdAt, habit.updatedAt);
+
+  return mapHabitRow(db.prepare('SELECT * FROM habit_definitions WHERE key = ?').get(habit.key));
+}
+
+async function updateHabitDefinition(userKey, key, input = {}) {
+  const db = await getDisciplineDb(userKey);
+  await ensureHabitDefinitions(db);
+  const existing = db.prepare('SELECT * FROM habit_definitions WHERE key = ?').get(key);
+  if (!existing) {
+    const error = new Error('habit_not_found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const next = {
+    label: input.label !== undefined ? String(input.label || '').trim() : existing.label,
+    icon: input.icon !== undefined ? normalizeHabitIcon(input.icon, existing.icon) : existing.icon,
+    color: input.color !== undefined ? normalizeHabitColor(input.color, existing.color) : existing.color,
+    sortOrder: input.sortOrder !== undefined && Number.isFinite(Number(input.sortOrder))
+      ? Math.trunc(Number(input.sortOrder))
+      : existing.sort_order,
+    active: input.active !== undefined ? (input.active ? 1 : 0) : existing.active,
+  };
+  if (!next.label) {
+    const error = new Error('habit_label_required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE habit_definitions
+    SET label = ?, icon = ?, color = ?, sort_order = ?, active = ?, updated_at = ?
+    WHERE key = ?
+  `).run(next.label, next.icon, next.color, next.sortOrder, next.active, now, key);
+
+  return mapHabitRow(db.prepare('SELECT * FROM habit_definitions WHERE key = ?').get(key));
+}
+
+async function deleteHabitDefinition(userKey, key) {
+  const db = await getDisciplineDb(userKey);
+  await ensureHabitDefinitions(db);
+  const existing = db.prepare('SELECT * FROM habit_definitions WHERE key = ?').get(key);
+  if (!existing) {
+    const error = new Error('habit_not_found');
+    error.statusCode = 404;
+    throw error;
+  }
+  if (Number(existing.system) === 1) {
+    const now = new Date().toISOString();
+    db.prepare('UPDATE habit_definitions SET active = 0, updated_at = ? WHERE key = ?').run(now, key);
+    return mapHabitRow(db.prepare('SELECT * FROM habit_definitions WHERE key = ?').get(key));
+  }
+  db.prepare('DELETE FROM habit_definitions WHERE key = ?').run(key);
+  return { key, deleted: true };
+}
+
+function validateScoresPayload(scores, habits = DEFAULT_HABITS, existingScores = {}) {
   if (!scores || typeof scores !== 'object' || Array.isArray(scores)) {
     const error = new Error('scores_required');
     error.statusCode = 400;
     throw error;
   }
 
+  const habitKeys = habits.map(habit => habit.key);
+  const activeKeys = habits.filter(habit => habit.active).map(habit => habit.key);
+  const knownKeys = new Set([...habitKeys, ...legacyScoreKeys]);
+
   const currentShape = isExactKeySet(scores, legacyScoreKeys);
   const specShape = isExactKeySet(scores, specScoreKeys);
+  const exactActiveShape = activeKeys.length > 0 && isExactKeySet(scores, activeKeys);
 
-  if (!currentShape && !specShape) {
-    const error = new Error('scores_invalid_schema');
-    error.statusCode = 400;
-    throw error;
+  let incoming = {};
+  if (currentShape) {
+    for (const key of legacyScoreKeys) incoming[key] = normalizeScoreValue(scores[key]);
+  } else if (specShape) {
+    for (const key of specScoreKeys) incoming[specScoreKeyMap[key]] = normalizeScoreValue(scores[key]);
+  } else if (exactActiveShape) {
+    for (const key of activeKeys) incoming[key] = normalizeScoreValue(scores[key]);
+  } else {
+    const sourceKeys = Object.keys(scores);
+    if (sourceKeys.length === 0) {
+      const error = new Error('scores_invalid_schema');
+      error.statusCode = 400;
+      throw error;
+    }
+    for (const key of sourceKeys) {
+      const mapped = specScoreKeyMap[key] || key;
+      if (!knownKeys.has(mapped) && !habitKeys.includes(mapped)) {
+        const error = new Error(`unknown_habit_key:${mapped}`);
+        error.statusCode = 400;
+        throw error;
+      }
+      incoming[mapped] = normalizeScoreValue(scores[key]);
+    }
   }
 
   const normalized = {};
-  const sourceKeys = currentShape ? legacyScoreKeys : specScoreKeys;
-  for (const key of sourceKeys) {
-    const targetKey = currentShape ? key : specScoreKeyMap[key];
-    normalized[targetKey] = normalizeScoreValue(scores[key]);
+  const targetKeys = activeKeys.length > 0 ? activeKeys : habitKeys;
+  for (const key of targetKeys) {
+    if (Object.hasOwn(incoming, key)) {
+      normalized[key] = incoming[key];
+    } else if (Object.hasOwn(existingScores, key)) {
+      normalized[key] = toBinaryHabitScore(existingScores[key]);
+    } else {
+      normalized[key] = 0;
+    }
+  }
+  for (const [key, value] of Object.entries(incoming)) {
+    if (!Object.hasOwn(normalized, key) && knownKeys.has(key)) {
+      normalized[key] = value;
+    }
   }
   return normalized;
 }
+
 
 function taskMatchesDate(task, dateKey) {
   if (isDateKey(task?.businessDate)) return task.businessDate === dateKey;
@@ -378,9 +608,9 @@ function taskMatchesDate(task, dateKey) {
   return toBusinessDateKey(parsed) === dateKey;
 }
 
-function addScoreAliases(score) {
+function addScoreAliases(score, habitCount = DEFAULT_HABITS.length) {
   if (!score) return null;
-  const isGoodDay = score.total >= goodDayThreshold;
+  const isGoodDay = score.total >= goodDayThresholdForCount(habitCount);
   return {
     ...score,
     isGoodDay,
@@ -569,6 +799,18 @@ async function getDisciplineDb(userKey) {
 
     CREATE INDEX IF NOT EXISTS idx_reading_log_date ON reading_log(date);
     CREATE INDEX IF NOT EXISTS idx_exercise_log_date ON exercise_log(date);
+
+    CREATE TABLE IF NOT EXISTS habit_definitions (
+      key TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      icon TEXT NOT NULL DEFAULT 'target',
+      color TEXT NOT NULL DEFAULT 'violet',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      system INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   const readingColumns = new Set(disciplineDb.prepare('PRAGMA table_info(reading_log)').all().map(column => column.name));
@@ -591,17 +833,42 @@ async function getDisciplineDb(userKey) {
   return disciplineDb;
 }
 
-function parseScores(row) {
+function parseScores(row, habits = DEFAULT_HABITS) {
   if (!row) return null;
+  let raw = {};
+  try {
+    raw = JSON.parse(row.scores_json || '{}') || {};
+  } catch {
+    raw = {};
+  }
+  const keys = habits.length > 0 ? habits.map(habit => habit.key) : legacyScoreKeys;
+  const scores = {};
+  for (const key of keys) {
+    try {
+      scores[key] = toBinaryHabitScore(raw[key] ?? 0);
+    } catch {
+      scores[key] = 0;
+    }
+  }
+  for (const [key, value] of Object.entries(raw)) {
+    if (Object.hasOwn(scores, key)) continue;
+    try {
+      scores[key] = toBinaryHabitScore(value);
+    } catch {
+      // ignore invalid historical values
+    }
+  }
+  const activeCount = habits.filter(habit => habit.active).length || keys.length;
+  const stats = scoreStats(scores);
   return addScoreAliases({
     date: row.date,
-    scores: JSON.parse(row.scores_json),
+    scores,
     notes: row.notes || '',
-    total: row.total,
-    average: row.average,
+    total: stats.total,
+    average: stats.average,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  });
+  }, activeCount);
 }
 
 function scoreStats(scores) {
@@ -1179,11 +1446,14 @@ async function handleApi(req, res, url) {
   if (pathname === '/api/discipline/scores' && req.method === 'POST') {
     const body = await readBody(req);
     const date = requireDateKey(body?.date);
-    const scores = validateScoresPayload(body?.scores);
+    const habits = await listHabitDefinitions(userKey, { includeInactive: true });
+    const db = await getDisciplineDb(userKey);
+    const existingRow = db.prepare('SELECT * FROM daily_scores WHERE date = ?').get(date);
+    const existingParsed = parseScores(existingRow, habits);
+    const scores = validateScoresPayload(body?.scores, habits, existingParsed?.scores || {});
 
     const stats = scoreStats(scores);
     const now = new Date().toISOString();
-    const db = await getDisciplineDb(userKey);
     db.prepare(`
       INSERT INTO daily_scores (date, scores_json, notes, total, average, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -1197,27 +1467,29 @@ async function handleApi(req, res, url) {
 
     const row = db.prepare('SELECT * FROM daily_scores WHERE date = ?').get(date);
     const streak = await recomputeStreak(userKey);
-    sendJson(res, 200, { score: parseScores(row), streak });
+    sendJson(res, 200, { score: parseScores(row, habits), streak, habits });
     return;
   }
 
   if (pathname === '/api/discipline/scores' && req.method === 'GET') {
     const date = requireDateKey(url.searchParams.get('date'));
+    const habits = await listHabitDefinitions(userKey, { includeInactive: true });
     const db = await getDisciplineDb(userKey);
-    const score = parseScores(db.prepare('SELECT * FROM daily_scores WHERE date = ?').get(date));
+    const score = parseScores(db.prepare('SELECT * FROM daily_scores WHERE date = ?').get(date), habits);
     if (!score) {
       sendJson(res, 404, { error: 'score_not_found' });
       return;
     }
-    sendJson(res, 200, { score });
+    sendJson(res, 200, { score, habits });
     return;
   }
 
   if (pathname === '/api/discipline/scores/trend' && req.method === 'GET') {
     const range = buildTrendRange(url);
+    const habits = await listHabitDefinitions(userKey, { includeInactive: true });
     const db = await getDisciplineDb(userKey);
     const rows = db.prepare('SELECT * FROM daily_scores WHERE date BETWEEN ? AND ? ORDER BY date ASC').all(range.startDate, range.endDate);
-    const byDate = new Map(rows.map(row => [row.date, parseScores(row)]));
+    const byDate = new Map(rows.map(row => [row.date, parseScores(row, habits)]));
     const focusActivityByDate = buildFocusActivityByDate(
       range,
       await readPomodoros(userKey),
@@ -1241,6 +1513,7 @@ async function handleApi(req, res, url) {
       to: range.to,
       startDate: range.startDate,
       endDate: range.endDate,
+      habits,
       trend,
     });
     return;
@@ -1334,8 +1607,9 @@ async function handleApi(req, res, url) {
 
   if (pathname === '/api/discipline/review' && req.method === 'GET') {
     const date = requireDateKey(url.searchParams.get('date'));
+    const habits = await listHabitDefinitions(userKey, { includeInactive: true });
     const db = await getDisciplineDb(userKey);
-    const score = parseScores(db.prepare('SELECT * FROM daily_scores WHERE date = ?').get(date));
+    const score = parseScores(db.prepare('SELECT * FROM daily_scores WHERE date = ?').get(date), habits);
     const streak = addStreakAliases(await recomputeStreak(userKey));
     const reading = db.prepare('SELECT * FROM reading_log WHERE date = ? ORDER BY created_at DESC').all(date).map(normalizeLogRow);
     const exercise = db.prepare('SELECT * FROM exercise_log WHERE date = ? ORDER BY created_at DESC').all(date).map(normalizeLogRow);
@@ -1349,6 +1623,7 @@ async function handleApi(req, res, url) {
       date,
       score,
       streak,
+      habits,
       reading,
       exercise,
       tasks,
@@ -1362,8 +1637,54 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (pathname === '/api/discipline/habits' && req.method === 'GET') {
+    const includeInactive = url.searchParams.get('includeInactive') !== '0';
+    const habits = await listHabitDefinitions(userKey, { includeInactive });
+    sendJson(res, 200, {
+      habits,
+      activeCount: habits.filter(habit => habit.active).length,
+      colors: HABIT_COLOR_KEYS,
+      icons: HABIT_ICON_KEYS,
+    });
+    return;
+  }
+
+  if (pathname === '/api/discipline/habits' && req.method === 'POST') {
+    const body = await readBody(req);
+    const habit = await createHabitDefinition(userKey, body || {});
+    const habits = await listHabitDefinitions(userKey, { includeInactive: true });
+    sendJson(res, 201, { habit, habits });
+    return;
+  }
+
+  if (pathname.startsWith('/api/discipline/habits/') && (req.method === 'PUT' || req.method === 'PATCH')) {
+    const key = decodeURIComponent(pathname.slice('/api/discipline/habits/'.length));
+    if (!key || key.includes('/')) {
+      sendNotFound(res);
+      return;
+    }
+    const body = await readBody(req);
+    const habit = await updateHabitDefinition(userKey, key, body || {});
+    const habits = await listHabitDefinitions(userKey, { includeInactive: true });
+    sendJson(res, 200, { habit, habits });
+    return;
+  }
+
+  if (pathname.startsWith('/api/discipline/habits/') && req.method === 'DELETE') {
+    const key = decodeURIComponent(pathname.slice('/api/discipline/habits/'.length));
+    if (!key || key.includes('/')) {
+      sendNotFound(res);
+      return;
+    }
+    const result = await deleteHabitDefinition(userKey, key);
+    const habits = await listHabitDefinitions(userKey, { includeInactive: true });
+    sendJson(res, 200, { ...result, habits });
+    return;
+  }
+
   sendNotFound(res);
 }
+
 
 const server = createServer(async (req, res) => {
   try {

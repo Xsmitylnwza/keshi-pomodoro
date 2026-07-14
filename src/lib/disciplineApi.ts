@@ -9,8 +9,145 @@ export const DISCIPLINE_SCORE_BLOCKS = [
   { key: 'discipline', label: 'Discipline' },
 ] as const;
 
-export type DisciplineScoreKey = typeof DISCIPLINE_SCORE_BLOCKS[number]['key'];
+export type DisciplineScoreKey = string;
 export type DisciplineScoreMap = Record<string, number>;
+
+export type HabitColorKey =
+  | 'rose' | 'amber' | 'emerald' | 'sky' | 'lime' | 'violet'
+  | 'orange' | 'cyan' | 'fuchsia' | 'teal' | 'indigo' | 'pink';
+
+export type HabitIconKey =
+  | 'bar-chart-3' | 'book-open' | 'dumbbell' | 'moon' | 'apple' | 'badge-check'
+  | 'target' | 'brain' | 'heart' | 'coffee' | 'code-2' | 'pen-line' | 'music'
+  | 'sun' | 'leaf' | 'flame' | 'timer' | 'check-circle-2' | 'sparkles' | 'wallet'
+  | 'users' | 'phone' | 'camera' | 'globe' | 'home' | 'star';
+
+export interface DisciplineHabitDefinition {
+  key: string;
+  label: string;
+  icon: HabitIconKey | string;
+  color: HabitColorKey | string;
+  sortOrder: number;
+  active: boolean;
+  system: boolean;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+/** Binary completion only: 0 = not done, 1 = done. Legacy 0-10 maps with >0 => 1. */
+export const HABIT_SCORE_MAX = 1;
+export const HABIT_COUNT = DISCIPLINE_SCORE_BLOCKS.length;
+export const DAY_HABIT_MAX = HABIT_COUNT * HABIT_SCORE_MAX;
+
+export const HABIT_COLOR_KEYS: HabitColorKey[] = [
+  'rose', 'amber', 'emerald', 'sky', 'lime', 'violet',
+  'orange', 'cyan', 'fuchsia', 'teal', 'indigo', 'pink',
+];
+
+export const HABIT_ICON_KEYS: HabitIconKey[] = [
+  'bar-chart-3', 'book-open', 'dumbbell', 'moon', 'apple', 'badge-check',
+  'target', 'brain', 'heart', 'coffee', 'code-2', 'pen-line', 'music',
+  'sun', 'leaf', 'flame', 'timer', 'check-circle-2', 'sparkles', 'wallet',
+  'users', 'phone', 'camera', 'globe', 'home', 'star',
+];
+
+export type HabitVisual = {
+  accent: string;
+  track: string;
+  fill: string;
+  tint: string;
+  swatch: string;
+  soft: string;
+};
+
+export const HABIT_COLOR_VISUAL: Record<HabitColorKey, HabitVisual> = {
+  rose: { accent: 'text-rose-300', track: 'bg-rose-400/15', fill: 'bg-rose-400', tint: 'bg-rose-400/10', swatch: 'bg-rose-400', soft: 'bg-rose-400/25' },
+  amber: { accent: 'text-amber-300', track: 'bg-amber-400/15', fill: 'bg-amber-400', tint: 'bg-amber-400/10', swatch: 'bg-amber-400', soft: 'bg-amber-400/25' },
+  emerald: { accent: 'text-emerald-300', track: 'bg-emerald-400/15', fill: 'bg-emerald-400', tint: 'bg-emerald-400/10', swatch: 'bg-emerald-400', soft: 'bg-emerald-400/25' },
+  sky: { accent: 'text-sky-300', track: 'bg-sky-400/15', fill: 'bg-sky-400', tint: 'bg-sky-400/10', swatch: 'bg-sky-400', soft: 'bg-sky-400/25' },
+  lime: { accent: 'text-lime-300', track: 'bg-lime-400/15', fill: 'bg-lime-400', tint: 'bg-lime-400/10', swatch: 'bg-lime-400', soft: 'bg-lime-400/25' },
+  violet: { accent: 'text-violet-300', track: 'bg-violet-400/15', fill: 'bg-violet-400', tint: 'bg-violet-400/10', swatch: 'bg-violet-400', soft: 'bg-violet-400/25' },
+  orange: { accent: 'text-orange-300', track: 'bg-orange-400/15', fill: 'bg-orange-400', tint: 'bg-orange-400/10', swatch: 'bg-orange-400', soft: 'bg-orange-400/25' },
+  cyan: { accent: 'text-cyan-300', track: 'bg-cyan-400/15', fill: 'bg-cyan-400', tint: 'bg-cyan-400/10', swatch: 'bg-cyan-400', soft: 'bg-cyan-400/25' },
+  fuchsia: { accent: 'text-fuchsia-300', track: 'bg-fuchsia-400/15', fill: 'bg-fuchsia-400', tint: 'bg-fuchsia-400/10', swatch: 'bg-fuchsia-400', soft: 'bg-fuchsia-400/25' },
+  teal: { accent: 'text-teal-300', track: 'bg-teal-400/15', fill: 'bg-teal-400', tint: 'bg-teal-400/10', swatch: 'bg-teal-400', soft: 'bg-teal-400/25' },
+  indigo: { accent: 'text-indigo-300', track: 'bg-indigo-400/15', fill: 'bg-indigo-400', tint: 'bg-indigo-400/10', swatch: 'bg-indigo-400', soft: 'bg-indigo-400/25' },
+  pink: { accent: 'text-pink-300', track: 'bg-pink-400/15', fill: 'bg-pink-400', tint: 'bg-pink-400/10', swatch: 'bg-pink-400', soft: 'bg-pink-400/25' },
+};
+
+export const DEFAULT_HABIT_DEFINITIONS: DisciplineHabitDefinition[] = DISCIPLINE_SCORE_BLOCKS.map((block, index) => {
+  const defaults: Record<string, { icon: HabitIconKey; color: HabitColorKey }> = {
+    deep_work: { icon: 'bar-chart-3', color: 'rose' },
+    reading: { icon: 'book-open', color: 'amber' },
+    exercise: { icon: 'dumbbell', color: 'emerald' },
+    sleep: { icon: 'moon', color: 'sky' },
+    nutrition: { icon: 'apple', color: 'lime' },
+    discipline: { icon: 'badge-check', color: 'violet' },
+  };
+  const meta = defaults[block.key] ?? { icon: 'target', color: HABIT_COLOR_KEYS[index % HABIT_COLOR_KEYS.length] };
+  return {
+    key: block.key,
+    label: block.label,
+    icon: meta.icon,
+    color: meta.color,
+    sortOrder: index,
+    active: true,
+    system: true,
+  };
+});
+
+export const HABIT_VISUAL: Record<string, HabitVisual> = Object.fromEntries(
+  DEFAULT_HABIT_DEFINITIONS.map((habit) => [habit.key, HABIT_COLOR_VISUAL[habit.color as HabitColorKey]]),
+);
+
+export function getHabitVisual(colorOrKey?: string | null): HabitVisual {
+  if (colorOrKey && colorOrKey in HABIT_COLOR_VISUAL) {
+    return HABIT_COLOR_VISUAL[colorOrKey as HabitColorKey];
+  }
+  if (colorOrKey && colorOrKey in HABIT_VISUAL) {
+    return HABIT_VISUAL[colorOrKey];
+  }
+  return HABIT_COLOR_VISUAL.violet;
+}
+
+export function normalizeHabitDefinitions(habits?: DisciplineHabitDefinition[] | null): DisciplineHabitDefinition[] {
+  if (!habits || habits.length === 0) return DEFAULT_HABIT_DEFINITIONS.map((habit) => ({ ...habit }));
+  return habits
+    .map((habit, index) => ({
+      key: String(habit.key || '').trim(),
+      label: String(habit.label || habit.key || 'Habit').trim() || 'Habit',
+      icon: String(habit.icon || 'target'),
+      color: String(habit.color || HABIT_COLOR_KEYS[index % HABIT_COLOR_KEYS.length]),
+      sortOrder: Number.isFinite(Number(habit.sortOrder)) ? Number(habit.sortOrder) : index,
+      active: habit.active !== false,
+      system: Boolean(habit.system),
+      createdAt: habit.createdAt ?? null,
+      updatedAt: habit.updatedAt ?? null,
+    }))
+    .filter((habit) => habit.key)
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key));
+}
+
+export function getActiveHabits(habits?: DisciplineHabitDefinition[] | null) {
+  return normalizeHabitDefinitions(habits).filter((habit) => habit.active);
+}
+
+export function toBinaryHabitScore(value: unknown): 0 | 1 {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return 1;
+}
+
+export function normalizeHabitScoreMap(
+  scores?: Record<string, number> | null,
+  habits: readonly DisciplineHabitDefinition[] = DEFAULT_HABIT_DEFINITIONS,
+): Record<string, 0 | 1> {
+  const keys = getActiveHabits(habits as DisciplineHabitDefinition[]).map((habit) => habit.key);
+  const sourceKeys = keys.length > 0 ? keys : DISCIPLINE_SCORE_BLOCKS.map((block) => block.key);
+  return Object.fromEntries(
+    sourceKeys.map((key) => [key, toBinaryHabitScore(scores?.[key])]),
+  );
+}
 
 export interface DisciplineScoreRecord {
   date: string;
@@ -117,6 +254,7 @@ export interface DisciplineReviewPayload {
   date: string;
   score: DisciplineScoreRecord | null;
   streak: DisciplineStreak;
+  habits?: DisciplineHabitDefinition[];
   reading: DisciplineReadingEntry[];
   exercise: DisciplineExerciseEntry[];
   tasks: SprintTask[];
@@ -145,7 +283,22 @@ export interface DisciplineTrendResponse {
   to?: string;
   startDate: string;
   endDate: string;
+  habits?: DisciplineHabitDefinition[];
   trend: DisciplineTrendPoint[];
+}
+
+export interface DisciplineHabitsResponse {
+  habits: DisciplineHabitDefinition[];
+  activeCount: number;
+  colors: string[];
+  icons: string[];
+}
+
+export interface DisciplineHabitMutationResponse {
+  habit?: DisciplineHabitDefinition;
+  habits: DisciplineHabitDefinition[];
+  key?: string;
+  deleted?: boolean;
 }
 
 export interface DisciplineScoreSaveResponse {
@@ -254,5 +407,43 @@ export async function addDisciplineExercise(entry: {
   return disciplineRequest<DisciplineLogSaveResponse>('/exercise', {
     method: 'POST',
     body: JSON.stringify({ ...entry, businessDate: entry.businessDate ?? entry.date }),
+  });
+}
+
+
+export async function fetchDisciplineHabits(includeInactive = true) {
+  return disciplineRequest<DisciplineHabitsResponse>(`/habits?includeInactive=${includeInactive ? '1' : '0'}`);
+}
+
+export async function createDisciplineHabit(input: {
+  key?: string;
+  label: string;
+  icon?: string;
+  color?: string;
+  sortOrder?: number;
+  active?: boolean;
+}) {
+  return disciplineRequest<DisciplineHabitMutationResponse>('/habits', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateDisciplineHabit(key: string, input: {
+  label?: string;
+  icon?: string;
+  color?: string;
+  sortOrder?: number;
+  active?: boolean;
+}) {
+  return disciplineRequest<DisciplineHabitMutationResponse>(`/habits/${encodeURIComponent(key)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteDisciplineHabit(key: string) {
+  return disciplineRequest<DisciplineHabitMutationResponse>(`/habits/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
   });
 }
