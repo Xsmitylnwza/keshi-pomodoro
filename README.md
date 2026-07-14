@@ -51,7 +51,7 @@ Most Pomodoro apps are either:
 ### Timer experience
 
 <p align="center">
-  <img src="public/demo/main_page.webp" alt="Keshi Pomodoro main timer experience" width="100%" />
+  <img src="public/demo/main_page.gif" alt="Keshi Pomodoro main timer experience" width="100%" />
 </p>
 
 Focus mode hits deep red. Break mode cools into green. The transition is a mental shift, not a theme toggle.
@@ -70,19 +70,19 @@ Focus mode hits deep red. Break mode cools into green. The transition is a menta
 ### Theme studio
 
 <p align="center">
-  <img src="public/demo/theme_demo.webp" alt="Theme customization demo" width="100%" />
+  <img src="public/demo/theme_demo.gif" alt="Theme customization demo" width="100%" />
 </p>
 
 ### Settings & history chrome
 
 <p align="center">
-  <img src="public/demo/menu_general.webp" alt="Settings menu demo" width="100%" />
+  <img src="public/demo/menu_general.gif" alt="Settings menu demo" width="100%" />
 </p>
 
 ### Discipline dashboard
 
 <p align="center">
-  <img src="public/demo/discipline_dashboard.webp" alt="Discipline dashboard multi-view demo" width="100%" />
+  <img src="public/demo/discipline_dashboard.gif" alt="Discipline dashboard multi-view demo" width="100%" />
 </p>
 
 Binary habits, multi-view matrices (Grid / Lanes / Weeks / Rank), focus reality (Hours / Days / Rank), 7D–30D range, Evidence, and per-user habit management — recorded from the live product.
@@ -134,7 +134,7 @@ Day total = `habits done / active habit count`.
 Live multi-view walkthrough (range switch, habit matrix modes, focus matrix modes, Evidence / Habits chrome):
 
 <p align="center">
-  <img src="public/demo/discipline_dashboard.webp" alt="Discipline dashboard views demo" width="100%" />
+  <img src="public/demo/discipline_dashboard.gif" alt="Discipline dashboard views demo" width="100%" />
 </p>
 
 ### Habit matrix views
@@ -249,7 +249,7 @@ npm run dev   # Vite client
 ```text
 pomodoro-keshi/
 ├── public/                 # static assets + recorded demos
-│   └── demo/               # main_page / theme / menu / discipline demos
+│   └── demo/               # animated demos (gif + webp)
 ├── assets/                 # focus / relax / discipline stills
 ├── docs/
 │   ├── readme/             # diagrams used in this README
