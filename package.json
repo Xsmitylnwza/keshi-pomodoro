@@ -37,5 +37,26 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4"
-  }
+  },
+  "license": "MIT",
+  "description": "Lo-fi Pomodoro timer with a Discipline dashboard for binary habit tracking and focus reality analytics",
+  "author": "Xsmity",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Xsmitylnwza/keshi-pomodoro.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Xsmitylnwza/keshi-pomodoro/issues"
+  },
+  "homepage": "https://pomodoro.xsmity.cloud/",
+  "keywords": [
+    "pomodoro",
+    "focus",
+    "timer",
+    "habits",
+    "discipline",
+    "react",
+    "vite",
+    "lofi"
+  ]
 }

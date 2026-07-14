@@ -418,7 +418,13 @@ Workflow: [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)
 
 ## License
 
-MIT © 2024–2026 Xsmity / contributors
+This project is licensed under the [MIT License](LICENSE).
+
+`	ext
+MIT © 2024–2026 Xsmity and contributors
+`
+
+You are free to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the software, provided the copyright notice and permission notice are included in all copies or substantial portions of the Software.
 
 ---
 
