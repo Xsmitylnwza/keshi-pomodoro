@@ -1,106 +1,204 @@
 import { test, expect } from '@playwright/test';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-test.describe('Feature Demos', () => {
+const baseURL = process.env.DEMO_BASE_URL || 'https://pomodoro.xsmity.cloud';
 
-    test('menu_general', async ({ page }) => {
-        // 1. Menu General
-        await page.goto('/');
+test.use({
+  baseURL,
+  video: {
+    mode: 'on',
+    size: { width: 1440, height: 900 },
+  },
+  viewport: { width: 1440, height: 900 },
+  actionTimeout: 15000,
+});
 
-        // Open Menu
-        await page.getByText('Menu').click();
-        await expect(page.getByText('Settings').first()).toBeVisible();
+async function settle(page, ms = 700) {
+  await page.waitForTimeout(ms);
+}
 
-        // Hover over buttons
-        await page.getByText('HISTORY >').hover();
-        await page.waitForTimeout(500);
-        await page.getByText('ANALYTICS >').hover();
-        await page.waitForTimeout(500);
+test.describe.configure({ mode: 'serial' });
 
-        // Change settings
-        const focusInput = page.locator('input[type="number"]').first();
-        await focusInput.fill('30');
-        await page.waitForTimeout(500);
+test('demo_main_timer', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle').catch(() => {});
+  await settle(page, 1200);
 
-        const breakInput = page.locator('input[type="number"]').nth(1);
-        await breakInput.fill('10');
-        await page.waitForTimeout(500);
+  // Start focus
+  const start = page.getByRole('button', { name: /start/i }).first();
+  if (await start.count()) {
+    await start.click();
+    await settle(page, 1800);
+  }
 
-        // Toggle sound
-        const soundBtn = page.locator('button:has(.lucide-volume-2)');
-        if (await soundBtn.isVisible()) {
-            await soundBtn.click();
-            await page.waitForTimeout(500);
-            await page.locator('button:has(.lucide-volume-x)').click();
-        }
+  // Pause if present
+  const pause = page.getByRole('button', { name: /pause/i }).first();
+  if (await pause.count()) {
+    await pause.click();
+    await settle(page, 900);
+  }
 
-        await page.waitForTimeout(1000);
+  // Switch mode if present
+  const switchMode = page.getByText(/click to switch|switch/i).first();
+  if (await switchMode.count()) {
+    await switchMode.click();
+    await settle(page, 1200);
+  }
 
-        // Close/Save
-        await page.getByText('Save Changes').click();
-        await expect(page.getByText('Settings').first()).toBeHidden();
+  // Start break
+  const start2 = page.getByRole('button', { name: /start/i }).first();
+  if (await start2.count()) {
+    await start2.click();
+    await settle(page, 1500);
+  }
 
-        await page.waitForTimeout(1000);
-    });
+  // Reset
+  const reset = page.locator('button').filter({ has: page.locator('svg.lucide-rotate-ccw, svg') }).first();
+  // try aria or visible reset icons
+  const resetByLabel = page.getByRole('button', { name: /reset/i });
+  if (await resetByLabel.count()) await resetByLabel.first().click();
+  await settle(page, 1000);
+});
 
-    test('theme', async ({ page }) => {
-        // 2. Theme
-        await page.goto('/');
+test('demo_theme_settings', async ({ page }) => {
+  await page.goto('/');
+  await settle(page, 1000);
 
-        // Open Menu
-        await page.getByText('Menu').click();
+  // Open menu / settings
+  const menu = page.getByText(/^Menu$/i).first();
+  if (await menu.count()) await menu.click();
+  else {
+    const settings = page.getByRole('button', { name: /settings|menu/i }).first();
+    if (await settings.count()) await settings.click();
+  }
+  await settle(page, 800);
 
-        // Go to Theme tab
-        await page.getByText('Theme').click();
-        await page.waitForTimeout(500);
+  const themeTab = page.getByText(/^Theme$/i).first();
+  if (await themeTab.count()) {
+    await themeTab.click();
+    await settle(page, 700);
+  }
 
-        // Interact with Theme Settings
-        await page.getByText('Focus Mode').first().waitFor();
+  // Click a few color-like buttons if present
+  const colorButtons = page.locator('button[title]');
+  const n = Math.min(await colorButtons.count(), 6);
+  for (let i = 0; i < n; i += 1) {
+    await colorButtons.nth(i).click().catch(() => {});
+    await settle(page, 450);
+  }
 
-        // Click a few color presets
-        const colors = page.locator('button[title]');
-        await colors.nth(0).click(); // Keshi Red
-        await page.waitForTimeout(500);
-        await colors.nth(5).click(); // Keshi Green
-        await page.waitForTimeout(500);
-        await colors.nth(9).click(); // Sky
-        await page.waitForTimeout(500);
+  const save = page.getByRole('button', { name: /save/i }).first();
+  if (await save.count()) {
+    await save.click();
+    await settle(page, 900);
+  }
+});
 
-        // Switch to Relax Mode color settings (if applicable visuals needed)
+test('demo_menu_general', async ({ page }) => {
+  await page.goto('/');
+  await settle(page, 1000);
 
-        await page.waitForTimeout(1000);
+  const menu = page.getByText(/^Menu$/i).first();
+  if (await menu.count()) await menu.click();
+  await settle(page, 800);
 
-        // Save
-        await page.getByText('Save Changes').click();
-        await page.waitForTimeout(1000);
-    });
+  // hover history/analytics if present
+  for (const label of ['HISTORY', 'ANALYTICS', 'History', 'Analytics']) {
+    const el = page.getByText(label, { exact: false }).first();
+    if (await el.count()) {
+      await el.hover().catch(() => {});
+      await settle(page, 400);
+    }
+  }
 
-    test('main_page', async ({ page }) => {
-        // 3. Main Page
-        await page.goto('/');
+  const numberInputs = page.locator('input[type="number"]');
+  if (await numberInputs.count() > 0) {
+    await numberInputs.first().fill('30').catch(() => {});
+    await settle(page, 400);
+  }
+  if (await numberInputs.count() > 1) {
+    await numberInputs.nth(1).fill('10').catch(() => {});
+    await settle(page, 400);
+  }
 
-        // Start timer
-        await page.getByText('Start').click();
-        await page.waitForTimeout(2000); // Let it run a bit
+  const save = page.getByRole('button', { name: /save/i }).first();
+  if (await save.count()) await save.click().catch(() => {});
+  await settle(page, 900);
+});
 
-        // Hover over elements
-        await page.locator('.ransom-letter').first().hover();
-        await page.waitForTimeout(1000);
+test('demo_discipline_dashboard', async ({ page }) => {
+  await page.goto('/');
+  await settle(page, 1000);
 
-        // Pause
-        await page.getByText('Pause').click();
-        await page.waitForTimeout(1000);
+  // Open account / discipline entry points
+  const disciplineNav = page.getByRole('button', { name: /discipline/i }).or(page.getByText(/discipline/i));
+  // try account menu first
+  const account = page.locator('button').filter({ hasText: /account|profile/i }).first();
+  if (await account.count()) {
+    await account.click().catch(() => {});
+    await settle(page, 500);
+  }
 
-        // Switch Mode
-        await page.getByText('Click to Switch').click();
-        await page.waitForTimeout(1000);
+  // Direct navigation path if app supports hash/route; else click any Discipline control
+  const openDisc = page.getByText(/discipline dashboard|discipline/i).first();
+  if (await openDisc.count()) {
+    await openDisc.click().catch(() => {});
+  } else {
+    // try sidebar or top nav
+    await page.goto(baseURL.replace(/\/$/, '') + '/#discipline').catch(() => {});
+  }
+  await settle(page, 1500);
 
-        // Start Break
-        await page.getByText('Start').click();
-        await page.waitForTimeout(2000);
+  // Wait for discipline chrome if present
+  const range7 = page.getByRole('button', { name: /7d|7 day/i }).first();
+  const range30 = page.getByRole('button', { name: /30d|30 day/i }).first();
+  if (await range7.count()) {
+    await range7.click();
+    await settle(page, 800);
+  }
+  if (await range30.count()) {
+    await range30.click();
+    await settle(page, 1000);
+  }
+  if (await range7.count()) {
+    await range7.click();
+    await settle(page, 800);
+  }
 
-        // Reset
-        const resetBtn = page.locator('button:has(.lucide-rotate-ccw)');
-        await resetBtn.click();
-        await page.waitForTimeout(1000);
-    });
+  // Switch habit matrix views
+  for (const name of ['Grid', 'Lanes', 'Weeks', 'Rank']) {
+    const btn = page.getByRole('button', { name: new RegExp(`^${name}$`, 'i') }).first();
+    if (await btn.count()) {
+      await btn.click().catch(() => {});
+      await settle(page, 900);
+    }
+  }
+
+  // Focus matrix views
+  for (const name of ['Hours', 'Days', 'Rank']) {
+    const btn = page.getByRole('button', { name: new RegExp(`^${name}$`, 'i') }).first();
+    if (await btn.count()) {
+      await btn.click().catch(() => {});
+      await settle(page, 800);
+    }
+  }
+
+  // Open evidence / habits if chrome buttons exist
+  const evidence = page.getByRole('button', { name: /evidence/i }).first();
+  if (await evidence.count()) {
+    await evidence.click().catch(() => {});
+    await settle(page, 1000);
+  }
+  const habits = page.getByRole('button', { name: /habits|manage habits/i }).first();
+  if (await habits.count()) {
+    await habits.click().catch(() => {});
+    await settle(page, 1200);
+  }
+
+  // Scroll matrix into view for capture density
+  await page.evaluate(() => window.scrollBy(0, 500));
+  await settle(page, 900);
+  await page.evaluate(() => window.scrollBy(0, 700));
+  await settle(page, 900);
 });

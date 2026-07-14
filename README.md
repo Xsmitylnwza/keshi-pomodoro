@@ -79,6 +79,18 @@ Focus mode hits deep red. Break mode cools into green. The transition is a menta
   <img src="public/demo/menu_general.webp" alt="Settings menu demo" width="100%" />
 </p>
 
+### Discipline dashboard
+
+<p align="center">
+  <img src="public/demo/discipline_dashboard.webp" alt="Discipline dashboard multi-view demo" width="100%" />
+</p>
+
+Binary habits, multi-view matrices (Grid / Lanes / Weeks / Rank), focus reality (Hours / Days / Rank), 7D–30D range, Evidence, and per-user habit management — recorded from the live product.
+
+<p align="center">
+  <img src="assets/discipline_dashboard.png" alt="Discipline dashboard still" width="100%" />
+</p>
+
 ---
 
 ## Feature map
@@ -117,6 +129,12 @@ Day total = `habits done / active habit count`.
 
 <p align="center">
   <img src="docs/readme/habit-matrix.svg" alt="Habit completion matrix concept with dual-encoded checkmarks" width="100%" />
+</p>
+
+Live multi-view walkthrough (range switch, habit matrix modes, focus matrix modes, Evidence / Habits chrome):
+
+<p align="center">
+  <img src="public/demo/discipline_dashboard.webp" alt="Discipline dashboard views demo" width="100%" />
 </p>
 
 ### Habit matrix views
@@ -231,8 +249,8 @@ npm run dev   # Vite client
 ```text
 pomodoro-keshi/
 ├── public/                 # static assets + recorded demos
-│   └── demo/               # main_page / theme / menu demos
-├── assets/                 # focus/relax stills
+│   └── demo/               # main_page / theme / menu / discipline demos
+├── assets/                 # focus / relax / discipline stills
 ├── docs/
 │   ├── readme/             # diagrams used in this README
 │   ├── hermes-discipline-log-guide.md

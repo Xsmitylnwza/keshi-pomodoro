@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 data/
+.demo-capture/
+.playwright-cli/
+test-results/
+playwright-report/
 
 # Editor directories and files
 .vscode/*
