@@ -1,17 +1,17 @@
 import { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Clock3, GripVertical, ListTodo, LogIn, Pause, Play, Plus, RotateCcw, Trash2, UserCircle, Wifi, WifiOff, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Clock3, GripVertical, ListTodo, LogIn, Pause, Play, Plus, RotateCcw, Trash2, UserCircle, Wifi, WifiOff, X } from 'lucide-react';
 import { CustomCursor } from './components/CustomCursor';
 import Background from './components/Background';
 import { AccountMenu, DisciplineDashboard } from './components/DisciplineDashboard';
 
-import type { InsightsTab } from './components/AppPanels';
 import { RadioWidget } from './components/RadioWidget';
 
 // Lazy load modals for smaller initial bundle
 const SettingsModal = lazy(() => import('./components/AppPanels').then(m => ({ default: m.SettingsModal })));
 const InsightsModal = lazy(() => import('./components/AppPanels').then(m => ({ default: m.InsightsModal })));
 import { useAuth } from './context/useAuth';
+import { isLocalMockAuthEnabled } from './lib/localDev';
 import { useTheme } from './context/useTheme';
 import {
   createSprintTask,
@@ -24,7 +24,6 @@ import {
 } from './lib/sprintApi';
 import {
   appendAppHistory,
-  clearAppHistory,
   fetchAppHistory,
   fetchAppSettings,
   updateAppSettings,
@@ -92,10 +91,12 @@ function AuthGate({
   loading,
   onLogin,
   backgroundColor,
+  localMock = false,
 }: {
   loading: boolean;
   onLogin: () => void;
   backgroundColor: string;
+  localMock?: boolean;
 }) {
   return (
     <div
@@ -117,8 +118,17 @@ function AuthGate({
         <div>
           <h1 className="font-marker text-4xl uppercase tracking-wider">Keshi</h1>
           <p className="mt-2 text-sm font-bold uppercase tracking-widest text-white/55">
-            {loading ? 'Checking session' : 'Sign in to continue'}
+            {loading
+              ? 'Checking session'
+              : localMock
+                ? 'Local demo mode'
+                : 'Sign in to continue'}
           </p>
+          {localMock && !loading ? (
+            <p className="mt-2 text-xs font-medium normal-case tracking-normal text-white/45">
+              Central auth is offline. Continue with mock local data.
+            </p>
+          ) : null}
         </div>
         <button
           onClick={onLogin}
@@ -126,7 +136,7 @@ function AuthGate({
           className="inline-flex min-h-12 w-full items-center justify-center gap-2 border-2 border-paper-cream bg-paper-cream px-4 py-3 text-sm font-black uppercase tracking-widest text-black transition-all hover:-translate-y-0.5 hover:bg-accent-red hover:text-white disabled:translate-y-0 disabled:cursor-wait disabled:opacity-60"
         >
           <LogIn className="h-5 w-5" strokeWidth={3} />
-          {loading ? 'Please wait' : 'Continue with Xsmity'}
+          {loading ? 'Please wait' : localMock ? 'Continue as Local Demo' : 'Continue with Xsmity'}
         </button>
       </motion.div>
     </div>
@@ -155,6 +165,9 @@ function App() {
   const [taskPendingDelete, setTaskPendingDelete] = useState<SprintTask | null>(null);
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ taskId: string; placement: 'before' | 'after' } | null>(null);
+  const [taskStatusFilter, setTaskStatusFilter] = useState<'all' | SprintTask['status']>('all');
+  const [doneSectionCollapsed, setDoneSectionCollapsed] = useState(true);
+  const taskListScrollRef = useRef<HTMLDivElement | null>(null);
 
   // Ref to store the absolute end time (timestamp when timer should complete)
   const endTimeRef = useRef<number | null>(null);
@@ -162,9 +175,7 @@ function App() {
   // Modals
   const [showSettings, setShowSettings] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
-  const [insightsTab, setInsightsTab] = useState<InsightsTab>('overview');
-  const openInsights = (tab: InsightsTab = 'overview') => {
-    setInsightsTab(tab);
+  const openInsights = () => {
     setShowInsights(true);
   };
   const [hasMounted, setHasMounted] = useState(false);
@@ -240,7 +251,7 @@ function App() {
         ? settings.selectedTaskId
         : syncedTasksResult[0]?.id ?? '';
       setSelectedTaskId(nextSelectedTaskId);
-      setExpandedTaskId(nextSelectedTaskId);
+      setExpandedTaskId(prev => prev ?? (nextSelectedTaskId || null));
 
       if (nextSelectedTaskId !== settings.selectedTaskId) {
         void updateAppSettings({ selectedTaskId: nextSelectedTaskId }).catch(error => {
@@ -278,9 +289,17 @@ function App() {
 
       if (fallbackSelectedTaskId !== selectedTaskId) {
         setSelectedTaskId(fallbackSelectedTaskId);
-        setExpandedTaskId(fallbackSelectedTaskId);
+        setExpandedTaskId(prev => {
+          if (prev && syncedTasks.some(task => task.id === prev)) return prev;
+          return null;
+        });
         void updateAppSettings({ selectedTaskId: fallbackSelectedTaskId }).catch(error => {
           console.warn('Selected task sync failed', error);
+        });
+      } else {
+        setExpandedTaskId(prev => {
+          if (prev && syncedTasks.some(task => task.id === prev)) return prev;
+          return null;
         });
       }
 
@@ -421,19 +440,25 @@ function App() {
     }
   }
 
-  const clearHistory = () => {
-    setHistory([]);
-    void clearAppHistory().catch(error => {
-      console.warn('History clear failed', error);
-    });
+
+  const selectTask = (taskId: string, options?: { expand?: boolean | 'toggle' }) => {
+    const expandMode = options?.expand ?? false;
+    setSelectedTaskId(taskId);
+    if (expandMode === true) {
+      setExpandedTaskId(taskId || null);
+    } else if (expandMode === 'toggle') {
+      setExpandedTaskId(prev => (prev === taskId ? null : taskId));
+    }
+    if (taskId) {
+      void updateAppSettings({ selectedTaskId: taskId }).catch(error => {
+        console.warn('Selected task save failed', error);
+      });
+    }
   };
 
-  const selectTask = (taskId: string) => {
-    setSelectedTaskId(taskId);
-    setExpandedTaskId(taskId);
-    void updateAppSettings({ selectedTaskId: taskId }).catch(error => {
-      console.warn('Selected task save failed', error);
-    });
+  const activateTaskTitle = (taskId: string) => {
+    // Title click: select + toggle expand (exclusive accordion). Collapse keeps selected.
+    selectTask(taskId, { expand: 'toggle' });
   };
 
   const tasksForDay = (sourceTasks: SprintTask[], dateKey: string) => sourceTasks.filter(task => {
@@ -700,6 +725,7 @@ function App() {
   };
 
   const toggleTaskExpanded = (taskId: string) => {
+    // Chevron only toggles expand/collapse; does not change selected pomodoro target.
     setExpandedTaskId(prev => (prev === taskId ? null : taskId));
   };
 
@@ -763,22 +789,9 @@ function App() {
     });
   };
 
-  const reorderTasksForDay = (draggedTaskId: string, targetTaskId: string, placement: 'before' | 'after') => {
-    if (draggedTaskId === targetTaskId) return;
-
-    const dayTasks = tasksForDay(tasks, taskDay).slice().sort((a, b) => (b.order ?? 0) - (a.order ?? 0));
-    const draggedIndex = dayTasks.findIndex(task => task.id === draggedTaskId);
-    const targetIndex = dayTasks.findIndex(task => task.id === targetTaskId);
-    if (draggedIndex < 0 || targetIndex < 0) return;
-
-    const reordered = [...dayTasks];
-    const [draggedTask] = reordered.splice(draggedIndex, 1);
-    let insertIndex = placement === 'before' ? targetIndex : targetIndex + 1;
-    if (draggedIndex < targetIndex) insertIndex -= 1;
-    reordered.splice(insertIndex, 0, draggedTask);
-
-    const maxOrder = reordered.length;
-    const orderById = new Map(reordered.map((task, index) => [task.id, maxOrder - index]));
+  const applyDayOrder = (reorderedDayTasks: SprintTask[]) => {
+    const maxOrder = reorderedDayTasks.length;
+    const orderById = new Map(reorderedDayTasks.map((task, index) => [task.id, maxOrder - index]));
     const now = new Date().toISOString();
     const nextTasks = tasks.map(task => {
       if (!orderById.has(task.id)) return task;
@@ -793,7 +806,7 @@ function App() {
     setDraggedTaskId(null);
     setDropTarget(null);
 
-    reordered.forEach(task => {
+    reorderedDayTasks.forEach(task => {
       const updatedTask = nextTasks.find(candidate => candidate.id === task.id);
       if (updatedTask) {
         updateSprintTask(updatedTask).catch(error => {
@@ -803,6 +816,68 @@ function App() {
       }
     });
   };
+
+  const reorderTasksForDay = (draggedTaskId: string, targetTaskId: string, placement: 'before' | 'after') => {
+    if (draggedTaskId === targetTaskId) return;
+
+    const dayTasks = tasksForDay(tasks, taskDay).slice().sort((a, b) => (b.order ?? 0) - (a.order ?? 0));
+    const draggedIndex = dayTasks.findIndex(task => task.id === draggedTaskId);
+    const targetIndex = dayTasks.findIndex(task => task.id === targetTaskId);
+    if (draggedIndex < 0 || targetIndex < 0) return;
+
+    const reordered = [...dayTasks];
+    const [draggedTask] = reordered.splice(draggedIndex, 1);
+    let insertIndex = placement === 'before' ? targetIndex : targetIndex + 1;
+    if (draggedIndex < targetIndex) insertIndex -= 1;
+    reordered.splice(insertIndex, 0, draggedTask);
+    applyDayOrder(reordered);
+  };
+
+  const moveTaskInDay = (taskId: string, direction: 'up' | 'down') => {
+    const dayTasks = tasksForDay(tasks, taskDay).slice().sort((a, b) => (b.order ?? 0) - (a.order ?? 0));
+    const index = dayTasks.findIndex(task => task.id === taskId);
+    if (index < 0) return;
+    const swapWith = direction === 'up' ? index - 1 : index + 1;
+    if (swapWith < 0 || swapWith >= dayTasks.length) return;
+    const reordered = [...dayTasks];
+    const [item] = reordered.splice(index, 1);
+    reordered.splice(swapWith, 0, item);
+    applyDayOrder(reordered);
+  };
+
+  const autoScrollTaskList = (clientY: number) => {
+    const scroller = taskListScrollRef.current;
+    if (!scroller) return;
+    const rect = scroller.getBoundingClientRect();
+    const edge = 36;
+    const maxStep = 18;
+    if (clientY < rect.top + edge) {
+      const intensity = Math.min(1, (rect.top + edge - clientY) / edge);
+      scroller.scrollTop -= Math.ceil(maxStep * intensity);
+    } else if (clientY > rect.bottom - edge) {
+      const intensity = Math.min(1, (clientY - (rect.bottom - edge)) / edge);
+      scroller.scrollTop += Math.ceil(maxStep * intensity);
+    }
+  };
+
+  // Escape collapses details without deselecting the active pomodoro task.
+  useEffect(() => {
+    if (!isTaskPanelOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
+      }
+      if (expandedTaskId) {
+        event.preventDefault();
+        setExpandedTaskId(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [expandedTaskId, isTaskPanelOpen]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -816,7 +891,251 @@ function App() {
 
   const { colors } = useTheme();
   const selectedTask = tasks.find(task => task.id === selectedTaskId) ?? null;
-  const visibleTasks = tasksForDay(tasks, taskDay).slice().sort((a, b) => (b.order ?? 0) - (a.order ?? 0));
+  const dayTasksSorted = tasksForDay(tasks, taskDay).slice().sort((a, b) => (b.order ?? 0) - (a.order ?? 0));
+  const taskFilterCounts = {
+    all: dayTasksSorted.length,
+    todo: dayTasksSorted.filter(task => task.status === 'todo').length,
+    doing: dayTasksSorted.filter(task => task.status === 'doing').length,
+    done: dayTasksSorted.filter(task => task.status === 'done').length,
+  };
+  const statusFilteredTasks = taskStatusFilter === 'all'
+    ? dayTasksSorted
+    : dayTasksSorted.filter(task => task.status === taskStatusFilter);
+  const activeTasks = statusFilteredTasks.filter(task => task.status !== 'done');
+  const doneTasks = statusFilteredTasks.filter(task => task.status === 'done');
+  const visibleDoneTasks = taskStatusFilter === 'done'
+    ? doneTasks
+    : (doneSectionCollapsed ? [] : doneTasks);
+  const visibleTasks = taskStatusFilter === 'done'
+    ? doneTasks
+    : [...activeTasks, ...visibleDoneTasks];
+  const dayTaskIndexById = new Map(dayTasksSorted.map((task, index) => [task.id, index]));
+
+  const renderTaskRow = (task: SprintTask) => {
+    const isSelected = task.id === selectedTaskId;
+    const isExpanded = task.id === expandedTaskId;
+    const statusMeta = getStatusMeta(task.status);
+    const completedSubtasks = (task.subtasks ?? []).filter(subtask => subtask.done).length;
+    const totalSubtasks = (task.subtasks ?? []).length;
+    const dayIndex = dayTaskIndexById.get(task.id) ?? 0;
+    const canMoveUp = dayIndex > 0;
+    const canMoveDown = dayIndex < dayTasksSorted.length - 1;
+
+    return (
+      <div
+        key={task.id}
+        title={task.title}
+        className={`relative overflow-hidden border-2 p-2.5 transition-all ${statusMeta.border} ${isExpanded
+          ? (isSelected ? 'bg-paper-cream text-black' : statusMeta.surface)
+          : 'bg-black/55 text-white/75 hover:bg-black/65 hover:text-white'
+          } ${isExpanded ? 'cursor-pointer' : ''} ${draggedTaskId === task.id ? 'opacity-50 scale-[0.99]' : ''} ${dropTarget?.taskId === task.id ? `ring-2 ${statusMeta.ring}` : ''}`}
+        onClick={(event) => {
+          if (!isExpanded) return;
+          if (!(event.target instanceof Element)) return;
+          if (event.target.closest('button, input, textarea, select, a, label')) return;
+          toggleTaskExpanded(task.id);
+          playClick();
+        }}
+        onDragOver={(event) => {
+          if (!draggedTaskId || draggedTaskId === task.id) return;
+          event.preventDefault();
+          autoScrollTaskList(event.clientY);
+          const rect = event.currentTarget.getBoundingClientRect();
+          const placement = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+          setDropTarget({ taskId: task.id, placement });
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          if (!draggedTaskId || draggedTaskId === task.id) return;
+          const rect = event.currentTarget.getBoundingClientRect();
+          const placement = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+          reorderTasksForDay(draggedTaskId, task.id, placement);
+        }}
+        onDragLeave={() => {
+          if (dropTarget?.taskId === task.id) setDropTarget(null);
+        }}
+      >
+        {dropTarget?.taskId === task.id && dropTarget.placement === 'before' && (
+          <div className={`pointer-events-none absolute left-1 right-1 top-0 z-10 h-1 rounded-full ${statusMeta.dropLine} shadow-[0_0_0_1px_rgba(0,0,0,0.35)]`} />
+        )}
+        {dropTarget?.taskId === task.id && dropTarget.placement === 'after' && (
+          <div className={`pointer-events-none absolute bottom-0 left-1 right-1 z-10 h-1 rounded-full ${statusMeta.dropLine} shadow-[0_0_0_1px_rgba(0,0,0,0.35)]`} />
+        )}
+
+        <div className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-2">
+          <button
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = 'move';
+              event.dataTransfer.setData('text/plain', task.id);
+              setDraggedTaskId(task.id);
+              setDropTarget(null);
+            }}
+            onDragEnd={() => {
+              setDraggedTaskId(null);
+              setDropTarget(null);
+            }}
+            className={`grid h-8 w-8 cursor-grab place-items-center border-2 active:cursor-grabbing ${isSelected ? 'border-black/20 bg-black/5 text-black/70' : 'border-white/20 bg-black/30 text-white/70 hover:border-white/45 hover:text-white'}`}
+            aria-label={`Drag ${task.title}`}
+            title="Drag handle to reorder"
+          >
+            <GripVertical className="h-4 w-4" strokeWidth={2.5} />
+          </button>
+
+          <button
+            onClick={() => { activateTaskTitle(task.id); playClick(); }}
+            className="min-w-0 text-left"
+            title={isExpanded ? 'Click to collapse details' : 'Click to select and open details'}
+          >
+            <div className="truncate font-grotesk text-sm font-black">{task.title}</div>
+            <div className="mt-1 text-[9px] uppercase tracking-widest opacity-60">{task.sprint ?? 'Sprint'} / {statusMeta.label}</div>
+          </button>
+
+          <button
+            onClick={() => { advanceTaskStatus(task.id); playClick(); }}
+            className={`inline-flex h-8 items-center gap-1.5 border px-2 text-[9px] font-black uppercase tracking-[0.22em] transition-colors ${isExpanded && isSelected ? statusMeta.chipOnLight : statusMeta.chip}`}
+            aria-label={`Advance ${task.title} status to ${getStatusMeta(getNextTaskStatus(task.status)).label}`}
+            title={`Advance to ${getStatusMeta(getNextTaskStatus(task.status)).label}`}
+          >
+            {(() => {
+              const StatusIcon = getStatusIcon(task.status);
+              return <StatusIcon className="h-3.5 w-3.5 shrink-0" strokeWidth={3} />;
+            })()}
+            <span>{statusMeta.label}</span>
+          </button>
+
+          <button
+            onClick={() => { toggleTaskExpanded(task.id); playClick(); }}
+            className={`grid h-8 w-8 place-items-center border-2 transition-colors ${isSelected ? 'border-black/20 hover:bg-black hover:text-white' : 'border-white/10 hover:border-white/40'}`}
+            aria-label={isExpanded ? `Collapse ${task.title}` : `Expand ${task.title}`}
+            title={isExpanded ? 'Collapse details' : 'Expand details'}
+          >
+            {isExpanded ? <ChevronUp className="h-4 w-4" strokeWidth={3} /> : <ChevronDown className="h-4 w-4" strokeWidth={3} />}
+          </button>
+
+          <button
+            onClick={() => { requestDeleteTask(task); playClick(); }}
+            className={`grid h-8 w-8 place-items-center border-2 transition-colors ${isSelected ? 'border-black/20 hover:bg-black hover:text-white' : 'border-white/10 hover:border-accent-red hover:text-accent-red'}`}
+            aria-label={`Delete ${task.title}`}
+            title="Delete task"
+          >
+            <Trash2 className="h-4 w-4" strokeWidth={3} />
+          </button>
+        </div>
+
+        {isExpanded && (
+          <div className={`mt-3 border-t pt-3 ${isSelected ? 'border-black/15 text-black' : 'border-white/10 text-white'}`}>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <span className="text-[9px] font-bold uppercase tracking-[0.22em] opacity-55">Reorder</span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => { moveTaskInDay(task.id, 'up'); playClick(); }}
+                  disabled={!canMoveUp}
+                  className={`inline-flex h-8 items-center gap-1 border-2 px-2 text-[9px] font-black uppercase tracking-[0.18em] transition-colors ${isSelected ? 'border-black/20 hover:bg-black hover:text-white disabled:opacity-30' : 'border-white/15 hover:border-white/40 disabled:opacity-30'}`}
+                  aria-label={`Move ${task.title} up`}
+                  title="Move up"
+                >
+                  <ArrowUp className="h-3.5 w-3.5" strokeWidth={3} />
+                  Up
+                </button>
+                <button
+                  onClick={() => { moveTaskInDay(task.id, 'down'); playClick(); }}
+                  disabled={!canMoveDown}
+                  className={`inline-flex h-8 items-center gap-1 border-2 px-2 text-[9px] font-black uppercase tracking-[0.18em] transition-colors ${isSelected ? 'border-black/20 hover:bg-black hover:text-white disabled:opacity-30' : 'border-white/15 hover:border-white/40 disabled:opacity-30'}`}
+                  aria-label={`Move ${task.title} down`}
+                  title="Move down"
+                >
+                  <ArrowDown className="h-3.5 w-3.5" strokeWidth={3} />
+                  Down
+                </button>
+              </div>
+            </div>
+
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <span className="text-[9px] font-bold uppercase tracking-[0.22em] opacity-55">Status</span>
+              <span className="text-[9px] font-bold uppercase tracking-widest opacity-45">
+                {completedSubtasks}/{totalSubtasks}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {(['todo', 'doing', 'done'] as const).map(status => {
+                const active = task.status === status;
+                const statusButtonMeta = getStatusMeta(status);
+                const StatusIcon = getStatusIcon(status);
+                const label = status === 'todo' ? 'Todo' : status === 'doing' ? 'Doing' : 'Done';
+                const buttonClasses = active
+                  ? statusButtonMeta.activeButton
+                  : isSelected
+                    ? statusButtonMeta.inactiveSelectedButton
+                    : statusButtonMeta.inactiveButton;
+
+                return (
+                  <button
+                    key={status}
+                    onClick={() => { setTaskStatus(task.id, status); playClick(); }}
+                    className={`flex items-center gap-2 border-2 px-3 py-2 text-left transition-colors ${buttonClasses}`}
+                  >
+                    <StatusIcon className="h-3.5 w-3.5 shrink-0" strokeWidth={3} />
+                    <div className="min-w-0">
+                      <div className="text-[9px] font-black uppercase tracking-[0.24em]">{label}</div>
+                      <div className="mt-0.5 text-[10px] uppercase tracking-wide opacity-70">
+                        {status === 'todo' ? 'Not started' : status === 'doing' ? 'In progress' : 'Finished'}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 border-t border-black/10 pt-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-[9px] font-bold uppercase tracking-[0.22em] opacity-55">Subtasks</span>
+                <span className="text-[9px] font-bold uppercase tracking-widest opacity-45">
+                  {completedSubtasks}/{totalSubtasks}
+                </span>
+              </div>
+              <div className="mb-2 grid grid-cols-[1fr_auto] gap-2">
+                <input
+                  value={newSubtaskTitle}
+                  onChange={(event) => setNewSubtaskTitle(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      addSubtask();
+                    }
+                  }}
+                  className="min-w-0 border border-black/20 bg-black/5 px-2.5 py-2 font-mono text-[11px] text-black outline-none transition-colors placeholder:text-black/35 focus:border-black"
+                  placeholder="Add subtask..."
+                />
+                <button
+                  onClick={() => { addSubtask(); playClick(); }}
+                  className="grid h-9 w-9 place-items-center border-2 border-black bg-black text-paper-cream"
+                  aria-label="Add subtask"
+                >
+                  <Plus className="h-3.5 w-3.5" strokeWidth={3} />
+                </button>
+              </div>
+              <div className="max-h-32 space-y-1 overflow-y-auto pr-1 custom-scrollbar">
+                {(task.subtasks ?? []).map(subtask => (
+                  <div key={subtask.id} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 border border-black/10 bg-black/[0.04] px-2 py-1.5">
+                    <button onClick={() => { toggleSubtask(task, subtask.id); playClick(); }} aria-label={`Toggle ${subtask.title}`}>
+                      {subtask.done ? <CheckCircle2 className="h-3.5 w-3.5 text-accent-green" strokeWidth={3} /> : <Circle className="h-3.5 w-3.5 text-black/45" strokeWidth={3} />}
+                    </button>
+                    <span className={`truncate text-xs ${subtask.done ? 'text-black/35 line-through' : 'text-black/75'}`}>{subtask.title}</span>
+                    <button onClick={() => { removeSubtask(task, subtask.id); playClick(); }} className="text-black/35 hover:text-accent-red" aria-label={`Delete ${subtask.title}`}>
+                      <X className="h-3.5 w-3.5" strokeWidth={3} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
 
   // Calculate dynamic background color - Only tint background in Relax mode
   // Focus mode should correspond to "The Void" (Absolute Black) for maximum contrast
@@ -837,7 +1156,7 @@ function App() {
             setBreakTime={setBreakTime}
             soundEnabled={soundEnabled}
             toggleSound={() => setSoundEnabled(!soundEnabled)}
-            openInsights={(tab) => openInsights(tab ?? 'overview')}
+            openInsights={() => openInsights()}
           />
         )}
       </Suspense>
@@ -848,8 +1167,6 @@ function App() {
             isOpen={showInsights}
             onClose={() => setShowInsights(false)}
             history={history}
-            clearHistory={clearHistory}
-            initialTab={insightsTab}
           />
         )}
       </Suspense>
@@ -862,6 +1179,7 @@ function App() {
         loading={auth.loading}
         onLogin={() => auth.login()}
         backgroundColor={dynamicBg}
+        localMock={isLocalMockAuthEnabled()}
       />
     );
   }
@@ -872,8 +1190,7 @@ function App() {
         <DisciplineDashboard
           onNavigateHome={() => navigateTo('/')}
           onOpenSettings={() => { setShowSettings(true); playClick(); }}
-          onOpenHistory={() => { openInsights('history'); playClick(); }}
-          onOpenAnalytics={() => { openInsights('overview'); playClick(); }}
+          onOpenInsights={() => { openInsights(); playClick(); }}
           onLogout={() => { playClick(); auth.logout(); }}
           user={auth.user}
           focusSessionMinutes={focusTime}
@@ -929,8 +1246,7 @@ function App() {
                 user={auth.user}
                 onOpenDiscipline={() => { playClick(); navigateTo('/discipline'); }}
                 onOpenSettings={() => { setShowSettings(true); playClick(); }}
-                onOpenHistory={() => { openInsights('history'); playClick(); }}
-                onOpenAnalytics={() => { openInsights('overview'); playClick(); }}
+                onOpenInsights={() => { openInsights(); playClick(); }}
                 onLogout={() => { playClick(); auth.logout(); }}
                 compactOnMobile
               />
@@ -1015,7 +1331,7 @@ function App() {
 
               <div className="mb-3 flex items-center justify-between gap-3">
                 <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-white/35">
-                  {visibleTasks.length} tasks / {selectedTask?.status ?? 'idle'}
+                  {dayTasksSorted.length} tasks / {selectedTask?.status ?? 'idle'}
                 </span>
                 <button
                   onClick={() => { refreshTasks(); playClick(); }}
@@ -1025,6 +1341,28 @@ function App() {
                   {taskSyncState === 'online' ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
                   {taskSyncState === 'syncing' ? 'Syncing' : taskSyncState === 'online' ? 'VPS' : 'Local'}
                 </button>
+              </div>
+
+              <div className="mb-3 flex flex-wrap gap-1.5">
+                {([
+                  { id: 'all', label: 'All', count: taskFilterCounts.all },
+                  { id: 'doing', label: 'Doing', count: taskFilterCounts.doing },
+                  { id: 'todo', label: 'Todo', count: taskFilterCounts.todo },
+                  { id: 'done', label: 'Done', count: taskFilterCounts.done },
+                ] as const).map(chip => {
+                  const active = taskStatusFilter === chip.id;
+                  return (
+                    <button
+                      key={chip.id}
+                      onClick={() => { setTaskStatusFilter(chip.id); playClick(); }}
+                      className={`inline-flex items-center gap-1 border px-2 py-1 text-[9px] font-black uppercase tracking-[0.18em] transition-colors ${active ? 'border-paper-cream bg-paper-cream text-black' : 'border-white/15 bg-white/5 text-white/55 hover:border-white/40 hover:text-white'}`}
+                      aria-pressed={active}
+                    >
+                      <span>{chip.label}</span>
+                      <span className={active ? 'text-black/55' : 'text-white/35'}>{chip.count}</span>
+                    </button>
+                  );
+                })}
               </div>
 
             <div className="mb-3 grid grid-cols-[1fr_auto] gap-2">
@@ -1050,203 +1388,43 @@ function App() {
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 custom-scrollbar">
-              {visibleTasks.length === 0 && (
+            <div
+              ref={taskListScrollRef}
+              className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 custom-scrollbar"
+              onDragOver={(event) => {
+                if (!draggedTaskId) return;
+                event.preventDefault();
+                autoScrollTaskList(event.clientY);
+              }}
+            >
+              {dayTasksSorted.length === 0 && (
                 <div className="border border-dashed border-white/15 px-3 py-5 text-center font-mono text-[11px] uppercase tracking-widest text-white/30">
                   No tasks for {formatDayLabel(taskDay)}
                 </div>
               )}
-              {visibleTasks.map(task => {
-                const isSelected = task.id === selectedTask?.id;
-                const isExpanded = task.id === expandedTaskId;
-                const statusMeta = getStatusMeta(task.status);
-                const completedSubtasks = (task.subtasks ?? []).filter(subtask => subtask.done).length;
-                const totalSubtasks = (task.subtasks ?? []).length;
-                return (
-                  <div
-                    key={task.id}
-                    title={task.title}
-                    className={`relative overflow-hidden border-2 p-2.5 transition-all ${statusMeta.border} ${isExpanded
-                      ? (isSelected ? 'bg-paper-cream text-black' : statusMeta.surface)
-                      : 'bg-black/55 text-white/75 hover:bg-black/65 hover:text-white'
-                      } ${isExpanded ? 'cursor-pointer' : ''} ${draggedTaskId === task.id ? 'opacity-50' : ''} ${dropTarget?.taskId === task.id ? `ring-2 ${statusMeta.ring}` : ''}`}
-                    onClick={(event) => {
-                      if (!isExpanded) return;
-                      if (!(event.target instanceof Element)) return;
-                      if (event.target.closest('button, input, textarea, select, a, label')) return;
-                      toggleTaskExpanded(task.id);
-                      playClick();
-                    }}
-                    onDragOver={(event) => {
-                      if (!draggedTaskId || draggedTaskId === task.id) return;
-                      event.preventDefault();
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      const placement = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-                      setDropTarget({ taskId: task.id, placement });
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      if (!draggedTaskId || draggedTaskId === task.id) return;
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      const placement = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-                      reorderTasksForDay(draggedTaskId, task.id, placement);
-                    }}
-                    onDragLeave={() => {
-                      if (dropTarget?.taskId === task.id) setDropTarget(null);
-                    }}
+              {dayTasksSorted.length > 0 && visibleTasks.length === 0 && (
+                <div className="border border-dashed border-white/15 px-3 py-5 text-center font-mono text-[11px] uppercase tracking-widest text-white/30">
+                  No tasks in this filter
+                </div>
+              )}
+
+              {(taskStatusFilter === 'done' ? [] : activeTasks).map(task => renderTaskRow(task))}
+
+              {taskStatusFilter !== 'done' && doneTasks.length > 0 && (
+                <div className="pt-1">
+                  <button
+                    onClick={() => { setDoneSectionCollapsed(prev => !prev); playClick(); }}
+                    className="mb-2 flex w-full items-center justify-between border border-white/10 bg-white/5 px-2.5 py-2 text-left text-[9px] font-black uppercase tracking-[0.2em] text-white/55 transition-colors hover:border-white/30 hover:text-white"
+                    aria-expanded={!doneSectionCollapsed}
                   >
-                      {dropTarget?.taskId === task.id && dropTarget.placement === 'before' && (
-                        <div className={`absolute left-2 right-2 top-0 h-0.5 ${statusMeta.dropLine}`} />
-                      )}
-                      {dropTarget?.taskId === task.id && dropTarget.placement === 'after' && (
-                        <div className={`absolute left-2 right-2 bottom-0 h-0.5 ${statusMeta.dropLine}`} />
-                      )}
+                    <span>Done ({doneTasks.length})</span>
+                    {doneSectionCollapsed ? <ChevronDown className="h-3.5 w-3.5" strokeWidth={3} /> : <ChevronUp className="h-3.5 w-3.5" strokeWidth={3} />}
+                  </button>
+                  {!doneSectionCollapsed && doneTasks.map(task => renderTaskRow(task))}
+                </div>
+              )}
 
-                      <div className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-2">
-                        <button
-                          draggable
-                          onDragStart={() => {
-                            setDraggedTaskId(task.id);
-                            setDropTarget(null);
-                          }}
-                          onDragEnd={() => {
-                            setDraggedTaskId(null);
-                            setDropTarget(null);
-                          }}
-                          className={`grid h-8 w-8 cursor-grab place-items-center border-2 active:cursor-grabbing ${isSelected ? 'border-black/20 bg-black/5' : 'border-white/10 bg-black/20'}`}
-                          aria-label={`Drag ${task.title}`}
-                          title="Drag to reorder"
-                        >
-                          <GripVertical className="h-4 w-4" strokeWidth={2.5} />
-                        </button>
-
-                        <button
-                          onClick={() => { selectTask(task.id); playClick(); }}
-                          className="min-w-0 text-left"
-                          title={task.title}
-                        >
-                          <div className="truncate font-grotesk text-sm font-black">{task.title}</div>
-                          <div className="mt-1 text-[9px] uppercase tracking-widest opacity-60">{task.sprint ?? 'Sprint'} / {statusMeta.label}</div>
-                        </button>
-
-                        <button
-                          onClick={() => { advanceTaskStatus(task.id); playClick(); }}
-                          className={`inline-flex h-8 items-center gap-1.5 border px-2 text-[9px] font-black uppercase tracking-[0.22em] transition-colors ${isExpanded && isSelected ? statusMeta.chipOnLight : statusMeta.chip}`}
-                          aria-label={`Advance ${task.title} status to ${getStatusMeta(getNextTaskStatus(task.status)).label}`}
-                          title={`Advance to ${getStatusMeta(getNextTaskStatus(task.status)).label}`}
-                        >
-                          {(() => {
-                            const StatusIcon = getStatusIcon(task.status);
-                            return <StatusIcon className="h-3.5 w-3.5 shrink-0" strokeWidth={3} />;
-                          })()}
-                          <span>{statusMeta.label}</span>
-                        </button>
-
-                        <button
-                          onClick={() => { toggleTaskExpanded(task.id); playClick(); }}
-                          className={`grid h-8 w-8 place-items-center border-2 transition-colors ${isSelected ? 'border-black/20 hover:bg-black hover:text-white' : 'border-white/10 hover:border-white/40'}`}
-                          aria-label={isExpanded ? `Collapse ${task.title}` : `Expand ${task.title}`}
-                          title={isExpanded ? 'Collapse details' : 'Expand details'}
-                        >
-                          {isExpanded ? <ChevronUp className="h-4 w-4" strokeWidth={3} /> : <ChevronDown className="h-4 w-4" strokeWidth={3} />}
-                        </button>
-
-                        <button
-                          onClick={() => { requestDeleteTask(task); playClick(); }}
-                          className={`grid h-8 w-8 place-items-center border-2 transition-colors ${isSelected ? 'border-black/20 hover:bg-black hover:text-white' : 'border-white/10 hover:border-accent-red hover:text-accent-red'}`}
-                          aria-label={`Delete ${task.title}`}
-                          title="Delete task"
-                        >
-                          <Trash2 className="h-4 w-4" strokeWidth={3} />
-                        </button>
-                      </div>
-
-                      {isExpanded && (
-                        <div className={`mt-3 border-t pt-3 ${isSelected ? 'border-black/15 text-black' : 'border-white/10 text-white'}`}>
-                          <div className="mb-3 flex items-center justify-between gap-2">
-                            <span className="text-[9px] font-bold uppercase tracking-[0.22em] opacity-55">Status</span>
-                            <span className="text-[9px] font-bold uppercase tracking-widest opacity-45">
-                              {completedSubtasks}/{totalSubtasks}
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-3 gap-2">
-                            {(['todo', 'doing', 'done'] as const).map(status => {
-                              const active = task.status === status;
-                              const statusButtonMeta = getStatusMeta(status);
-                              const StatusIcon = getStatusIcon(status);
-                              const label = status === 'todo' ? 'Todo' : status === 'doing' ? 'Doing' : 'Done';
-                              const buttonClasses = active
-                                ? statusButtonMeta.activeButton
-                                : isSelected
-                                  ? statusButtonMeta.inactiveSelectedButton
-                                  : statusButtonMeta.inactiveButton;
-
-                              return (
-                                <button
-                                  key={status}
-                                  onClick={() => { setTaskStatus(task.id, status); playClick(); }}
-                                  className={`flex items-center gap-2 border-2 px-3 py-2 text-left transition-colors ${buttonClasses}`}
-                                >
-                                  <StatusIcon className="h-3.5 w-3.5 shrink-0" strokeWidth={3} />
-                                  <div className="min-w-0">
-                                    <div className="text-[9px] font-black uppercase tracking-[0.24em]">{label}</div>
-                                    <div className="mt-0.5 text-[10px] uppercase tracking-wide opacity-70">
-                                      {status === 'todo' ? 'Not started' : status === 'doing' ? 'In progress' : 'Finished'}
-                                    </div>
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
-
-                          <div className="mt-3 border-t border-black/10 pt-3">
-                            <div className="mb-2 flex items-center justify-between gap-2">
-                              <span className="text-[9px] font-bold uppercase tracking-[0.22em] opacity-55">Subtasks</span>
-                              <span className="text-[9px] font-bold uppercase tracking-widest opacity-45">
-                                {completedSubtasks}/{totalSubtasks}
-                              </span>
-                            </div>
-                            <div className="mb-2 grid grid-cols-[1fr_auto] gap-2">
-                              <input
-                                value={newSubtaskTitle}
-                                onChange={(event) => setNewSubtaskTitle(event.target.value)}
-                                onKeyDown={(event) => {
-                                  if (event.key === 'Enter') {
-                                    event.preventDefault();
-                                    addSubtask();
-                                  }
-                                }}
-                                className="min-w-0 border border-black/20 bg-black/5 px-2.5 py-2 font-mono text-[11px] text-black outline-none transition-colors placeholder:text-black/35 focus:border-black"
-                                placeholder="Add subtask..."
-                              />
-                              <button
-                                onClick={() => { addSubtask(); playClick(); }}
-                                className="grid h-9 w-9 place-items-center border-2 border-black bg-black text-paper-cream"
-                                aria-label="Add subtask"
-                              >
-                                <Plus className="h-3.5 w-3.5" strokeWidth={3} />
-                              </button>
-                            </div>
-                            <div className="max-h-32 space-y-1 overflow-y-auto pr-1 custom-scrollbar">
-                              {(task.subtasks ?? []).map(subtask => (
-                                <div key={subtask.id} className="grid grid-cols-[auto_1fr_auto] items-center gap-2 border border-black/10 bg-black/[0.04] px-2 py-1.5">
-                                  <button onClick={() => { toggleSubtask(task, subtask.id); playClick(); }} aria-label={`Toggle ${subtask.title}`}>
-                                    {subtask.done ? <CheckCircle2 className="h-3.5 w-3.5 text-accent-green" strokeWidth={3} /> : <Circle className="h-3.5 w-3.5 text-black/45" strokeWidth={3} />}
-                                  </button>
-                                  <span className={`truncate text-xs ${subtask.done ? 'text-black/35 line-through' : 'text-black/75'}`}>{subtask.title}</span>
-                                  <button onClick={() => { removeSubtask(task, subtask.id); playClick(); }} className="text-black/35 hover:text-accent-red" aria-label={`Delete ${subtask.title}`}>
-                                    <X className="h-3.5 w-3.5" strokeWidth={3} />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                );
-              })}
+              {taskStatusFilter === 'done' && doneTasks.map(task => renderTaskRow(task))}
             </div>
           </motion.aside>
         )}
@@ -1518,3 +1696,6 @@ function App() {
 }
 
 export default App;
+
+
+

@@ -1,1 +1,1 @@
-export { InsightsModal as AnalyticsModal, InsightsModal, HistoryModal } from './AppPanels';
+export { InsightsModal, InsightsModal as AnalyticsModal } from './AppPanels';

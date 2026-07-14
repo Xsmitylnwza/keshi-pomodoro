@@ -3,7 +3,6 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   Activity,
   Apple,
-  ArrowRight,
   BadgeCheck,
   BarChart3,
   BookOpen,
@@ -25,6 +24,7 @@ import {
   RotateCcw,
   Settings2,
   Target,
+  TrendingUp,
   UserCircle,
   X,
 } from 'lucide-react';
@@ -41,12 +41,24 @@ import {
   fetchDisciplineTrend,
   saveDisciplineScores,
 } from '../lib/disciplineApi';
+import {
+  buildDisciplineDashboardModel,
+  buildHabitTrendSummaries,
+  getRecoveryRiskSummary,
+  type HabitTrendSummary,
+  type RecoveryRiskLevel,
+} from '../lib/disciplineDashboardModel';
 import type { CentralAuthUser } from '../lib/centralAuth';
 
 const SCORE_MAX = 10;
 const DAY_SCORE_MAX = DISCIPLINE_SCORE_BLOCKS.length * SCORE_MAX;
 const HEATMAP_DAYS = 30;
-const CONSISTENCY_DAYS = 7;
+const CONSISTENCY_RANGE_OPTIONS = [
+  { days: 7 as const, label: '7 days', shortLabel: '7D' },
+  { days: 30 as const, label: '30 days', shortLabel: '30D' },
+] as const;
+type ConsistencyRangeDays = (typeof CONSISTENCY_RANGE_OPTIONS)[number]['days'];
+const DEFAULT_CONSISTENCY_DAYS: ConsistencyRangeDays = 7;
 
 type ScoreDraft = Record<DisciplineScoreKey, number>;
 
@@ -204,8 +216,7 @@ const scorePercent = (review: DisciplineReviewPayload | null) => {
 interface DisciplineDashboardProps {
   onNavigateHome: () => void;
   onOpenSettings: () => void;
-  onOpenHistory: () => void;
-  onOpenAnalytics: () => void;
+  onOpenInsights: () => void;
   onLogout: () => void;
   user: CentralAuthUser | null;
   focusSessionMinutes: number;
@@ -214,11 +225,10 @@ interface DisciplineDashboardProps {
 export function DisciplineDashboard({
   onNavigateHome,
   onOpenSettings,
-  onOpenHistory,
-  onOpenAnalytics,
+  onOpenInsights,
   onLogout,
   user,
-  focusSessionMinutes,
+  focusSessionMinutes: _focusSessionMinutes,
 }: DisciplineDashboardProps) {
   const [todayDate, setTodayDate] = useState(() => toDateKey(new Date()));
   const [dataThroughDate, setDataThroughDate] = useState(() => latestCompletedDateKey(new Date()));
@@ -226,6 +236,7 @@ export function DisciplineDashboard({
   const [todayReview, setTodayReview] = useState<DisciplineReviewPayload | null>(null);
   const [selectedReview, setSelectedReview] = useState<DisciplineReviewPayload | null>(null);
   const [trend, setTrend] = useState<DisciplineTrendPoint[]>([]);
+  const [consistencyDays, setConsistencyDays] = useState<ConsistencyRangeDays>(DEFAULT_CONSISTENCY_DAYS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [scoreDraft, setScoreDraft] = useState<ScoreDraft>(createEmptyScores());
@@ -296,85 +307,70 @@ export function DisciplineDashboard({
   const todayScore = scorePercent(todayReview);
   const currentStreak = todayReview?.streak.current ?? todayReview?.streak.current_streak ?? selectedReview?.streak.current ?? 0;
 
-  const nextTask = useMemo(() => {
-    const tasks = [...(todayReview?.tasks ?? [])].sort((a, b) => (b.order ?? 0) - (a.order ?? 0));
-    return tasks.find(task => task.status === 'doing') ?? tasks.find(task => task.status !== 'done') ?? null;
-  }, [todayReview]);
-
-  const dailyDirection = useMemo(() => {
-    if (!todayReview) {
-      return {
-        shouldFocus: false,
-        label: 'CHECKING TODAY',
-        headline: 'Reading your current signal.',
-        doCopy: 'Hold the next action until today is loaded.',
-        stopCopy: 'Do not guess from an empty dashboard.',
-        actionLabel: 'Back to Pomodoro',
-      };
-    }
-
-    if (todaySummary.pomodoroCount === 0) {
-      return {
-        shouldFocus: true,
-        label: 'MORE FOCUS TODAY / YES',
-        headline: 'Start the first focused block.',
-        doCopy: nextTask
-          ? `Run one ${focusSessionMinutes}-minute session on "${nextTask.title}".`
-          : `Choose one outcome, then run one ${focusSessionMinutes}-minute session.`,
-        stopCopy: 'Do not reorganize the whole list before the first block.',
-        actionLabel: `Start ${focusSessionMinutes} min focus`,
-      };
-    }
-
-    if (nextTask) {
-      return {
-        shouldFocus: true,
-        label: 'MORE FOCUS TODAY / YES',
-        headline: nextTask.status === 'doing' ? 'Finish what is already in motion.' : 'One useful block is still available.',
-        doCopy: `Use the next ${focusSessionMinutes} minutes for "${nextTask.title}".`,
-        stopCopy: 'Stop after the block if the next outcome is not obvious.',
-        actionLabel: 'Continue focused work',
-      };
-    }
-
-    if (todaySummary.taskCount > 0) {
-      return {
-        shouldFocus: false,
-        label: 'MORE FOCUS TODAY / NO',
-        headline: 'Your planned work is complete.',
-        doCopy: 'Close the loop and leave tomorrow easy to start.',
-        stopCopy: 'Do not add work just to make today look fuller.',
-        actionLabel: 'Return to Pomodoro',
-      };
-    }
-
+  const consistencyTrend = useMemo(() => trend.slice(-consistencyDays), [trend, consistencyDays]);
+  const patternModel = useMemo(
+    () =>
+      buildDisciplineDashboardModel(trend, {
+        dataThroughDate,
+        momentumDays: consistencyDays,
+        heatmapDays: consistencyDays,
+        habitTrendDays: consistencyDays,
+      }),
+    [trend, dataThroughDate, consistencyDays],
+  );
+  const recoveryRisk = useMemo(
+    () =>
+      getRecoveryRiskSummary(trend, {
+        days: consistencyDays,
+        endDate: dataThroughDate,
+      }),
+    [trend, consistencyDays, dataThroughDate],
+  );
+  const habitTrends = useMemo(
+    () =>
+      buildHabitTrendSummaries(trend, {
+        days: consistencyDays,
+        endDate: dataThroughDate,
+      }),
+    [trend, consistencyDays, dataThroughDate],
+  );
+  const readiness = useMemo(() => getReadinessPresentation(recoveryRisk.level, recoveryRisk), [recoveryRisk]);
+  const shownUpDays = patternModel.momentum.shownUpDays;
+  const consistencyScore = Math.round(patternModel.momentum.consistencyPercent);
+  const hasTrendHistory = patternModel.momentum.days.some(day => day.shownUp);
+  const consistencyRangeLabel = consistencyDays === 30 ? '30-day' : '7-day';
+  const consistencyWindowLabel = consistencyTrend.length
+    ? `${formatShortDate(consistencyTrend[0].date)} - ${formatShortDate(consistencyTrend[consistencyTrend.length - 1].date)}`
+    : 'Waiting for recorded days';
+  const patternBrief = useMemo(() => {
+    const insights = patternModel.insights;
     return {
-      shouldFocus: false,
-      label: 'MORE FOCUS TODAY / NOT YET',
-      headline: 'Focused work is logged. The next outcome is unclear.',
-      doCopy: 'Only start another block when you can name the result.',
-      stopCopy: 'Do not begin a vague session for the sake of the streak.',
-      actionLabel: 'Return to Pomodoro',
+      headline: neutralizeGuidance(insights.headline),
+      observations: insights.insights.map(line => neutralizeGuidance(line)).filter(Boolean),
+      signal: neutralizeGuidance(insights.tomorrowFocus),
     };
-  }, [focusSessionMinutes, nextTask, todayReview, todaySummary.pomodoroCount, todaySummary.taskCount]);
-
-  const recentTrend = useMemo(() => trend.slice(-CONSISTENCY_DAYS), [trend]);
-  const shownUpDays = recentTrend.filter(day => Number(day.total ?? 0) > 0 || Number(day.activity?.focusMinutes ?? 0) > 0).length;
-  const consistencyScore = recentTrend.length ? Math.round((shownUpDays / recentTrend.length) * 100) : 0;
-  const hasTrendHistory = trend.some(day => Number(day.total ?? 0) > 0 || Number(day.activity?.focusMinutes ?? 0) > 0);
-
-  const habitSignals = useMemo(() => {
-    if (!hasTrendHistory || recentTrend.length === 0) return { strongest: null, weakest: null };
-    const averages = DISCIPLINE_SCORE_BLOCKS.map(block => ({
-      key: block.key,
-      label: block.label,
-      average: recentTrend.reduce((sum, day) => sum + Number(day.scores?.[block.key] ?? 0), 0) / recentTrend.length,
-    }));
-    return {
-      strongest: [...averages].sort((a, b) => b.average - a.average)[0] ?? null,
-      weakest: [...averages].sort((a, b) => a.average - b.average)[0] ?? null,
-    };
-  }, [hasTrendHistory, recentTrend]);
+  }, [patternModel.insights]);
+  const strongestHabit = patternModel.momentum.bestHabit;
+  const softestHabit = patternModel.momentum.weakestHabit;
+  const risingHabits = useMemo(
+    () => habitTrends.filter(habit => habit.direction === 'up').sort((a, b) => b.delta - a.delta).slice(0, 2),
+    [habitTrends],
+  );
+  const fallingHabits = useMemo(
+    () => habitTrends.filter(habit => habit.direction === 'down').sort((a, b) => a.delta - b.delta).slice(0, 2),
+    [habitTrends],
+  );
+  const focusReality = useMemo(() => {
+    const focusMinutes = consistencyTrend.reduce((sum, day) => sum + Number(day.activity?.focusMinutes ?? 0), 0);
+    const sessions = consistencyTrend.reduce((sum, day) => sum + Number(day.activity?.completedSessions ?? 0), 0);
+    const focusedDays = consistencyTrend.filter(day => Number(day.activity?.focusMinutes ?? 0) > 0).length;
+    const scoredDays = consistencyTrend.filter(day => Number(day.total ?? 0) > 0).length;
+    const avgDeepWork =
+      consistencyTrend.length > 0
+        ? consistencyTrend.reduce((sum, day) => sum + Number(day.scores?.deep_work ?? 0), 0) / consistencyTrend.length
+        : 0;
+    return { focusMinutes, sessions, focusedDays, scoredDays, avgDeepWork };
+  }, [consistencyTrend]);
 
   const selectedScoreStats = useMemo(() => {
     const values = DISCIPLINE_SCORE_BLOCKS.map(block => Number(scoreDraft[block.key] ?? 0));
@@ -538,8 +534,7 @@ export function DisciplineDashboard({
             <AccountMenu
               user={user}
               onOpenSettings={onOpenSettings}
-              onOpenHistory={onOpenHistory}
-              onOpenAnalytics={onOpenAnalytics}
+              onOpenInsights={onOpenInsights}
               onLogout={onLogout}
             />
           </div>
@@ -586,11 +581,11 @@ export function DisciplineDashboard({
             <div>
               <div className="text-[11px] font-black uppercase tracking-[0.24em] text-accent-green">Today / {formatLongDate(todayDate)}</div>
               <h1 id="today-heading" className="mt-2 font-grotesk text-3xl font-black leading-none tracking-tight text-white sm:text-4xl">
-                Your discipline signal.
+                Pattern mirror.
               </h1>
             </div>
             <div className="border border-white/10 bg-white/[0.03] px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-white/45">
-              Scores based on recorded data only
+              Quiet signals from recorded data only
             </div>
           </div>
 
@@ -603,7 +598,7 @@ export function DisciplineDashboard({
                 <div className="relative grid gap-6 sm:grid-cols-[1fr_auto] sm:items-center">
                   <div className="min-w-0">
                     <div className="inline-flex items-center gap-2 bg-paper-cream px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-black">
-                      <Target className="h-3.5 w-3.5" strokeWidth={3} /> Current progress
+                      <Activity className="h-3.5 w-3.5" strokeWidth={3} /> Today metrics
                     </div>
                     <h2 className="mt-5 max-w-xl font-serif-custom text-2xl font-bold leading-tight text-white sm:text-3xl">
                       {todaySummary.pomodoroCount > 0
@@ -613,7 +608,7 @@ export function DisciplineDashboard({
                     <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/55">
                       {todaySummary.taskCount > 0
                         ? `${todaySummary.completedTasks} of ${todaySummary.taskCount} planned tasks are complete.`
-                        : 'There is no task plan for today, so the dashboard will not pretend there is a completion target.'}
+                        : 'There is no task plan for today, so the dashboard will not invent a completion target.'}
                     </p>
 
                     <div className="mt-6">
@@ -635,42 +630,67 @@ export function DisciplineDashboard({
               )}
             </article>
 
-            <article
-              className={`relative border-2 p-5 sm:p-6 ${
-                dailyDirection.shouldFocus
-                  ? 'border-accent-green/45 bg-accent-green/[0.07]'
-                  : 'border-white/15 bg-white/[0.035]'
-              }`}
-            >
-              <div className={`text-[10px] font-black uppercase tracking-[0.22em] ${dailyDirection.shouldFocus ? 'text-accent-green' : 'text-white/55'}`}>
-                {dailyDirection.label}
+                        <article className={`relative border-2 p-5 sm:p-6 ${readiness.cardClass}`}>
+              <div className={`text-[10px] font-black uppercase tracking-[0.22em] ${readiness.labelClass}`}>
+                Readiness signal
               </div>
-              <h2 className="mt-3 font-grotesk text-2xl font-black leading-tight text-white">{dailyDirection.headline}</h2>
+              <h2 className="mt-3 font-grotesk text-2xl font-black leading-tight text-white">{readiness.stateLabel}</h2>
+              <p className="mt-2 text-sm leading-relaxed text-white/60">{readiness.summary}</p>
 
-              <div className="mt-5 space-y-3">
-                <div className="border-l-2 border-accent-green bg-black/25 px-4 py-3">
-                  <div className="text-[10px] font-black uppercase tracking-[0.18em] text-accent-green">Do next</div>
-                  <p className="mt-1 text-sm leading-relaxed text-white/75">{dailyDirection.doCopy}</p>
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <div className="border border-white/10 bg-black/25 px-3 py-3">
+                  <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Deep work avg</div>
+                  <div className="mt-1 font-grotesk text-xl font-black text-white">{recoveryRisk.deepWorkAverage.toFixed(1)}</div>
                 </div>
-                <div className="border-l-2 border-accent-red bg-black/25 px-4 py-3">
-                  <div className="text-[10px] font-black uppercase tracking-[0.18em] text-accent-red">Stop / avoid</div>
-                  <p className="mt-1 text-sm leading-relaxed text-white/65">{dailyDirection.stopCopy}</p>
+                <div className="border border-white/10 bg-black/25 px-3 py-3">
+                  <div className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Recovery avg</div>
+                  <div className="mt-1 font-grotesk text-xl font-black text-white">{recoveryRisk.recoveryAverage.toFixed(1)}</div>
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={onNavigateHome}
-                className={`mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 border-2 border-black px-4 text-sm font-black uppercase tracking-[0.12em] text-black transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-cream active:translate-y-px ${
-                  dailyDirection.shouldFocus ? 'bg-accent-green' : 'bg-paper-cream'
-                }`}
-                style={{ boxShadow: '5px 5px 0 rgba(0,0,0,0.85)' }}
-              >
-                {dailyDirection.actionLabel}
-                <ArrowRight className="h-4 w-4" strokeWidth={3} />
-              </button>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {recoveryRisk.flags.length > 0 ? (
+                  recoveryRisk.flags.map(flag => (
+                    <span
+                      key={flag}
+                      className="border border-white/10 bg-black/30 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/55"
+                    >
+                      {formatRiskFlag(flag)}
+                    </span>
+                  ))
+                ) : (
+                  <span className="border border-white/10 bg-black/30 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/45">
+                    No load flags
+                  </span>
+                )}
+              </div>
             </article>
           </div>
+
+          <article className="mt-4 border-2 border-white/15 bg-white/[0.03] p-5 sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/45">Pattern brief</div>
+                <h2 className="mt-2 font-grotesk text-xl font-black text-white sm:text-2xl">{patternBrief.headline}</h2>
+              </div>
+              <div className="border border-white/10 bg-black/25 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">
+                Through {formatShortDate(patternModel.dataThroughDate)}
+              </div>
+            </div>
+            <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+              {patternBrief.observations.map((line, index) => (
+                <li key={`${index}-${line.slice(0, 24)}`} className="border-l-2 border-white/15 bg-black/20 px-3 py-2 text-sm leading-relaxed text-white/65">
+                  {line}
+                </li>
+              ))}
+            </ul>
+            {patternBrief.signal ? (
+              <p className="mt-4 border border-white/10 bg-black/25 px-4 py-3 text-sm leading-relaxed text-white/55">
+                <span className="mr-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Observed signal</span>
+                {patternBrief.signal}
+              </p>
+            ) : null}
+          </article>
 
           <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <MetricCard
@@ -686,31 +706,55 @@ export function DisciplineDashboard({
         </section>
 
         <section className="mt-10" aria-labelledby="consistency-heading">
-          <SectionHeading
-            icon={CalendarDays}
-            title="Learning consistency"
-            subtitle="Actual completed focus sessions, mapped across each day"
-            id="consistency-heading"
-          />
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <SectionHeading
+              icon={CalendarDays}
+              title="Learning consistency"
+              subtitle="Completed focus sessions and scored days across the selected window"
+              id="consistency-heading"
+            />
+            <div
+              className="inline-flex shrink-0 border-2 border-white/10 bg-black/30 p-1"
+              role="group"
+              aria-label="Learning consistency range"
+            >
+              {CONSISTENCY_RANGE_OPTIONS.map(option => {
+                const active = consistencyDays === option.days;
+                return (
+                  <button
+                    key={option.days}
+                    type="button"
+                    onClick={() => setConsistencyDays(option.days)}
+                    className={`min-h-10 min-w-[4.5rem] px-3 text-[11px] font-black uppercase tracking-[0.14em] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green active:translate-y-px ${
+                      active
+                        ? 'border border-white/20 bg-white text-black'
+                        : 'border border-transparent text-white/45 hover:bg-white/[0.05] hover:text-white'
+                    }`}
+                    aria-pressed={active}
+                  >
+                    {option.shortLabel}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
             <article className="border-2 border-white/15 bg-white/[0.03] p-4 sm:p-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-black text-white">Last 30 days / focus timeline</div>
-                  <div className="mt-1 text-xs text-white/45">
-                    {trend.length ? `${formatShortDate(trend[0].date)} - ${formatShortDate(trend[trend.length - 1].date)}` : 'Waiting for recorded days'}
-                  </div>
+                  <div className="text-sm font-black text-white">Last {consistencyDays} days / focus timeline</div>
+                  <div className="mt-1 text-xs text-white/45">{consistencyWindowLabel}</div>
                 </div>
                 <HeatmapLegend />
               </div>
 
               <div className="mt-6">
                 <ContributionHeatmap
-                  trend={trend}
+                  trend={consistencyTrend}
                   selectedDate={selectedDate}
                   onSelectDate={selectReviewDate}
-                  loading={loading && trend.length === 0}
+                  loading={loading && consistencyTrend.length === 0}
                 />
               </div>
 
@@ -722,38 +766,120 @@ export function DisciplineDashboard({
             </article>
 
             <article className="border-2 border-white/15 bg-white/[0.03] p-5 sm:p-6">
-              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/45">7-day consistency score</div>
+              <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/45">{consistencyRangeLabel} consistency score</div>
               <div className="mt-3 flex items-end gap-2">
                 <div className="font-grotesk text-5xl font-black leading-none text-white">{consistencyScore}</div>
                 <div className="pb-1 text-lg font-black text-accent-green">%</div>
               </div>
               <p className="mt-3 text-sm leading-relaxed text-white/55">
-                {shownUpDays} of {recentTrend.length || CONSISTENCY_DAYS} days have recorded focus activity or a discipline score.
+                {shownUpDays} of {consistencyTrend.length || consistencyDays} days have recorded focus activity or a discipline score.
               </p>
 
               <div className="mt-6 space-y-3 border-t border-white/10 pt-5">
                 <SignalRow
-                  label="Strongest signal"
-                  value={habitSignals.strongest ? `${habitSignals.strongest.label} / ${habitSignals.strongest.average.toFixed(1)}/10` : 'Waiting for scores'}
+                  label="Highest average"
+                  value={strongestHabit ? `${strongestHabit.label} / ${strongestHabit.average.toFixed(1)}/10` : 'Waiting for scores'}
                   tone="text-accent-green"
                 />
                 <SignalRow
-                  label="Needs consistency"
-                  value={habitSignals.weakest ? `${habitSignals.weakest.label} / ${habitSignals.weakest.average.toFixed(1)}/10` : 'Waiting for scores'}
+                  label="Lowest average"
+                  value={softestHabit ? `${softestHabit.label} / ${softestHabit.average.toFixed(1)}/10` : 'Waiting for scores'}
                   tone="text-amber-300"
+                />
+                <SignalRow
+                  label="Window average"
+                  value={hasTrendHistory ? `${patternModel.momentum.averageScore.toFixed(1)} / ${DAY_SCORE_MAX}` : 'Waiting for scores'}
+                  tone="text-white/70"
                 />
               </div>
 
               <div className="mt-5 border-l-2 border-white/25 bg-black/25 px-4 py-3 text-sm leading-relaxed text-white/65">
                 {hasTrendHistory
-                  ? consistencyScore >= 80
-                    ? 'Your review rhythm is stable. Protect it with an easy-to-start next session.'
-                    : consistencyScore >= 50
-                      ? 'The pattern is forming. Closing one more daily review matters more than chasing a perfect score.'
-                      : 'The highest-value improvement is showing up consistently, not increasing the score on one day.'
-                  : 'Complete a daily score review to establish the first honest consistency signal.'}
+                  ? `${shownUpDays} scored or active days in this ${consistencyDays}-day window. Consistency sits at ${consistencyScore}%.`
+                  : 'No scored days are available in this window yet.'}
               </div>
             </article>
+          </div>
+        </section>
+
+        <section className="mt-10" aria-labelledby="habit-momentum-heading">
+          <SectionHeading
+            icon={TrendingUp}
+            title="Habit momentum"
+            subtitle={`Direction of scored habits over the last ${consistencyDays} days`}
+            id="habit-momentum-heading"
+          />
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {habitTrends.length > 0 ? (
+              habitTrends.map(habit => <HabitMomentumCard key={habit.key} habit={habit} />)
+            ) : (
+              <div className="border border-dashed border-white/15 bg-black/20 p-4 text-sm text-white/45 md:col-span-2 xl:col-span-3">
+                Habit direction will appear after completed-day scores exist in this window.
+              </div>
+            )}
+          </div>
+          {(risingHabits.length > 0 || fallingHabits.length > 0) && (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="border border-white/10 bg-white/[0.025] p-4">
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-accent-green">Rising</div>
+                <div className="mt-2 space-y-1 text-sm text-white/70">
+                  {risingHabits.length > 0
+                    ? risingHabits.map(habit => (
+                        <div key={habit.key}>
+                          {habit.label} · +{habit.delta.toFixed(1)}
+                        </div>
+                      ))
+                    : 'No rising habit in this window.'}
+                </div>
+              </div>
+              <div className="border border-white/10 bg-white/[0.025] p-4">
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-amber-300">Softening</div>
+                <div className="mt-2 space-y-1 text-sm text-white/70">
+                  {fallingHabits.length > 0
+                    ? fallingHabits.map(habit => (
+                        <div key={habit.key}>
+                          {habit.label} · {habit.delta.toFixed(1)}
+                        </div>
+                      ))
+                    : 'No softening habit in this window.'}
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="mt-10" aria-labelledby="focus-reality-heading">
+          <SectionHeading
+            icon={Clock3}
+            title="Focus reality"
+            subtitle={`Actual focus volume across the last ${consistencyDays} days`}
+            id="focus-reality-heading"
+          />
+          <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <MetricCard
+              icon={Clock3}
+              label="Focus minutes"
+              value={`${focusReality.focusMinutes}`}
+              detail={`${consistencyRangeLabel} completed focus time`}
+            />
+            <MetricCard
+              icon={CheckCircle2}
+              label="Sessions"
+              value={`${focusReality.sessions}`}
+              detail="Completed Pomodoro sessions"
+            />
+            <MetricCard
+              icon={CalendarDays}
+              label="Active focus days"
+              value={`${focusReality.focusedDays}/${consistencyTrend.length || consistencyDays}`}
+              detail="Days with any completed focus minutes"
+            />
+            <MetricCard
+              icon={BarChart3}
+              label="Deep work avg"
+              value={focusReality.avgDeepWork.toFixed(1)}
+              detail={`${focusReality.scoredDays} scored days in window`}
+            />
           </div>
         </section>
 
@@ -764,8 +890,8 @@ export function DisciplineDashboard({
                 <HistoryIcon className="h-4 w-4" strokeWidth={2.5} />
               </div>
               <div className="min-w-0">
-                <h2 className="font-grotesk text-lg font-black text-white">Completed-day review & logs</h2>
-                <p className="truncate text-sm text-white/45">Open only when you need history, score editing, reading, or exercise logs.</p>
+                <h2 className="font-grotesk text-lg font-black text-white">Evidence & logs</h2>
+                <p className="truncate text-sm text-white/45">Collapsed source data: scores, tasks, focus, reading, and exercise.</p>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-3">
@@ -1083,16 +1209,14 @@ export function AccountMenu({
   user,
   onOpenDiscipline,
   onOpenSettings,
-  onOpenHistory,
-  onOpenAnalytics,
+  onOpenInsights,
   onLogout,
   compactOnMobile = false,
 }: {
   user: CentralAuthUser | null;
   onOpenDiscipline?: () => void;
   onOpenSettings: () => void;
-  onOpenHistory: () => void;
-  onOpenAnalytics: () => void;
+  onOpenInsights: () => void;
   onLogout: () => void;
   compactOnMobile?: boolean;
 }) {
@@ -1214,8 +1338,7 @@ export function AccountMenu({
                 <AccountMenuItem icon={Activity} label="Discipline dashboard" onClick={() => runAction(onOpenDiscipline)} />
               )}
               <AccountMenuItem icon={Settings2} label="Settings" onClick={() => runAction(onOpenSettings)} />
-              <AccountMenuItem icon={BarChart3} label="Insights" onClick={() => runAction(onOpenAnalytics)} />
-              <AccountMenuItem icon={HistoryIcon} label="History" onClick={() => runAction(onOpenHistory)} />
+              <AccountMenuItem icon={BarChart3} label="Insights" onClick={() => runAction(onOpenInsights)} />
             </div>
 
             <div className="border-t border-white/10 pt-2">
@@ -1253,6 +1376,121 @@ function AccountMenuItem({
       <Icon className="h-4 w-4" strokeWidth={2.5} />
       {label}
     </button>
+  );
+}
+
+function getReadinessPresentation(
+  level: RecoveryRiskLevel,
+  risk: { deepWorkAverage: number; recoveryAverage: number; flags: string[] },
+) {
+  if (level === 'high') {
+    return {
+      stateLabel: 'Overloaded',
+      summary: 'Deep work is running ahead of recovery signals in this window.',
+      cardClass: 'border-accent-red/45 bg-accent-red/[0.07]',
+      labelClass: 'text-accent-red',
+    };
+  }
+  if (level === 'moderate') {
+    return {
+      stateLabel: 'Strained',
+      summary: 'Output is present, but recovery capacity looks thinner than usual.',
+      cardClass: 'border-amber-300/40 bg-amber-300/[0.06]',
+      labelClass: 'text-amber-300',
+    };
+  }
+  return {
+    stateLabel: 'Balanced',
+    summary:
+      risk.flags.length > 0
+        ? 'Workload and recovery are not fully aligned, but no overload pattern is active yet.'
+        : 'Deep work and recovery sit in a relatively even range right now.',
+    cardClass: 'border-accent-green/40 bg-accent-green/[0.06]',
+    labelClass: 'text-accent-green',
+  };
+}
+
+function neutralizeGuidance(text: string) {
+  if (!text) return '';
+  let next = text.trim();
+  const replacements: Array<[RegExp, string]> = [
+    [/^Protect recovery before increasing workload\.?$/i, 'Recovery signals are lagging behind deep-work load.'],
+    [/^Repeat the basics and keep tomorrow easy to start\.?$/i, 'Recent rhythm favors simple continuity over intensity spikes.'],
+    [/^Aim for a simple full-day show-up before chasing intensity\.?$/i, 'The recent window shows uneven day-to-day presence.'],
+    [/^Let the next completed-day review establish the baseline\.?$/i, 'Baseline patterns will appear after the next completed-day scores.'],
+    [/^Give (.+) a small non-zero win tomorrow\.?$/i, '$1 currently sits at a zero average in this window.'],
+    [/^Tighten (.+) while keeping the current rhythm\.?$/i, '$1 is the softest habit while overall rhythm is still present.'],
+    [/^Deep work is outrunning recovery\. Reinforce (.+) before adding workload\.?$/i, 'Deep work is outrunning recovery. Soft spots: $1.'],
+    [/^Output is solid, but (.+) need more protection\.?$/i, 'Output is solid, while $1 remain softer.'],
+    [/^Recovery is soft in (.+), but workload is not pressuring it yet\.?$/i, 'Recovery is soft in $1, without clear workload pressure yet.'],
+  ];
+  for (const [pattern, value] of replacements) {
+    if (pattern.test(next)) {
+      next = next.replace(pattern, value);
+      break;
+    }
+  }
+  next = next
+    .replace(/\bProtect\b/gi, 'Note')
+    .replace(/\bAim for\b/gi, 'Shows')
+    .replace(/\bTighten\b/gi, 'Soft spot in')
+    .replace(/\bGive\b/gi, 'Shows')
+    .replace(/\btomorrow\b/gi, 'next window')
+    .replace(/\bbefore increasing workload\b/gi, 'relative to deep-work load')
+    .replace(/\bbefore adding workload\b/gi, 'relative to deep-work load')
+    .replace(/\bneed more protection\b/gi, 'are softer')
+    .replace(/\bReinforce\b/gi, 'Soft spots:');
+  return next.replace(/\s+/g, ' ').trim();
+}
+
+function formatRiskFlag(flag: string) {
+  switch (flag) {
+    case 'low_sleep':
+      return 'Soft sleep';
+    case 'low_exercise':
+      return 'Soft exercise';
+    case 'low_nutrition':
+      return 'Soft nutrition';
+    case 'high_deep_work':
+      return 'High deep work';
+    default:
+      return flag.replace(/_/g, ' ');
+  }
+}
+
+function HabitMomentumCard({ habit }: { habit: HabitTrendSummary }) {
+  const directionLabel = habit.direction === 'up' ? 'Rising' : habit.direction === 'down' ? 'Softening' : 'Stable';
+  const directionTone =
+    habit.direction === 'up' ? 'text-accent-green' : habit.direction === 'down' ? 'text-amber-300' : 'text-white/55';
+  const deltaLabel =
+    habit.delta === 0 ? '0.0' : habit.delta > 0 ? `+${habit.delta.toFixed(1)}` : habit.delta.toFixed(1);
+  const maxSpark = Math.max(...habit.sparkline, 1);
+
+  return (
+    <article className="border border-white/10 bg-white/[0.025] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-black text-white">{habit.label}</div>
+          <div className={`mt-1 text-[10px] font-black uppercase tracking-[0.16em] ${directionTone}`}>{directionLabel}</div>
+        </div>
+        <div className="text-right">
+          <div className="font-grotesk text-xl font-black text-white">{habit.average.toFixed(1)}</div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">{deltaLabel} vs earlier</div>
+        </div>
+      </div>
+      <div className="mt-4 flex h-8 items-end gap-1" aria-hidden="true">
+        {habit.sparkline.map((value, index) => (
+          <span
+            key={`${habit.key}-${index}`}
+            className="min-w-0 flex-1 bg-white/25"
+            style={{ height: `${Math.max(8, (value / maxSpark) * 100)}%` }}
+          />
+        ))}
+      </div>
+      <div className="mt-3 text-xs text-white/45">
+        {habit.activeDays} active day{habit.activeDays === 1 ? '' : 's'} · recent {habit.recentAverage.toFixed(1)} / baseline {habit.baselineAverage.toFixed(1)}
+      </div>
+    </article>
   );
 }
 
@@ -1304,10 +1542,14 @@ function ContributionHeatmap({
   loading: boolean;
 }) {
   if (loading) {
+    const skeletonRows = Math.max(trend.length, 7);
     return (
-      <div className="flex gap-1.5" aria-label="Loading contribution history">
-        {Array.from({ length: 30 }, (_, index) => (
-          <span key={index} className="h-4 w-4 animate-pulse bg-white/10 sm:h-5 sm:w-5" />
+      <div className="space-y-1" aria-label="Loading contribution history">
+        {Array.from({ length: skeletonRows }, (_, index) => (
+          <div key={index} className="grid grid-cols-[4.5rem_1fr] items-center gap-2">
+            <span className="h-3 w-12 animate-pulse bg-white/10" />
+            <span className="h-3 animate-pulse bg-white/10" />
+          </div>
         ))}
       </div>
     );
@@ -1623,3 +1865,5 @@ function EmptyState({
 
   return <div className="flex flex-col items-center justify-center border border-dashed border-white/10 bg-black/20 px-5 py-8 text-center">{content}</div>;
 }
+
+

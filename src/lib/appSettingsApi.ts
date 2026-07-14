@@ -89,8 +89,4 @@ export async function appendAppHistory(item: HistoryItem) {
   });
 }
 
-export async function clearAppHistory() {
-  return appRequest<{ ok: true }>('/history', {
-    method: 'DELETE',
-  });
-}
+

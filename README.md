@@ -129,11 +129,15 @@ cd pomodoro-keshi
 # Install dependencies
 npm install
 
-# Start API server in one terminal
-npm run api
+# Seed local mock data (tasks, history, discipline scores)
+npm run seed:local
 
-# Start development server in another terminal
-npm run dev
+# Start API + frontend together (local mock auth is on in Vite DEV)
+npm run dev:all
+
+# Or run them separately:
+# npm run api
+# npm run dev
 
 # Build for production
 npm run build
@@ -189,3 +193,5 @@ MIT © 2024
 <p align="center">
   <em>"I only show you the best of me."</em>
 </p>
+
+

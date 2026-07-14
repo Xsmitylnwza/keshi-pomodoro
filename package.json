@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "api": "node server/pomodoro-server.mjs",
+    "dev:all": "node scripts/dev-all.mjs",
+    "seed:local": "node scripts/seed-local.mjs",
+    "seed:local:force": "node scripts/seed-local.mjs --force",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "node --test tests/*.test.mjs",
