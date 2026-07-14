@@ -985,9 +985,14 @@ function App() {
           <button
             onClick={() => { activateTaskTitle(task.id); playClick(); }}
             className="min-w-0 text-left"
-            title={isExpanded ? 'Click to collapse details' : 'Click to select and open details'}
+            title={task.title}
+            aria-label={
+              isExpanded
+                ? `Collapse details for ${task.title}`
+                : `Select and open details for ${task.title}`
+            }
           >
-            <div className="truncate font-grotesk text-sm font-black">{task.title}</div>
+            <div className="truncate font-grotesk text-sm font-black" title={task.title}>{task.title}</div>
             <div className="mt-1 text-[9px] uppercase tracking-widest opacity-60">{task.sprint ?? 'Sprint'} / {statusMeta.label}</div>
           </button>
 
@@ -1293,7 +1298,10 @@ function App() {
                   <ListTodo className="h-4 w-4 shrink-0" strokeWidth={3} />
                   <span className="text-[10px] font-bold uppercase tracking-[0.25em]">Sprint task</span>
                 </div>
-                <div className="mt-2 truncate font-grotesk text-lg font-black leading-none">
+                <div
+                  className="mt-2 truncate font-grotesk text-lg font-black leading-none"
+                  title={selectedTask?.title ?? 'No task selected'}
+                >
                   {selectedTask?.title ?? 'No task selected'}
                 </div>
               </div>
