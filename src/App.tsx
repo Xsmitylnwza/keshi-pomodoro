@@ -915,6 +915,8 @@ function App() {
     const isSelected = task.id === selectedTaskId;
     const isExpanded = task.id === expandedTaskId;
     const statusMeta = getStatusMeta(task.status);
+    // Light chrome only while expanded+selected. Collapsed selected rows stay on dark surface.
+    const useLightChrome = isExpanded && isSelected;
     const completedSubtasks = (task.subtasks ?? []).filter(subtask => subtask.done).length;
     const totalSubtasks = (task.subtasks ?? []).length;
     const dayIndex = dayTaskIndexById.get(task.id) ?? 0;
@@ -975,7 +977,7 @@ function App() {
               setDraggedTaskId(null);
               setDropTarget(null);
             }}
-            className={`grid h-8 w-8 cursor-grab place-items-center border-2 active:cursor-grabbing ${isSelected ? 'border-black/20 bg-black/5 text-black/70' : 'border-white/20 bg-black/30 text-white/70 hover:border-white/45 hover:text-white'}`}
+            className={`grid h-8 w-8 cursor-grab place-items-center border-2 active:cursor-grabbing ${useLightChrome ? 'border-black/20 bg-black/5 text-black/70' : 'border-white/20 bg-black/30 text-white/70 hover:border-white/45 hover:text-white'}`}
             aria-label={`Drag ${task.title}`}
             title="Drag handle to reorder"
           >
@@ -998,7 +1000,7 @@ function App() {
 
           <button
             onClick={() => { advanceTaskStatus(task.id); playClick(); }}
-            className={`inline-flex h-8 items-center gap-1.5 border px-2 text-[9px] font-black uppercase tracking-[0.22em] transition-colors ${isExpanded && isSelected ? statusMeta.chipOnLight : statusMeta.chip}`}
+            className={`inline-flex h-8 items-center gap-1.5 border px-2 text-[9px] font-black uppercase tracking-[0.22em] transition-colors ${useLightChrome ? statusMeta.chipOnLight : statusMeta.chip}`}
             aria-label={`Advance ${task.title} status to ${getStatusMeta(getNextTaskStatus(task.status)).label}`}
             title={`Advance to ${getStatusMeta(getNextTaskStatus(task.status)).label}`}
           >
@@ -1011,7 +1013,7 @@ function App() {
 
           <button
             onClick={() => { toggleTaskExpanded(task.id); playClick(); }}
-            className={`grid h-8 w-8 place-items-center border-2 transition-colors ${isSelected ? 'border-black/20 hover:bg-black hover:text-white' : 'border-white/10 hover:border-white/40'}`}
+            className={`grid h-8 w-8 place-items-center border-2 transition-colors ${useLightChrome ? 'border-black/20 hover:bg-black hover:text-white' : 'border-white/10 hover:border-white/40'}`}
             aria-label={isExpanded ? `Collapse ${task.title}` : `Expand ${task.title}`}
             title={isExpanded ? 'Collapse details' : 'Expand details'}
           >
@@ -1020,7 +1022,7 @@ function App() {
 
           <button
             onClick={() => { requestDeleteTask(task); playClick(); }}
-            className={`grid h-8 w-8 place-items-center border-2 transition-colors ${isSelected ? 'border-black/20 hover:bg-black hover:text-white' : 'border-white/10 hover:border-accent-red hover:text-accent-red'}`}
+            className={`grid h-8 w-8 place-items-center border-2 transition-colors ${useLightChrome ? 'border-black/20 hover:bg-black hover:text-white' : 'border-white/10 hover:border-accent-red hover:text-accent-red'}`}
             aria-label={`Delete ${task.title}`}
             title="Delete task"
           >
@@ -1029,14 +1031,14 @@ function App() {
         </div>
 
         {isExpanded && (
-          <div className={`mt-3 border-t pt-3 ${isSelected ? 'border-black/15 text-black' : 'border-white/10 text-white'}`}>
+          <div className={`mt-3 border-t pt-3 ${useLightChrome ? 'border-black/15 text-black' : 'border-white/10 text-white'}`}>
             <div className="mb-3 flex items-center justify-between gap-2">
               <span className="text-[9px] font-bold uppercase tracking-[0.22em] opacity-55">Reorder</span>
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => { moveTaskInDay(task.id, 'up'); playClick(); }}
                   disabled={!canMoveUp}
-                  className={`inline-flex h-8 items-center gap-1 border-2 px-2 text-[9px] font-black uppercase tracking-[0.18em] transition-colors ${isSelected ? 'border-black/20 hover:bg-black hover:text-white disabled:opacity-30' : 'border-white/15 hover:border-white/40 disabled:opacity-30'}`}
+                  className={`inline-flex h-8 items-center gap-1 border-2 px-2 text-[9px] font-black uppercase tracking-[0.18em] transition-colors ${useLightChrome ? 'border-black/20 hover:bg-black hover:text-white disabled:opacity-30' : 'border-white/15 hover:border-white/40 disabled:opacity-30'}`}
                   aria-label={`Move ${task.title} up`}
                   title="Move up"
                 >
@@ -1046,7 +1048,7 @@ function App() {
                 <button
                   onClick={() => { moveTaskInDay(task.id, 'down'); playClick(); }}
                   disabled={!canMoveDown}
-                  className={`inline-flex h-8 items-center gap-1 border-2 px-2 text-[9px] font-black uppercase tracking-[0.18em] transition-colors ${isSelected ? 'border-black/20 hover:bg-black hover:text-white disabled:opacity-30' : 'border-white/15 hover:border-white/40 disabled:opacity-30'}`}
+                  className={`inline-flex h-8 items-center gap-1 border-2 px-2 text-[9px] font-black uppercase tracking-[0.18em] transition-colors ${useLightChrome ? 'border-black/20 hover:bg-black hover:text-white disabled:opacity-30' : 'border-white/15 hover:border-white/40 disabled:opacity-30'}`}
                   aria-label={`Move ${task.title} down`}
                   title="Move down"
                 >
@@ -1071,7 +1073,7 @@ function App() {
                 const label = status === 'todo' ? 'Todo' : status === 'doing' ? 'Doing' : 'Done';
                 const buttonClasses = active
                   ? statusButtonMeta.activeButton
-                  : isSelected
+                  : useLightChrome
                     ? statusButtonMeta.inactiveSelectedButton
                     : statusButtonMeta.inactiveButton;
 
