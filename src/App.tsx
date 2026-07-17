@@ -1414,7 +1414,7 @@ function App() {
       {/* Sprint Task Dock */}
       {!isTaskPanelOpen && (
         <motion.div
-          className="fixed right-3 top-24 z-[70] flex max-w-[min(20rem,calc(100vw-1.5rem))] flex-col items-end gap-2 sm:right-5 md:right-6"
+          className="fixed right-3 top-24 z-[70] flex max-w-[min(22rem,calc(100vw-1.5rem))] items-center gap-1.5 sm:right-5 md:right-6"
           initial={{ opacity: 0, x: 24 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ type: 'spring', stiffness: 260, damping: 24 }}
@@ -1423,36 +1423,33 @@ function App() {
             <button
               type="button"
               onClick={openSchedulePanel}
-              className="w-full max-w-[16.5rem] border-2 border-black bg-black/80 px-3 py-2 text-left text-paper-cream shadow-[4px_4px_0_rgba(0,0,0,0.85)] backdrop-blur-md transition hover:-translate-x-0.5"
+              className="min-w-0 max-w-[13.5rem] border-2 border-black bg-black/80 px-2 py-1.5 text-left text-paper-cream shadow-[3px_3px_0_rgba(0,0,0,0.85)] backdrop-blur-md transition hover:-translate-x-0.5"
               title={nextUpEvent ? `${nextUpHint}: ${nextUpTitle}` : nextUpTitle}
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[9px] font-black uppercase tracking-[0.18em] text-accent-green">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="shrink-0 text-[8px] font-black uppercase tracking-[0.14em] text-accent-green">
                   {nextUpKind === 'now' ? 'Now' : 'Next'}
                 </span>
+                <span className="min-w-0 truncate text-[11px] font-semibold text-paper-cream">
+                  {nextUpTitle}
+                </span>
                 {nextUpTimeLabel ? (
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-white/55">
+                  <span className="shrink-0 font-mono text-[9px] uppercase tracking-wide text-white/50">
                     {nextUpTimeLabel}
                   </span>
                 ) : null}
-              </div>
-              <div className="mt-1 truncate text-xs font-semibold text-paper-cream">
-                {nextUpTitle}
-              </div>
-              <div className="mt-0.5 truncate text-[10px] text-white/40">
-                {nextUpHint}
               </div>
             </button>
           )}
           <button
             type="button"
             onClick={() => { setIsTaskPanelOpen(true); playClick(); }}
-            className="flex min-h-12 w-12 items-center justify-center border-2 border-black bg-paper-cream text-black transition-all hover:-translate-x-1 active:translate-x-0"
-            style={{ boxShadow: '5px 5px 0 rgba(0,0,0,0.85)' }}
+            className="flex h-10 w-10 shrink-0 items-center justify-center border-2 border-black bg-paper-cream text-black transition-all hover:-translate-x-1 active:translate-x-0"
+            style={{ boxShadow: '4px 4px 0 rgba(0,0,0,0.85)' }}
             aria-label="Open sprint task panel"
             title={selectedTask?.title ? `Sprint task: ${selectedTask.title}` : 'Sprint tasks'}
           >
-            <ListTodo className="h-5 w-5" strokeWidth={3} />
+            <ListTodo className="h-4 w-4" strokeWidth={3} />
           </button>
         </motion.div>
       )}
@@ -1466,14 +1463,14 @@ function App() {
             exit={{ opacity: 0, x: 32, scale: 0.96 }}
             transition={{ type: 'spring', stiffness: 280, damping: 26 }}
           >
-            <div className="mb-4 flex items-start justify-between gap-3">
+            <div className="mb-2 flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2 text-white/75">
-                  <ListTodo className="h-4 w-4 shrink-0" strokeWidth={3} />
-                  <span className="text-[10px] font-bold uppercase tracking-[0.25em]">Sprint task</span>
+                  <ListTodo className="h-3.5 w-3.5 shrink-0" strokeWidth={3} />
+                  <span className="text-[9px] font-bold uppercase tracking-[0.22em]">Sprint task</span>
                 </div>
                 <div
-                  className="mt-2 truncate font-grotesk text-lg font-black leading-none"
+                  className="mt-1 truncate font-grotesk text-base font-black leading-none"
                   title={selectedTask?.title ?? 'No task selected'}
                 >
                   {selectedTask?.title ?? 'No task selected'}
@@ -1539,48 +1536,23 @@ function App() {
               </div>
 
               {calendarSettings.enabled && (
-                <div className="mb-3 space-y-2">
-                  <div className="border border-accent-green/30 bg-accent-green/10 px-3 py-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <Clock3 className="h-3.5 w-3.5 shrink-0 text-accent-green" strokeWidth={3} />
-                        <div className="min-w-0">
-                          <div className="text-[9px] font-black uppercase tracking-[0.18em] text-accent-green/80">
-                            Now {formatClock(nowMs)}
-                          </div>
-                          <div className="mt-0.5 truncate text-xs font-semibold text-paper-cream" title={nowFocusLabel}>
-                            {nowFocusLabel}
-                          </div>
-                        </div>
-                      </div>
-                      {currentCalendarEvent?.end ? (
-                        <div className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-white/45">
-                          until {formatCalendarTime(currentCalendarEvent.end, false)}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {nextCalendarEvent && (
-                    <button
-                      type="button"
-                      onClick={() => { setTaskPanelView('schedule'); playClick(); }}
-                      className="flex w-full items-center justify-between gap-2 border border-white/10 bg-white/[0.03] px-3 py-2 text-left transition hover:border-white/30"
-                      title={`Next: ${nextCalendarEvent.title}`}
-                    >
-                      <div className="min-w-0">
-                        <div className="text-[9px] font-black uppercase tracking-[0.18em] text-white/40">Next task</div>
-                        <div className="mt-0.5 truncate text-xs font-semibold text-paper-cream">
-                          {nextCalendarEvent.title}
-                        </div>
-                      </div>
-                      <div className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-white/50">
-                        {formatCalendarTime(nextCalendarEvent.start, false)}
-                        {nextCalendarEvent.end ? `-${formatCalendarTime(nextCalendarEvent.end, false)}` : ''}
-                      </div>
-                    </button>
-                  )}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => { setTaskPanelView('schedule'); playClick(); }}
+                  className="mb-2 flex w-full items-center gap-2 border border-accent-green/25 bg-accent-green/10 px-2.5 py-1.5 text-left transition hover:border-accent-green/45"
+                  title={nowFocusLabel}
+                >
+                  <Clock3 className="h-3.5 w-3.5 shrink-0 text-accent-green" strokeWidth={3} />
+                  <span className="shrink-0 text-[8px] font-black uppercase tracking-[0.14em] text-accent-green">
+                    {nextUpKind === 'now' ? 'Now' : nextUpKind === 'next' ? 'Next' : 'Free'}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-paper-cream">
+                    {nextUpEvent?.title ?? (calendarConfigured ? 'Free time' : 'Connect calendar')}
+                  </span>
+                  <span className="shrink-0 font-mono text-[9px] uppercase tracking-wide text-white/50">
+                    {nextUpTimeLabel || formatClock(nowMs)}
+                  </span>
+                </button>
               )}
 
               <div className="mb-3 grid grid-cols-2 gap-1.5">
