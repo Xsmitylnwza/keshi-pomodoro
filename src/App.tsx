@@ -493,11 +493,11 @@ function App() {
   }, [auth.authenticated, auth.loading, taskDay, calendarSettings.enabled, calendarSettings.icsUrl, isTaskPanelOpen]);
 
   useEffect(() => {
-    if (!isTaskPanelOpen || !calendarSettings.enabled) return;
+    if (!calendarSettings.enabled) return;
     setNowMs(Date.now());
     const timer = window.setInterval(() => setNowMs(Date.now()), 30_000);
     return () => window.clearInterval(timer);
-  }, [isTaskPanelOpen, calendarSettings.enabled]);
+  }, [calendarSettings.enabled]);
 
   const formatCalendarTime = (iso: string, allDay: boolean) => {
     if (allDay) return 'All day';
@@ -555,6 +555,29 @@ function App() {
       : calendarConfigured
         ? 'Free time'
         : 'Calendar offline';
+
+  const nextUpEvent = currentCalendarEvent ?? nextCalendarEvent;
+  const nextUpKind = currentCalendarEvent ? 'now' : nextCalendarEvent ? 'next' : null;
+  const nextUpTimeLabel = nextUpEvent
+    ? (nextUpEvent.allDay
+      ? 'All day'
+      : nextUpKind === 'now' && nextUpEvent.end
+        ? `until ${formatCalendarTime(nextUpEvent.end, false)}`
+        : formatCalendarTime(nextUpEvent.start, false))
+    : '';
+  const nextUpTitle = nextUpEvent?.title
+    ?? (selectedTaskId
+      ? (tasks.find(task => task.id === selectedTaskId)?.title || 'Selected task')
+      : 'No next task');
+  const nextUpHint = nextUpEvent
+    ? (nextUpKind === 'now' ? 'Happening now' : 'Up next')
+    : (calendarSettings.enabled ? 'No upcoming event' : 'Pick a task');
+
+  const openSchedulePanel = () => {
+    setTaskPanelView('schedule');
+    setIsTaskPanelOpen(true);
+    playClick();
+  };
 
   const selectTask = (taskId: string, options?: { expand?: boolean | 'toggle' }) => {
     const expandMode = options?.expand ?? false;
@@ -1389,18 +1412,50 @@ function App() {
       </nav>
 
       {/* Sprint Task Dock */}
-      <motion.button
-        onClick={() => { setIsTaskPanelOpen(prev => !prev); playClick(); }}
-        className={`fixed right-3 top-24 z-[70] flex min-h-12 w-12 items-center justify-center border-2 border-black bg-paper-cream text-black transition-all hover:-translate-x-1 active:translate-x-0 sm:right-5 md:right-6 ${isTaskPanelOpen ? 'pointer-events-none opacity-0 scale-90' : 'pointer-events-auto opacity-100 scale-100'}`}
-        style={{ boxShadow: '5px 5px 0 rgba(0,0,0,0.85)' }}
-        initial={{ opacity: 0, x: 24 }}
-        animate={{ opacity: isTaskPanelOpen ? 0 : 1, x: 0, scale: isTaskPanelOpen ? 0.9 : 1 }}
-        transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-        aria-label="Open sprint task panel"
-        title={selectedTask?.title ? `Sprint task: ${selectedTask.title}` : 'Sprint tasks'}
-      >
-        <ListTodo className="h-5 w-5" strokeWidth={3} />
-      </motion.button>
+      {!isTaskPanelOpen && (
+        <motion.div
+          className="fixed right-3 top-24 z-[70] flex max-w-[min(20rem,calc(100vw-1.5rem))] flex-col items-end gap-2 sm:right-5 md:right-6"
+          initial={{ opacity: 0, x: 24 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+        >
+          {(calendarSettings.enabled || selectedTask) && (
+            <button
+              type="button"
+              onClick={openSchedulePanel}
+              className="w-full max-w-[16.5rem] border-2 border-black bg-black/80 px-3 py-2 text-left text-paper-cream shadow-[4px_4px_0_rgba(0,0,0,0.85)] backdrop-blur-md transition hover:-translate-x-0.5"
+              title={nextUpEvent ? `${nextUpHint}: ${nextUpTitle}` : nextUpTitle}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[9px] font-black uppercase tracking-[0.18em] text-accent-green">
+                  {nextUpKind === 'now' ? 'Now' : 'Next'}
+                </span>
+                {nextUpTimeLabel ? (
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-white/55">
+                    {nextUpTimeLabel}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-1 truncate text-xs font-semibold text-paper-cream">
+                {nextUpTitle}
+              </div>
+              <div className="mt-0.5 truncate text-[10px] text-white/40">
+                {nextUpHint}
+              </div>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => { setIsTaskPanelOpen(true); playClick(); }}
+            className="flex min-h-12 w-12 items-center justify-center border-2 border-black bg-paper-cream text-black transition-all hover:-translate-x-1 active:translate-x-0"
+            style={{ boxShadow: '5px 5px 0 rgba(0,0,0,0.85)' }}
+            aria-label="Open sprint task panel"
+            title={selectedTask?.title ? `Sprint task: ${selectedTask.title}` : 'Sprint tasks'}
+          >
+            <ListTodo className="h-5 w-5" strokeWidth={3} />
+          </button>
+        </motion.div>
+      )}
 
       <AnimatePresence>
         {isTaskPanelOpen && (
@@ -1484,25 +1539,47 @@ function App() {
               </div>
 
               {calendarSettings.enabled && (
-                <div className="mb-3 border border-accent-green/30 bg-accent-green/10 px-3 py-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <Clock3 className="h-3.5 w-3.5 shrink-0 text-accent-green" strokeWidth={3} />
-                      <div className="min-w-0">
-                        <div className="text-[9px] font-black uppercase tracking-[0.18em] text-accent-green/80">
-                          Now {formatClock(nowMs)}
-                        </div>
-                        <div className="mt-0.5 truncate text-xs font-semibold text-paper-cream" title={nowFocusLabel}>
-                          {nowFocusLabel}
+                <div className="mb-3 space-y-2">
+                  <div className="border border-accent-green/30 bg-accent-green/10 px-3 py-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Clock3 className="h-3.5 w-3.5 shrink-0 text-accent-green" strokeWidth={3} />
+                        <div className="min-w-0">
+                          <div className="text-[9px] font-black uppercase tracking-[0.18em] text-accent-green/80">
+                            Now {formatClock(nowMs)}
+                          </div>
+                          <div className="mt-0.5 truncate text-xs font-semibold text-paper-cream" title={nowFocusLabel}>
+                            {nowFocusLabel}
+                          </div>
                         </div>
                       </div>
+                      {currentCalendarEvent?.end ? (
+                        <div className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-white/45">
+                          until {formatCalendarTime(currentCalendarEvent.end, false)}
+                        </div>
+                      ) : null}
                     </div>
-                    {currentCalendarEvent?.end ? (
-                      <div className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-white/45">
-                        until {formatCalendarTime(currentCalendarEvent.end, false)}
-                      </div>
-                    ) : null}
                   </div>
+
+                  {nextCalendarEvent && (
+                    <button
+                      type="button"
+                      onClick={() => { setTaskPanelView('schedule'); playClick(); }}
+                      className="flex w-full items-center justify-between gap-2 border border-white/10 bg-white/[0.03] px-3 py-2 text-left transition hover:border-white/30"
+                      title={`Next: ${nextCalendarEvent.title}`}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-[9px] font-black uppercase tracking-[0.18em] text-white/40">Next task</div>
+                        <div className="mt-0.5 truncate text-xs font-semibold text-paper-cream">
+                          {nextCalendarEvent.title}
+                        </div>
+                      </div>
+                      <div className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-white/50">
+                        {formatCalendarTime(nextCalendarEvent.start, false)}
+                        {nextCalendarEvent.end ? `-${formatCalendarTime(nextCalendarEvent.end, false)}` : ''}
+                      </div>
+                    </button>
+                  )}
                 </div>
               )}
 
