@@ -25,7 +25,7 @@ export interface CalendarEventsResponse {
 
 async function fetchGoogleOAuthCalendarEvents(date: string): Promise<CalendarEventsResponse> {
   const response = await fetch(
-    `${centralAuthBaseUrl()}/api/google/calendar/events?date=${encodeURIComponent(date)}`,
+    `${centralAuthBaseUrl()}/auth/google/calendar/events?date=${encodeURIComponent(date)}`,
     {
       credentials: 'include',
       headers: { accept: 'application/json' },
