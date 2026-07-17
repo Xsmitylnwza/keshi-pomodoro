@@ -548,14 +548,6 @@ function App() {
       return Number.isFinite(startMs) && startMs > nowMs;
     }) ?? null;
 
-  const nowFocusLabel = currentCalendarEvent
-    ? `Now · ${currentCalendarEvent.title}`
-    : nextCalendarEvent
-      ? `Next · ${nextCalendarEvent.title} @ ${formatCalendarTime(nextCalendarEvent.start, false)}`
-      : calendarConfigured
-        ? 'Free time'
-        : 'Calendar offline';
-
   const nextUpEvent = currentCalendarEvent ?? nextCalendarEvent;
   const nextUpKind = currentCalendarEvent ? 'now' : nextCalendarEvent ? 'next' : null;
   const nextUpTimeLabel = nextUpEvent
