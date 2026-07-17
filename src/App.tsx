@@ -30,7 +30,7 @@ import {
   DEFAULT_APP_SETTINGS,
 } from './lib/appSettingsApi';
 import type { AppCalendarSettings } from './lib/appSettingsApi';
-import { fetchCalendarEvents, type CalendarEvent } from './lib/calendarApi';
+import { fetchCalendarEvents, googleCalendarConnectUrl, type CalendarEvent, type CalendarEventsResponse } from './lib/calendarApi';
 import type { HistoryItem, PomodoroEventType, SprintTask } from './types';
 import {
   fadeDown,
@@ -173,6 +173,8 @@ function App() {
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [calendarSyncState, setCalendarSyncState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [calendarError, setCalendarError] = useState('');
+  const [calendarConfigured, setCalendarConfigured] = useState(false);
+  const [calendarConnectUrl, setCalendarConnectUrl] = useState('');
   const taskListScrollRef = useRef<HTMLDivElement | null>(null);
 
   // Ref to store the absolute end time (timestamp when timer should complete)
@@ -449,22 +451,33 @@ function App() {
   }
 
   const refreshCalendarEvents = async (dateKey = taskDay) => {
-    if (!calendarSettings.enabled || !calendarSettings.icsUrl.trim()) {
+    if (!calendarSettings.enabled) {
       setCalendarEvents([]);
       setCalendarError('');
-      setCalendarSyncState(calendarSettings.enabled ? 'ready' : 'idle');
+      setCalendarConfigured(false);
+      setCalendarConnectUrl('');
+      setCalendarSyncState('idle');
       return;
     }
 
     setCalendarSyncState('loading');
     setCalendarError('');
     try {
-      const payload = await fetchCalendarEvents(dateKey);
+      const payload: CalendarEventsResponse = await fetchCalendarEvents(dateKey);
       setCalendarEvents(Array.isArray(payload.events) ? payload.events : []);
-      setCalendarSyncState('ready');
+      setCalendarConfigured(Boolean(payload.configured));
+      setCalendarConnectUrl(payload.connectUrl || googleCalendarConnectUrl());
+      if (!payload.configured && payload.error) {
+        setCalendarError(payload.error);
+        setCalendarSyncState('ready');
+      } else {
+        setCalendarSyncState('ready');
+      }
     } catch (error) {
       console.warn('Calendar refresh failed', error);
       setCalendarEvents([]);
+      setCalendarConfigured(false);
+      setCalendarConnectUrl(googleCalendarConnectUrl());
       setCalendarError(error instanceof Error ? error.message : 'Calendar refresh failed');
       setCalendarSyncState('error');
     }
@@ -1452,19 +1465,29 @@ function App() {
                   </span>
                 </div>
 
-                {!calendarSettings.icsUrl.trim() && (
-                  <div className="border border-dashed border-white/10 px-2.5 py-3 text-[11px] leading-relaxed text-white/40">
-                    Add your secret ICS URL in Settings → Calendar.
+                {!calendarConfigured && calendarSyncState !== 'loading' && (
+                  <div className="space-y-2 border border-dashed border-white/10 px-2.5 py-3 text-[11px] leading-relaxed text-white/40">
+                    <div>Connect Google Calendar to show events for this day.</div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playClick();
+                        window.location.href = calendarConnectUrl || googleCalendarConnectUrl();
+                      }}
+                      className="inline-flex min-h-9 items-center border border-paper-cream/40 bg-paper-cream px-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-black"
+                    >
+                      Connect Google Calendar
+                    </button>
                   </div>
                 )}
 
-                {calendarSettings.icsUrl.trim() && calendarSyncState === 'error' && (
+                {calendarSyncState === 'error' && (
                   <div className="border border-accent-red/30 bg-accent-red/10 px-2.5 py-3 text-[11px] leading-relaxed text-accent-red">
                     {calendarError || 'Could not load calendar events.'}
                   </div>
                 )}
 
-                {calendarSettings.icsUrl.trim() && calendarSyncState !== 'error' && calendarEvents.length === 0 && calendarSyncState !== 'loading' && (
+                {calendarConfigured && calendarSyncState !== 'error' && calendarEvents.length === 0 && calendarSyncState !== 'loading' && (
                   <div className="border border-dashed border-white/10 px-2.5 py-3 text-center font-mono text-[10px] uppercase tracking-widest text-white/30">
                     No events for {formatDayLabel(taskDay)}
                   </div>

@@ -17,6 +17,7 @@ import type { LucideIcon } from 'lucide-react';
 import { ThemeSettings } from './ThemeSettings';
 import type { HistoryItem } from '../types';
 import type { AppCalendarSettings } from '../lib/appSettingsApi';
+import { googleCalendarConnectUrl } from '../lib/calendarApi';
 
 type SettingsTab = 'general' | 'theme' | 'calendar';
 
@@ -332,7 +333,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div>
                 <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">Google Calendar</div>
                 <p className="mt-1 text-xs leading-relaxed text-white/40">
-                  Show events from a secret Google Calendar ICS link. Read-only — does not write back.
+                  Read-only events from your Google account via OAuth. Preferred path: Connect Google Calendar.
                 </p>
               </div>
               <button
@@ -350,9 +351,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </div>
 
+            <div className="border border-white/10 bg-black/25 p-3">
+              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">OAuth connection</div>
+              <p className="mt-2 text-xs leading-relaxed text-white/40">
+                Uses your Xsmity Google login with calendar.readonly. If events do not appear, reconnect once to grant calendar access.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.href = googleCalendarConnectUrl(typeof window !== 'undefined' ? window.location.href : '/');
+                }}
+                className="mt-3 inline-flex min-h-11 items-center justify-center border-2 border-black bg-paper-cream px-4 text-xs font-black uppercase tracking-[0.14em] text-black transition hover:-translate-y-0.5"
+              >
+                Connect Google Calendar
+              </button>
+            </div>
+
             <div>
               <label htmlFor="settings-calendar-ics" className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-paper-cream/70">
-                Secret ICS URL
+                Optional ICS fallback URL
               </label>
               <div className="relative">
                 <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
@@ -366,7 +383,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
               </div>
               <p className="mt-2 text-[11px] leading-relaxed text-white/35">
-                Google Calendar → Settings → Integrate calendar → Secret address in iCal format.
+                Only used if OAuth calendar is not connected.
               </p>
             </div>
           </div>
