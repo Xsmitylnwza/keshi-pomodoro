@@ -1343,14 +1343,25 @@ function App() {
                 <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-white/35">
                   {dayTasksSorted.length} tasks / {selectedTask?.status ?? 'idle'}
                 </span>
-                <button
-                  onClick={() => { refreshTasks(); playClick(); }}
-                  className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-white/45 transition-colors hover:text-white"
-                  title={sprintApiBaseUrl ? `Syncing with ${sprintApiBaseUrl}` : 'Local task mode'}
-                >
-                  {taskSyncState === 'online' ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
-                  {taskSyncState === 'syncing' ? 'Syncing' : taskSyncState === 'online' ? 'VPS' : 'Local'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <span
+                    className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-white/45"
+                    title={sprintApiBaseUrl ? `Syncing with ${sprintApiBaseUrl}` : 'Local task mode'}
+                  >
+                    {taskSyncState === 'online' ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+                    {taskSyncState === 'syncing' ? 'Syncing' : taskSyncState === 'online' ? 'VPS' : 'Local'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { void refreshTasks(); playClick(); }}
+                    disabled={taskSyncState === 'syncing'}
+                    className="grid h-8 w-8 place-items-center border border-white/10 bg-white/5 text-white/55 transition-colors hover:border-white/40 hover:text-white disabled:cursor-wait disabled:opacity-50"
+                    aria-label="Refresh tasks"
+                    title="Refresh tasks"
+                  >
+                    <RotateCcw className={`h-3.5 w-3.5 ${taskSyncState === 'syncing' ? 'animate-spin' : ''}`} strokeWidth={3} />
+                  </button>
+                </div>
               </div>
 
               <div className="mb-3 flex flex-wrap gap-1.5">
