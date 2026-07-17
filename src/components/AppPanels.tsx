@@ -5,6 +5,7 @@ import {
   Calendar,
   Clock3,
   Image as ImageIcon,
+  Link2,
   Settings2,
   TrendingUp,
   Volume2,
@@ -15,8 +16,9 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { ThemeSettings } from './ThemeSettings';
 import type { HistoryItem } from '../types';
+import type { AppCalendarSettings } from '../lib/appSettingsApi';
 
-type SettingsTab = 'general' | 'theme';
+type SettingsTab = 'general' | 'theme' | 'calendar';
 
 interface PanelShellProps {
   isOpen: boolean;
@@ -203,6 +205,8 @@ interface SettingsModalProps {
   setBreakTime: (time: number) => void;
   soundEnabled: boolean;
   toggleSound: () => void;
+  calendarSettings: AppCalendarSettings;
+  setCalendarSettings: (next: AppCalendarSettings) => void;
   openInsights?: () => void;
 }
 
@@ -215,6 +219,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   setBreakTime,
   soundEnabled,
   toggleSound,
+  calendarSettings,
+  setCalendarSettings,
   openInsights,
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
@@ -246,6 +252,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         onChange={setActiveTab}
         options={[
           { id: 'general', label: 'General', icon: Settings2 },
+          { id: 'calendar', label: 'Calendar', icon: Calendar },
           { id: 'theme', label: 'Theme', icon: ImageIcon },
         ]}
       />
@@ -315,6 +322,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
                 {soundEnabled ? 'On' : 'Off'}
               </button>
+            </div>
+          </div>
+        </div>
+      ) : activeTab === 'calendar' ? (
+        <div className="space-y-5">
+          <div className="space-y-4 border-2 border-white/10 bg-white/[0.03] p-4 sm:p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">Google Calendar</div>
+                <p className="mt-1 text-xs leading-relaxed text-white/40">
+                  Show events from a secret Google Calendar ICS link. Read-only — does not write back.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCalendarSettings({ ...calendarSettings, enabled: !calendarSettings.enabled })}
+                className={`inline-flex min-h-11 items-center gap-2 border-2 px-3 text-xs font-black uppercase tracking-[0.14em] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green active:translate-y-px ${
+                  calendarSettings.enabled
+                    ? 'border-accent-green/50 bg-accent-green/10 text-accent-green'
+                    : 'border-white/10 bg-white/[0.03] text-white/40'
+                }`}
+                aria-pressed={calendarSettings.enabled}
+              >
+                <Calendar className="h-4 w-4" />
+                {calendarSettings.enabled ? 'On' : 'Off'}
+              </button>
+            </div>
+
+            <div>
+              <label htmlFor="settings-calendar-ics" className="mb-2 block text-[10px] font-black uppercase tracking-[0.18em] text-paper-cream/70">
+                Secret ICS URL
+              </label>
+              <div className="relative">
+                <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
+                <input
+                  id="settings-calendar-ics"
+                  type="url"
+                  value={calendarSettings.icsUrl}
+                  onChange={event => setCalendarSettings({ ...calendarSettings, icsUrl: event.target.value })}
+                  placeholder="https://calendar.google.com/calendar/ical/.../basic.ics"
+                  className="min-h-12 w-full border-2 border-white/10 bg-black/35 py-2 pl-10 pr-3 font-mono text-xs text-white outline-none transition placeholder:text-white/25 focus:border-white/35"
+                />
+              </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-white/35">
+                Google Calendar → Settings → Integrate calendar → Secret address in iCal format.
+              </p>
             </div>
           </div>
         </div>

@@ -68,6 +68,10 @@ const defaultAppSettings = {
     volume: 50,
     tooltipSeen: false,
   },
+  calendar: {
+    enabled: false,
+    icsUrl: '',
+  },
 };
 
 const contentTypes = new Map([
@@ -202,6 +206,14 @@ function normalizeRadioSettings(value) {
   };
 }
 
+function normalizeCalendarSettings(value) {
+  const icsUrl = typeof value?.icsUrl === 'string' ? value.icsUrl.trim() : '';
+  return {
+    enabled: Boolean(value?.enabled),
+    icsUrl,
+  };
+}
+
 function normalizeAppSettings(value) {
   const focusTime = Number(value?.focusTime);
   const breakTime = Number(value?.breakTime);
@@ -213,6 +225,7 @@ function normalizeAppSettings(value) {
     selectedTaskId: typeof value?.selectedTaskId === 'string' && value.selectedTaskId.trim() ? value.selectedTaskId : defaultAppSettings.selectedTaskId,
     theme: normalizeThemeSettings(value?.theme),
     radio: normalizeRadioSettings(value?.radio),
+    calendar: normalizeCalendarSettings(value?.calendar),
     updatedAt: typeof value?.updatedAt === 'string' ? value.updatedAt : new Date().toISOString(),
   };
 }
@@ -233,8 +246,237 @@ function mergeAppSettings(current, patch) {
     ...patch,
     theme: patch?.theme ? { ...current.theme, ...patch.theme } : current.theme,
     radio: patch?.radio ? { ...current.radio, ...patch.radio } : current.radio,
+    calendar: patch?.calendar ? { ...current.calendar, ...patch.calendar } : current.calendar,
     updatedAt: new Date().toISOString(),
   });
+}
+
+const calendarFeedCache = new Map();
+const CALENDAR_CACHE_TTL_MS = 2 * 60 * 1000;
+
+function unfoldIcs(textValue) {
+  return String(textValue || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\n[ \t]/g, '');
+}
+
+function parseIcsParams(raw) {
+  const params = {};
+  for (const part of String(raw || '').split(';').slice(1)) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    params[part.slice(0, eq).toUpperCase()] = part.slice(eq + 1);
+  }
+  return params;
+}
+
+function parseIcsDateValue(rawValue, params = {}) {
+  const value = String(rawValue || '').trim();
+  if (!value) return null;
+
+  if (params.VALUE === 'DATE' || /^\d{8}$/.test(value)) {
+    const y = Number(value.slice(0, 4));
+    const m = Number(value.slice(4, 6));
+    const d = Number(value.slice(6, 8));
+    if (!y || !m || !d) return null;
+    return {
+      allDay: true,
+      dateKey: `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+      date: new Date(Date.UTC(y, m - 1, d)),
+    };
+  }
+
+  const match = value.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/);
+  if (!match) return null;
+  const [, ys, ms, ds, hs, mins, ss, z] = match;
+  const y = Number(ys);
+  const m = Number(ms);
+  const d = Number(ds);
+  const h = Number(hs);
+  const mi = Number(mins);
+  const s = Number(ss);
+
+  let date;
+  if (z || !params.TZID) {
+    date = new Date(Date.UTC(y, m - 1, d, h, mi, s));
+  } else {
+    // Best-effort parse for floating/TZID values as local wall time.
+    date = new Date(y, m - 1, d, h, mi, s);
+  }
+
+  if (Number.isNaN(date.getTime())) return null;
+  return {
+    allDay: false,
+    dateKey: toBusinessDateKey(date),
+    date,
+  };
+}
+
+function unescapeIcsText(value) {
+  return String(value || '')
+    .replace(/\\n/gi, ' ')
+    .replace(/\\,/g, ',')
+    .replace(/\\;/g, ';')
+    .replace(/\\\\/g, '\\')
+    .trim();
+}
+
+function parseIcsEvents(icsText) {
+  const unfolded = unfoldIcs(icsText);
+  const lines = unfolded.split('\n');
+  const events = [];
+  let current = null;
+
+  for (const line of lines) {
+    if (!line) continue;
+    if (line === 'BEGIN:VEVENT') {
+      current = {};
+      continue;
+    }
+    if (line === 'END:VEVENT') {
+      if (current?.summary && current?.start) {
+        const start = current.start;
+        const end = current.end || null;
+        const startMs = start.date.getTime();
+        let endMs = end?.date?.getTime?.() ?? null;
+        if (start.allDay && endMs == null) {
+          endMs = startMs + 24 * 60 * 60 * 1000;
+        } else if (!start.allDay && endMs == null) {
+          endMs = startMs + 60 * 60 * 1000;
+        }
+        events.push({
+          id: current.uid || `${start.date.toISOString()}:${current.summary}`,
+          title: current.summary,
+          location: current.location || '',
+          allDay: Boolean(start.allDay),
+          start: start.date.toISOString(),
+          end: endMs != null ? new Date(endMs).toISOString() : null,
+          startDateKey: start.dateKey,
+          endDateKey: end?.dateKey || start.dateKey,
+          status: current.status || 'confirmed',
+        });
+      }
+      current = null;
+      continue;
+    }
+    if (!current) continue;
+
+    const colon = line.indexOf(':');
+    if (colon === -1) continue;
+    const left = line.slice(0, colon);
+    const right = line.slice(colon + 1);
+    const key = left.split(';')[0].toUpperCase();
+    const params = parseIcsParams(left);
+
+    if (key === 'UID') current.uid = right.trim();
+    else if (key === 'SUMMARY') current.summary = unescapeIcsText(right);
+    else if (key === 'LOCATION') current.location = unescapeIcsText(right);
+    else if (key === 'STATUS') current.status = right.trim().toLowerCase();
+    else if (key === 'DTSTART') current.start = parseIcsDateValue(right, params);
+    else if (key === 'DTEND') current.end = parseIcsDateValue(right, params);
+  }
+
+  return events;
+}
+
+function businessDayBounds(dateKey) {
+  const key = requireDateKey(dateKey, 'date');
+  // Approximate Asia/Bangkok (+07:00) day bounds in UTC for overlap checks.
+  const start = new Date(`${key}T00:00:00+07:00`);
+  const end = new Date(`${key}T24:00:00+07:00`);
+  return { key, startMs: start.getTime(), endMs: end.getTime() };
+}
+
+function eventOverlapsBusinessDay(event, dateKey) {
+  const { startMs, endMs } = businessDayBounds(dateKey);
+  const eventStart = Date.parse(event.start);
+  const eventEnd = event.end ? Date.parse(event.end) : eventStart + 60 * 60 * 1000;
+  if (Number.isNaN(eventStart) || Number.isNaN(eventEnd)) return false;
+  return eventStart < endMs && eventEnd > startMs;
+}
+
+async function fetchCalendarFeed(icsUrl) {
+  const normalizedUrl = String(icsUrl || '').trim();
+  if (!normalizedUrl) {
+    const error = new Error('calendar_not_configured');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(normalizedUrl);
+  } catch {
+    const error = new Error('invalid_calendar_url');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    const error = new Error('invalid_calendar_url');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const cached = calendarFeedCache.get(normalizedUrl);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.events;
+  }
+
+  const response = await fetch(normalizedUrl, {
+    headers: {
+      accept: 'text/calendar, text/plain, */*',
+      'user-agent': 'keshi-pomodoro-calendar/1.0',
+    },
+  });
+
+  if (!response.ok) {
+    const error = new Error(`calendar_fetch_failed:${response.status}`);
+    error.statusCode = 502;
+    throw error;
+  }
+
+  const icsText = await response.text();
+  const events = parseIcsEvents(icsText);
+  calendarFeedCache.set(normalizedUrl, {
+    events,
+    expiresAt: Date.now() + CALENDAR_CACHE_TTL_MS,
+  });
+  return events;
+}
+
+async function listCalendarEventsForDate(userKey, dateKey) {
+  const settings = await readAppSettings(userKey);
+  const calendar = settings.calendar || defaultAppSettings.calendar;
+  if (!calendar.enabled) {
+    return {
+      enabled: false,
+      configured: Boolean(calendar.icsUrl),
+      date: dateKey,
+      events: [],
+    };
+  }
+  if (!calendar.icsUrl) {
+    return {
+      enabled: true,
+      configured: false,
+      date: dateKey,
+      events: [],
+    };
+  }
+
+  const events = await fetchCalendarFeed(calendar.icsUrl);
+  const filtered = events
+    .filter(event => eventOverlapsBusinessDay(event, dateKey))
+    .sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+
+  return {
+    enabled: true,
+    configured: true,
+    date: dateKey,
+    events: filtered,
+  };
 }
 
 function normalizeHistoryItem(item) {
@@ -1214,6 +1456,13 @@ async function handleApi(req, res, url) {
     const current = await readAppSettings(userKey);
     const nextSettings = await writeAppSettings(userKey, mergeAppSettings(current, body));
     sendJson(res, 200, { settings: nextSettings });
+    return;
+  }
+
+  if (pathname === '/api/calendar/events' && req.method === 'GET') {
+    const date = optionalDateKey(url.searchParams.get('date'), 'date') || todayKey();
+    const payload = await listCalendarEventsForDate(userKey, date);
+    sendJson(res, 200, payload);
     return;
   }
 

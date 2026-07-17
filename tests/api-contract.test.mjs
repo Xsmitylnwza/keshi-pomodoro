@@ -110,6 +110,68 @@ test('tasks are idempotent and carry businessDate', async () => {
   assert.equal(listed.body.tasks.length, 1);
 });
 
+test('calendar events can be loaded from secret ICS URL settings', async () => {
+  const icsBody = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Keshi//Test//EN',
+    'BEGIN:VEVENT',
+    'UID:event-standup@test',
+    'SUMMARY:Team standup',
+    'LOCATION:Zoom',
+    'DTSTART:20260705T020000Z',
+    'DTEND:20260705T023000Z',
+    'END:VEVENT',
+    'BEGIN:VEVENT',
+    'UID:event-otherday@test',
+    'SUMMARY:Other day',
+    'DTSTART:20260706T020000Z',
+    'DTEND:20260706T030000Z',
+    'END:VEVENT',
+    'END:VCALENDAR',
+    '',
+  ].join('\n');
+
+  const icsServer = createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/calendar; charset=utf-8' });
+    res.end(icsBody);
+  });
+
+  await new Promise(resolve => icsServer.listen(0, '127.0.0.1', resolve));
+  const icsPort = icsServer.address().port;
+  const icsUrl = `http://127.0.0.1:${icsPort}/basic.ics`;
+
+  try {
+    const disabled = await api('/api/calendar/events?date=2026-07-05');
+    assert.equal(disabled.response.status, 200);
+    assert.equal(disabled.body.enabled, false);
+    assert.equal(disabled.body.events.length, 0);
+
+    const saved = await api('/api/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        calendar: {
+          enabled: true,
+          icsUrl,
+        },
+      }),
+    });
+    assert.equal(saved.response.status, 200);
+    assert.equal(saved.body.settings.calendar.enabled, true);
+    assert.equal(saved.body.settings.calendar.icsUrl, icsUrl);
+
+    const events = await api('/api/calendar/events?date=2026-07-05');
+    assert.equal(events.response.status, 200);
+    assert.equal(events.body.enabled, true);
+    assert.equal(events.body.configured, true);
+    assert.equal(events.body.events.length, 1);
+    assert.equal(events.body.events[0].title, 'Team standup');
+    assert.equal(events.body.events[0].location, 'Zoom');
+  } finally {
+    await new Promise(resolve => icsServer.close(resolve));
+  }
+});
+
 test('history writes are idempotent via Idempotency-Key', async () => {
   const payload = {
     id: 'history-a',

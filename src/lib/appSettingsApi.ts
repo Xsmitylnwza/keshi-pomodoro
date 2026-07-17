@@ -13,6 +13,11 @@ export interface AppRadioSettings {
   tooltipSeen: boolean;
 }
 
+export interface AppCalendarSettings {
+  enabled: boolean;
+  icsUrl: string;
+}
+
 export interface AppSettings {
   focusTime: number;
   breakTime: number;
@@ -20,6 +25,7 @@ export interface AppSettings {
   selectedTaskId: string;
   theme: AppThemeSettings;
   radio: AppRadioSettings;
+  calendar: AppCalendarSettings;
   updatedAt?: string;
 }
 
@@ -37,6 +43,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   radio: {
     volume: 50,
     tooltipSeen: false,
+  },
+  calendar: {
+    enabled: false,
+    icsUrl: '',
   },
 };
 

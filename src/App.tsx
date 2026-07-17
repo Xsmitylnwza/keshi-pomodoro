@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowDown, ArrowUp, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Clock3, GripVertical, ListTodo, LogIn, Pause, Play, Plus, RotateCcw, Trash2, UserCircle, Wifi, WifiOff, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Clock3, GripVertical, ListTodo, LogIn, MapPin, Pause, Play, Plus, RotateCcw, Trash2, UserCircle, Wifi, WifiOff, X } from 'lucide-react';
 import { CustomCursor } from './components/CustomCursor';
 import Background from './components/Background';
 import { AccountMenu, DisciplineDashboard } from './components/DisciplineDashboard';
@@ -29,6 +29,8 @@ import {
   updateAppSettings,
   DEFAULT_APP_SETTINGS,
 } from './lib/appSettingsApi';
+import type { AppCalendarSettings } from './lib/appSettingsApi';
+import { fetchCalendarEvents, type CalendarEvent } from './lib/calendarApi';
 import type { HistoryItem, PomodoroEventType, SprintTask } from './types';
 import {
   fadeDown,
@@ -167,6 +169,10 @@ function App() {
   const [dropTarget, setDropTarget] = useState<{ taskId: string; placement: 'before' | 'after' } | null>(null);
   const [taskStatusFilter, setTaskStatusFilter] = useState<'all' | SprintTask['status']>('all');
   const [doneSectionCollapsed, setDoneSectionCollapsed] = useState(true);
+  const [calendarSettings, setCalendarSettings] = useState<AppCalendarSettings>(DEFAULT_APP_SETTINGS.calendar);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [calendarSyncState, setCalendarSyncState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [calendarError, setCalendarError] = useState('');
   const taskListScrollRef = useRef<HTMLDivElement | null>(null);
 
   // Ref to store the absolute end time (timestamp when timer should complete)
@@ -246,6 +252,7 @@ function App() {
       setFocusTime(settings.focusTime);
       setBreakTime(settings.breakTime);
       setSoundEnabled(settings.soundEnabled);
+      setCalendarSettings(settings.calendar ?? DEFAULT_APP_SETTINGS.calendar);
 
       const nextSelectedTaskId = syncedTasksResult.some(task => task.id === settings.selectedTaskId)
         ? settings.selectedTaskId
@@ -431,6 +438,7 @@ function App() {
       breakTime,
       soundEnabled,
       selectedTaskId,
+      calendar: calendarSettings,
     }).catch(error => {
       console.warn('Settings save failed', error);
     });
@@ -439,6 +447,46 @@ function App() {
       resetTimer();
     }
   }
+
+  const refreshCalendarEvents = async (dateKey = taskDay) => {
+    if (!calendarSettings.enabled || !calendarSettings.icsUrl.trim()) {
+      setCalendarEvents([]);
+      setCalendarError('');
+      setCalendarSyncState(calendarSettings.enabled ? 'ready' : 'idle');
+      return;
+    }
+
+    setCalendarSyncState('loading');
+    setCalendarError('');
+    try {
+      const payload = await fetchCalendarEvents(dateKey);
+      setCalendarEvents(Array.isArray(payload.events) ? payload.events : []);
+      setCalendarSyncState('ready');
+    } catch (error) {
+      console.warn('Calendar refresh failed', error);
+      setCalendarEvents([]);
+      setCalendarError(error instanceof Error ? error.message : 'Calendar refresh failed');
+      setCalendarSyncState('error');
+    }
+  }
+
+  useEffect(() => {
+    if (!auth.authenticated || auth.loading) return;
+    if (!isTaskPanelOpen && !calendarSettings.enabled) return;
+    void refreshCalendarEvents(taskDay);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.authenticated, auth.loading, taskDay, calendarSettings.enabled, calendarSettings.icsUrl, isTaskPanelOpen]);
+
+  const formatCalendarTime = (iso: string, allDay: boolean) => {
+    if (allDay) return 'All day';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return '--:--';
+    return new Intl.DateTimeFormat(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(date);
+  };
 
 
   const selectTask = (taskId: string, options?: { expand?: boolean | 'toggle' }) => {
@@ -1163,6 +1211,8 @@ function App() {
             setBreakTime={setBreakTime}
             soundEnabled={soundEnabled}
             toggleSound={() => setSoundEnabled(!soundEnabled)}
+            calendarSettings={calendarSettings}
+            setCalendarSettings={setCalendarSettings}
             openInsights={() => openInsights()}
           />
         )}
@@ -1353,13 +1403,13 @@ function App() {
                   </span>
                   <button
                     type="button"
-                    onClick={() => { void refreshTasks(); playClick(); }}
-                    disabled={taskSyncState === 'syncing'}
+                    onClick={() => { void refreshTasks(); void refreshCalendarEvents(); playClick(); }}
+                    disabled={taskSyncState === 'syncing' || calendarSyncState === 'loading'}
                     className="grid h-8 w-8 place-items-center border border-white/10 bg-white/5 text-white/55 transition-colors hover:border-white/40 hover:text-white disabled:cursor-wait disabled:opacity-50"
-                    aria-label="Refresh tasks"
-                    title="Refresh tasks"
+                    aria-label="Refresh tasks and calendar"
+                    title="Refresh tasks and calendar"
                   >
-                    <RotateCcw className={`h-3.5 w-3.5 ${taskSyncState === 'syncing' ? 'animate-spin' : ''}`} strokeWidth={3} />
+                    <RotateCcw className={`h-3.5 w-3.5 ${taskSyncState === 'syncing' || calendarSyncState === 'loading' ? 'animate-spin' : ''}`} strokeWidth={3} />
                   </button>
                 </div>
               </div>
@@ -1385,6 +1435,72 @@ function App() {
                   );
                 })}
               </div>
+
+            {calendarSettings.enabled && (
+              <div className="mb-3 border border-white/10 bg-white/[0.03] p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-[0.2em] text-white/45">
+                    <CalendarDays className="h-3.5 w-3.5" strokeWidth={3} />
+                    <span>Google calendar</span>
+                  </div>
+                  <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-white/30">
+                    {calendarSyncState === 'loading'
+                      ? 'Loading'
+                      : calendarSyncState === 'error'
+                        ? 'Error'
+                        : `${calendarEvents.length} event${calendarEvents.length === 1 ? '' : 's'}`}
+                  </span>
+                </div>
+
+                {!calendarSettings.icsUrl.trim() && (
+                  <div className="border border-dashed border-white/10 px-2.5 py-3 text-[11px] leading-relaxed text-white/40">
+                    Add your secret ICS URL in Settings → Calendar.
+                  </div>
+                )}
+
+                {calendarSettings.icsUrl.trim() && calendarSyncState === 'error' && (
+                  <div className="border border-accent-red/30 bg-accent-red/10 px-2.5 py-3 text-[11px] leading-relaxed text-accent-red">
+                    {calendarError || 'Could not load calendar events.'}
+                  </div>
+                )}
+
+                {calendarSettings.icsUrl.trim() && calendarSyncState !== 'error' && calendarEvents.length === 0 && calendarSyncState !== 'loading' && (
+                  <div className="border border-dashed border-white/10 px-2.5 py-3 text-center font-mono text-[10px] uppercase tracking-widest text-white/30">
+                    No events for {formatDayLabel(taskDay)}
+                  </div>
+                )}
+
+                {calendarEvents.length > 0 && (
+                  <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1 custom-scrollbar">
+                    {calendarEvents.map(event => (
+                      <div
+                        key={event.id}
+                        className="border border-white/10 bg-black/30 px-2.5 py-2"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-paper-cream" title={event.title}>
+                              {event.title}
+                            </div>
+                            {event.location ? (
+                              <div className="mt-1 flex min-w-0 items-center gap-1 text-[10px] text-white/40">
+                                <MapPin className="h-3 w-3 shrink-0" strokeWidth={3} />
+                                <span className="truncate">{event.location}</span>
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="shrink-0 text-right font-mono text-[10px] uppercase tracking-wider text-white/45">
+                            {event.allDay
+                              ? 'All day'
+                              : `${formatCalendarTime(event.start, false)}${event.end ? `-${formatCalendarTime(event.end, false)}` : ''}`}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="mb-3 grid grid-cols-[1fr_auto] gap-2">
               <input
