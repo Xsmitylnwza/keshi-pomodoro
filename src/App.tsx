@@ -1463,96 +1463,116 @@ function App() {
             exit={{ opacity: 0, x: 32, scale: 0.96 }}
             transition={{ type: 'spring', stiffness: 280, damping: 26 }}
           >
-            <div className="mb-2 flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 text-white/75">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-1.5 text-white/70">
                   <ListTodo className="h-3.5 w-3.5 shrink-0" strokeWidth={3} />
-                  <span className="text-[9px] font-bold uppercase tracking-[0.22em]">Sprint task</span>
-                </div>
-                <div
-                  className="mt-1 truncate font-grotesk text-base font-black leading-none"
-                  title={selectedTask?.title ?? 'No task selected'}
-                >
-                  {selectedTask?.title ?? 'No task selected'}
+                  <span className="shrink-0 text-[8px] font-bold uppercase tracking-[0.18em]">Sprint</span>
+                  <span className="text-white/25">·</span>
+                  <span
+                    className="min-w-0 truncate text-[12px] font-black leading-none text-paper-cream"
+                    title={selectedTask?.title ?? 'No task selected'}
+                  >
+                    {selectedTask?.title ?? 'No task selected'}
+                  </span>
                 </div>
               </div>
               <button
                 onClick={() => { setIsTaskPanelOpen(false); playClick(); }}
-                className="grid h-9 w-9 shrink-0 place-items-center border-2 border-white/15 bg-white/5 text-white/65 transition-colors hover:border-white/60 hover:text-white"
+                className="grid h-7 w-7 shrink-0 place-items-center border border-white/15 bg-white/5 text-white/65 transition-colors hover:border-white/60 hover:text-white"
                 aria-label="Close sprint task panel"
               >
-                <X className="h-4 w-4" strokeWidth={3} />
+                <X className="h-3.5 w-3.5" strokeWidth={3} />
               </button>
             </div>
 
-              <div className="mb-3 grid grid-cols-[auto_1fr_auto] items-center gap-2 border-y border-white/10 py-2">
+              <div className="mb-2 flex items-center gap-1.5 border border-white/10 bg-white/[0.03] px-1.5 py-1">
                 <button
                   onClick={() => { setTaskDay(shiftDateKey(taskDay, -1)); playClick(); }}
-                  className="grid h-8 w-8 place-items-center border border-white/10 bg-white/5 text-white/55 hover:text-white"
+                  className="grid h-6 w-6 place-items-center text-white/50 hover:text-white"
                   aria-label="Previous task day"
                 >
-                  <ChevronLeft className="h-4 w-4" strokeWidth={3} />
+                  <ChevronLeft className="h-3.5 w-3.5" strokeWidth={3} />
                 </button>
-                <div className="flex min-w-0 items-center justify-center gap-2">
-                  <CalendarDays className="h-3.5 w-3.5 text-white/45" strokeWidth={3} />
-                  <span className="truncate text-[10px] font-bold uppercase tracking-[0.22em] text-white/55">
+                <div className="flex min-w-0 flex-1 items-center justify-center gap-1">
+                  <CalendarDays className="h-3 w-3 shrink-0 text-white/40" strokeWidth={3} />
+                  <span className="truncate text-[9px] font-bold uppercase tracking-[0.16em] text-white/55">
                     {formatDayLabel(taskDay)}
                   </span>
                 </div>
                 <button
                   onClick={() => { setTaskDay(shiftDateKey(taskDay, 1)); playClick(); }}
-                  className="grid h-8 w-8 place-items-center border border-white/10 bg-white/5 text-white/55 hover:text-white"
+                  className="grid h-6 w-6 place-items-center text-white/50 hover:text-white"
                   aria-label="Next task day"
                 >
-                  <ChevronRight className="h-4 w-4" strokeWidth={3} />
+                  <ChevronRight className="h-3.5 w-3.5" strokeWidth={3} />
                 </button>
-              </div>
-
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-white/35">
+                <span className="mx-0.5 h-4 w-px bg-white/10" />
+                <span className="shrink-0 text-[8px] font-bold uppercase tracking-[0.12em] text-white/40">
                   {taskPanelView === 'tasks'
-                    ? `${dayTasksSorted.length} tasks / ${selectedTask?.status ?? 'idle'}`
-                    : `${calendarEvents.length} event${calendarEvents.length === 1 ? '' : 's'}`}
+                    ? `${dayTasksSorted.length} · ${selectedTask?.status ?? 'idle'}`
+                    : `${calendarEvents.length} evt`}
                 </span>
-                <div className="flex items-center gap-2">
-                  <span
-                    className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-white/45"
-                    title={sprintApiBaseUrl ? `Syncing with ${sprintApiBaseUrl}` : 'Local task mode'}
-                  >
-                    {taskSyncState === 'online' ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
-                    {taskSyncState === 'syncing' ? 'Syncing' : taskSyncState === 'online' ? 'VPS' : 'Local'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => { void refreshTasks(); void refreshCalendarEvents(); playClick(); }}
-                    disabled={taskSyncState === 'syncing' || calendarSyncState === 'loading'}
-                    className="grid h-8 w-8 place-items-center border border-white/10 bg-white/5 text-white/55 transition-colors hover:border-white/40 hover:text-white disabled:cursor-wait disabled:opacity-50"
-                    aria-label="Refresh tasks and calendar"
-                    title="Refresh tasks and calendar"
-                  >
-                    <RotateCcw className={`h-3.5 w-3.5 ${taskSyncState === 'syncing' || calendarSyncState === 'loading' ? 'animate-spin' : ''}`} strokeWidth={3} />
-                  </button>
-                </div>
+                <span
+                  className="flex shrink-0 items-center gap-0.5 text-[8px] font-bold uppercase tracking-[0.12em] text-white/40"
+                  title={sprintApiBaseUrl ? `Syncing with ${sprintApiBaseUrl}` : 'Local task mode'}
+                >
+                  {taskSyncState === 'online' ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+                  {taskSyncState === 'syncing' ? '…' : taskSyncState === 'online' ? 'VPS' : 'LOC'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { void refreshTasks(); void refreshCalendarEvents(); playClick(); }}
+                  disabled={taskSyncState === 'syncing' || calendarSyncState === 'loading'}
+                  className="grid h-6 w-6 place-items-center text-white/45 transition-colors hover:text-white disabled:cursor-wait disabled:opacity-50"
+                  aria-label="Refresh tasks and calendar"
+                  title="Refresh tasks and calendar"
+                >
+                  <RotateCcw className={`h-3 w-3 ${taskSyncState === 'syncing' || calendarSyncState === 'loading' ? 'animate-spin' : ''}`} strokeWidth={3} />
+                </button>
               </div>
 
               {calendarSettings.enabled && (
-                <button
-                  type="button"
-                  onClick={() => { setTaskPanelView('schedule'); playClick(); }}
-                  className="mb-2 flex w-full items-center gap-2 border border-accent-green/25 bg-accent-green/10 px-2.5 py-1.5 text-left transition hover:border-accent-green/45"
-                  title={nowFocusLabel}
-                >
-                  <Clock3 className="h-3.5 w-3.5 shrink-0 text-accent-green" strokeWidth={3} />
-                  <span className="shrink-0 text-[8px] font-black uppercase tracking-[0.14em] text-accent-green">
-                    {nextUpKind === 'now' ? 'Now' : nextUpKind === 'next' ? 'Next' : 'Free'}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-paper-cream">
-                    {nextUpEvent?.title ?? (calendarConfigured ? 'Free time' : 'Connect calendar')}
-                  </span>
-                  <span className="shrink-0 font-mono text-[9px] uppercase tracking-wide text-white/50">
-                    {nextUpTimeLabel || formatClock(nowMs)}
-                  </span>
-                </button>
+                <div className="mb-2 grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => { setTaskPanelView('schedule'); playClick(); }}
+                    className="min-w-0 border border-accent-green/30 bg-accent-green/10 px-2 py-1.5 text-left transition hover:border-accent-green/50"
+                    title={currentCalendarEvent ? `Now: ${currentCalendarEvent.title}` : 'No current schedule'}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[8px] font-black uppercase tracking-[0.14em] text-accent-green">Now</span>
+                      <span className="font-mono text-[9px] uppercase tracking-wide text-white/50">
+                        {currentCalendarEvent
+                          ? (currentCalendarEvent.end
+                            ? `until ${formatCalendarTime(currentCalendarEvent.end, false)}`
+                            : formatCalendarTime(currentCalendarEvent.start, false))
+                          : formatClock(nowMs)}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 truncate text-[11px] font-semibold text-paper-cream">
+                      {currentCalendarEvent?.title ?? (calendarConfigured ? 'Free time' : 'Offline')}
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setTaskPanelView('schedule'); playClick(); }}
+                    className="min-w-0 border border-white/10 bg-white/[0.03] px-2 py-1.5 text-left transition hover:border-white/30"
+                    title={nextCalendarEvent ? `Next: ${nextCalendarEvent.title}` : 'No next schedule'}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[8px] font-black uppercase tracking-[0.14em] text-white/45">Next</span>
+                      <span className="font-mono text-[9px] uppercase tracking-wide text-white/50">
+                        {nextCalendarEvent
+                          ? formatCalendarTime(nextCalendarEvent.start, nextCalendarEvent.allDay)
+                          : '--:--'}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 truncate text-[11px] font-semibold text-paper-cream">
+                      {nextCalendarEvent?.title ?? 'None'}
+                    </div>
+                  </button>
+                </div>
               )}
 
               <div className="mb-3 grid grid-cols-2 gap-1.5">
