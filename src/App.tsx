@@ -175,6 +175,8 @@ function App() {
   const [calendarError, setCalendarError] = useState('');
   const [calendarConfigured, setCalendarConfigured] = useState(false);
   const [calendarConnectUrl, setCalendarConnectUrl] = useState('');
+  const [taskPanelView, setTaskPanelView] = useState<'tasks' | 'schedule'>('tasks');
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const taskListScrollRef = useRef<HTMLDivElement | null>(null);
 
   // Ref to store the absolute end time (timestamp when timer should complete)
@@ -490,6 +492,13 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.authenticated, auth.loading, taskDay, calendarSettings.enabled, calendarSettings.icsUrl, isTaskPanelOpen]);
 
+  useEffect(() => {
+    if (!isTaskPanelOpen || !calendarSettings.enabled) return;
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [isTaskPanelOpen, calendarSettings.enabled]);
+
   const formatCalendarTime = (iso: string, allDay: boolean) => {
     if (allDay) return 'All day';
     const date = new Date(iso);
@@ -501,6 +510,51 @@ function App() {
     }).format(date);
   };
 
+  const formatClock = (ms: number) => new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(ms));
+
+  const getEventBounds = (event: CalendarEvent) => {
+    const startMs = new Date(event.start).getTime();
+    const endMs = event.end ? new Date(event.end).getTime() : Number.NaN;
+    return {
+      startMs: Number.isFinite(startMs) ? startMs : Number.NaN,
+      endMs: Number.isFinite(endMs) ? endMs : Number.NaN,
+    };
+  };
+
+  const sortedCalendarEvents = calendarEvents.slice().sort((a, b) => {
+    if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+    return new Date(a.start).getTime() - new Date(b.start).getTime();
+  });
+
+  const currentCalendarEvent = !calendarSettings.enabled || !calendarConfigured
+    ? null
+    : sortedCalendarEvents.find((event) => {
+      if (event.allDay) return false;
+      const { startMs, endMs } = getEventBounds(event);
+      if (!Number.isFinite(startMs)) return false;
+      if (Number.isFinite(endMs)) return nowMs >= startMs && nowMs < endMs;
+      return Math.abs(nowMs - startMs) < 30 * 60 * 1000;
+    }) ?? null;
+
+  const nextCalendarEvent = !calendarSettings.enabled || !calendarConfigured
+    ? null
+    : sortedCalendarEvents.find((event) => {
+      if (event.allDay) return false;
+      const { startMs } = getEventBounds(event);
+      return Number.isFinite(startMs) && startMs > nowMs;
+    }) ?? null;
+
+  const nowFocusLabel = currentCalendarEvent
+    ? `Now · ${currentCalendarEvent.title}`
+    : nextCalendarEvent
+      ? `Next · ${nextCalendarEvent.title} @ ${formatCalendarTime(nextCalendarEvent.start, false)}`
+      : calendarConfigured
+        ? 'Free time'
+        : 'Calendar offline';
 
   const selectTask = (taskId: string, options?: { expand?: boolean | 'toggle' }) => {
     const expandMode = options?.expand ?? false;
@@ -1404,7 +1458,9 @@ function App() {
 
               <div className="mb-3 flex items-center justify-between gap-3">
                 <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-white/35">
-                  {dayTasksSorted.length} tasks / {selectedTask?.status ?? 'idle'}
+                  {taskPanelView === 'tasks'
+                    ? `${dayTasksSorted.length} tasks / ${selectedTask?.status ?? 'idle'}`
+                    : `${calendarEvents.length} event${calendarEvents.length === 1 ? '' : 's'}`}
                 </span>
                 <div className="flex items-center gap-2">
                   <span
@@ -1427,165 +1483,265 @@ function App() {
                 </div>
               </div>
 
-              <div className="mb-3 flex flex-wrap gap-1.5">
+              {calendarSettings.enabled && (
+                <div className="mb-3 border border-accent-green/30 bg-accent-green/10 px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Clock3 className="h-3.5 w-3.5 shrink-0 text-accent-green" strokeWidth={3} />
+                      <div className="min-w-0">
+                        <div className="text-[9px] font-black uppercase tracking-[0.18em] text-accent-green/80">
+                          Now {formatClock(nowMs)}
+                        </div>
+                        <div className="mt-0.5 truncate text-xs font-semibold text-paper-cream" title={nowFocusLabel}>
+                          {nowFocusLabel}
+                        </div>
+                      </div>
+                    </div>
+                    {currentCalendarEvent?.end ? (
+                      <div className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-white/45">
+                        until {formatCalendarTime(currentCalendarEvent.end, false)}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
+              <div className="mb-3 grid grid-cols-2 gap-1.5">
                 {([
-                  { id: 'all', label: 'All', count: taskFilterCounts.all },
-                  { id: 'doing', label: 'Doing', count: taskFilterCounts.doing },
-                  { id: 'todo', label: 'Todo', count: taskFilterCounts.todo },
-                  { id: 'done', label: 'Done', count: taskFilterCounts.done },
-                ] as const).map(chip => {
-                  const active = taskStatusFilter === chip.id;
+                  { id: 'tasks' as const, label: 'Tasks', icon: ListTodo, count: dayTasksSorted.length },
+                  { id: 'schedule' as const, label: 'Schedule', icon: CalendarDays, count: calendarSettings.enabled ? calendarEvents.length : 0 },
+                ]).map(tab => {
+                  const active = taskPanelView === tab.id;
+                  const Icon = tab.icon;
                   return (
                     <button
-                      key={chip.id}
-                      onClick={() => { setTaskStatusFilter(chip.id); playClick(); }}
-                      className={`inline-flex items-center gap-1 border px-2 py-1 text-[9px] font-black uppercase tracking-[0.18em] transition-colors ${active ? 'border-paper-cream bg-paper-cream text-black' : 'border-white/15 bg-white/5 text-white/55 hover:border-white/40 hover:text-white'}`}
+                      key={tab.id}
+                      type="button"
+                      onClick={() => { setTaskPanelView(tab.id); playClick(); }}
+                      className={`inline-flex min-h-10 items-center justify-center gap-1.5 border px-2 text-[10px] font-black uppercase tracking-[0.16em] transition-colors ${active ? 'border-paper-cream bg-paper-cream text-black' : 'border-white/15 bg-white/5 text-white/55 hover:border-white/40 hover:text-white'}`}
                       aria-pressed={active}
                     >
-                      <span>{chip.label}</span>
-                      <span className={active ? 'text-black/55' : 'text-white/35'}>{chip.count}</span>
+                      <Icon className="h-3.5 w-3.5" strokeWidth={3} />
+                      <span>{tab.label}</span>
+                      <span className={active ? 'text-black/50' : 'text-white/35'}>{tab.count}</span>
                     </button>
                   );
                 })}
               </div>
 
-            {calendarSettings.enabled && (
-              <div className="mb-3 border border-white/10 bg-white/[0.03] p-3">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-[0.2em] text-white/45">
-                    <CalendarDays className="h-3.5 w-3.5" strokeWidth={3} />
-                    <span>Google calendar</span>
+              {taskPanelView === 'tasks' ? (
+                <>
+                  <div className="mb-3 flex flex-wrap gap-1.5">
+                    {([
+                      { id: 'all', label: 'All', count: taskFilterCounts.all },
+                      { id: 'doing', label: 'Doing', count: taskFilterCounts.doing },
+                      { id: 'todo', label: 'Todo', count: taskFilterCounts.todo },
+                      { id: 'done', label: 'Done', count: taskFilterCounts.done },
+                    ] as const).map(chip => {
+                      const active = taskStatusFilter === chip.id;
+                      return (
+                        <button
+                          key={chip.id}
+                          onClick={() => { setTaskStatusFilter(chip.id); playClick(); }}
+                          className={`inline-flex items-center gap-1 border px-2 py-1 text-[9px] font-black uppercase tracking-[0.18em] transition-colors ${active ? 'border-paper-cream bg-paper-cream text-black' : 'border-white/15 bg-white/5 text-white/55 hover:border-white/40 hover:text-white'}`}
+                          aria-pressed={active}
+                        >
+                          <span>{chip.label}</span>
+                          <span className={active ? 'text-black/55' : 'text-white/35'}>{chip.count}</span>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-white/30">
-                    {calendarSyncState === 'loading'
-                      ? 'Loading'
-                      : calendarSyncState === 'error'
-                        ? 'Error'
-                        : `${calendarEvents.length} event${calendarEvents.length === 1 ? '' : 's'}`}
-                  </span>
-                </div>
 
-                {!calendarConfigured && calendarSyncState !== 'loading' && (
-                  <div className="space-y-2 border border-dashed border-white/10 px-2.5 py-3 text-[11px] leading-relaxed text-white/40">
-                    <div>Connect Google Calendar to show events for this day.</div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        playClick();
-                        window.location.href = calendarConnectUrl || googleCalendarConnectUrl();
+                  <div className="mb-3 grid grid-cols-[1fr_auto] gap-2">
+                    <input
+                      value={newTaskTitle}
+                      onChange={(event) => setNewTaskTitle(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          addTask();
+                        }
                       }}
-                      className="inline-flex min-h-9 items-center border border-paper-cream/40 bg-paper-cream px-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-black"
+                      className="min-w-0 border-2 border-white/15 bg-black/45 px-3 py-2.5 font-mono text-xs text-paper-cream outline-none transition-colors placeholder:text-white/25 focus:border-paper-cream"
+                      placeholder="Add task..."
+                    />
+                    <button
+                      onClick={() => { addTask(); playClick(); }}
+                      className="inline-grid h-11 w-11 place-items-center border-2 border-black bg-paper-cream text-black transition-transform hover:-translate-y-0.5 active:translate-y-0"
+                      style={{ boxShadow: '4px 4px 0 rgba(0,0,0,1)' }}
+                      aria-label="Add sprint task"
                     >
-                      Connect Google Calendar
+                      <Plus className="h-4 w-4" strokeWidth={3} />
                     </button>
                   </div>
-                )}
 
-                {calendarSyncState === 'error' && (
-                  <div className="border border-accent-red/30 bg-accent-red/10 px-2.5 py-3 text-[11px] leading-relaxed text-accent-red">
-                    {calendarError || 'Could not load calendar events.'}
-                  </div>
-                )}
-
-                {calendarConfigured && calendarSyncState !== 'error' && calendarEvents.length === 0 && calendarSyncState !== 'loading' && (
-                  <div className="border border-dashed border-white/10 px-2.5 py-3 text-center font-mono text-[10px] uppercase tracking-widest text-white/30">
-                    No events for {formatDayLabel(taskDay)}
-                  </div>
-                )}
-
-                {calendarEvents.length > 0 && (
-                  <div className="max-h-40 space-y-1.5 overflow-y-auto pr-1 custom-scrollbar">
-                    {calendarEvents.map(event => (
-                      <div
-                        key={event.id}
-                        className="border border-white/10 bg-black/30 px-2.5 py-2"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-semibold text-paper-cream" title={event.title}>
-                              {event.title}
-                            </div>
-                            {event.location ? (
-                              <div className="mt-1 flex min-w-0 items-center gap-1 text-[10px] text-white/40">
-                                <MapPin className="h-3 w-3 shrink-0" strokeWidth={3} />
-                                <span className="truncate">{event.location}</span>
-                              </div>
-                            ) : null}
-                          </div>
-                          <div className="shrink-0 text-right font-mono text-[10px] uppercase tracking-wider text-white/45">
-                            {event.allDay
-                              ? 'All day'
-                              : `${formatCalendarTime(event.start, false)}${event.end ? `-${formatCalendarTime(event.end, false)}` : ''}`}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="mb-3 grid grid-cols-[1fr_auto] gap-2">
-              <input
-                value={newTaskTitle}
-                onChange={(event) => setNewTaskTitle(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    addTask();
-                  }
-                }}
-                className="min-w-0 border-2 border-white/15 bg-black/45 px-3 py-2.5 font-mono text-xs text-paper-cream outline-none transition-colors placeholder:text-white/25 focus:border-paper-cream"
-                placeholder="Add task..."
-              />
-              <button
-                onClick={() => { addTask(); playClick(); }}
-                className="inline-grid h-11 w-11 place-items-center border-2 border-black bg-paper-cream text-black transition-transform hover:-translate-y-0.5 active:translate-y-0"
-                style={{ boxShadow: '4px 4px 0 rgba(0,0,0,1)' }}
-                aria-label="Add sprint task"
-              >
-                <Plus className="h-4 w-4" strokeWidth={3} />
-              </button>
-            </div>
-
-            <div
-              ref={taskListScrollRef}
-              className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 custom-scrollbar"
-              onDragOver={(event) => {
-                if (!draggedTaskId) return;
-                event.preventDefault();
-                autoScrollTaskList(event.clientY);
-              }}
-            >
-              {dayTasksSorted.length === 0 && (
-                <div className="border border-dashed border-white/15 px-3 py-5 text-center font-mono text-[11px] uppercase tracking-widest text-white/30">
-                  No tasks for {formatDayLabel(taskDay)}
-                </div>
-              )}
-              {dayTasksSorted.length > 0 && visibleTasks.length === 0 && (
-                <div className="border border-dashed border-white/15 px-3 py-5 text-center font-mono text-[11px] uppercase tracking-widest text-white/30">
-                  No tasks in this filter
-                </div>
-              )}
-
-              {(taskStatusFilter === 'done' ? [] : activeTasks).map(task => renderTaskRow(task))}
-
-              {taskStatusFilter !== 'done' && doneTasks.length > 0 && (
-                <div className="pt-1">
-                  <button
-                    onClick={() => { setDoneSectionCollapsed(prev => !prev); playClick(); }}
-                    className="mb-2 flex w-full items-center justify-between border border-white/10 bg-white/5 px-2.5 py-2 text-left text-[9px] font-black uppercase tracking-[0.2em] text-white/55 transition-colors hover:border-white/30 hover:text-white"
-                    aria-expanded={!doneSectionCollapsed}
+                  <div
+                    ref={taskListScrollRef}
+                    className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 custom-scrollbar"
+                    onDragOver={(event) => {
+                      if (!draggedTaskId) return;
+                      event.preventDefault();
+                      autoScrollTaskList(event.clientY);
+                    }}
                   >
-                    <span>Done ({doneTasks.length})</span>
-                    {doneSectionCollapsed ? <ChevronDown className="h-3.5 w-3.5" strokeWidth={3} /> : <ChevronUp className="h-3.5 w-3.5" strokeWidth={3} />}
-                  </button>
-                  {!doneSectionCollapsed && doneTasks.map(task => renderTaskRow(task))}
+                    {dayTasksSorted.length === 0 && (
+                      <div className="border border-dashed border-white/15 px-3 py-5 text-center font-mono text-[11px] uppercase tracking-widest text-white/30">
+                        No tasks for {formatDayLabel(taskDay)}
+                      </div>
+                    )}
+                    {dayTasksSorted.length > 0 && visibleTasks.length === 0 && (
+                      <div className="border border-dashed border-white/15 px-3 py-5 text-center font-mono text-[11px] uppercase tracking-widest text-white/30">
+                        No tasks in this filter
+                      </div>
+                    )}
+
+                    {(taskStatusFilter === 'done' ? [] : activeTasks).map(task => renderTaskRow(task))}
+
+                    {taskStatusFilter !== 'done' && doneTasks.length > 0 && (
+                      <div className="pt-1">
+                        <button
+                          onClick={() => { setDoneSectionCollapsed(prev => !prev); playClick(); }}
+                          className="mb-2 flex w-full items-center justify-between border border-white/10 bg-white/5 px-2.5 py-2 text-left text-[9px] font-black uppercase tracking-[0.2em] text-white/55 transition-colors hover:border-white/30 hover:text-white"
+                          aria-expanded={!doneSectionCollapsed}
+                        >
+                          <span>Done ({doneTasks.length})</span>
+                          {doneSectionCollapsed ? <ChevronDown className="h-3.5 w-3.5" strokeWidth={3} /> : <ChevronUp className="h-3.5 w-3.5" strokeWidth={3} />}
+                        </button>
+                        {!doneSectionCollapsed && doneTasks.map(task => renderTaskRow(task))}
+                      </div>
+                    )}
+
+                    {taskStatusFilter === 'done' && doneTasks.map(task => renderTaskRow(task))}
+                  </div>
+                </>
+              ) : (
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 custom-scrollbar">
+                  {!calendarSettings.enabled ? (
+                    <div className="border border-dashed border-white/15 px-3 py-5 text-center text-[11px] leading-relaxed text-white/40">
+                      Turn on Calendar in Settings to use the Schedule view.
+                    </div>
+                  ) : (
+                    <>
+                      {!calendarConfigured && calendarSyncState !== 'loading' && (
+                        <div className="space-y-2 border border-dashed border-white/10 px-2.5 py-3 text-[11px] leading-relaxed text-white/40">
+                          <div>Connect Google Calendar to show today&apos;s events.</div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              playClick();
+                              window.location.href = calendarConnectUrl || googleCalendarConnectUrl();
+                            }}
+                            className="inline-flex min-h-9 items-center border border-paper-cream/40 bg-paper-cream px-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-black"
+                          >
+                            Connect Google Calendar
+                          </button>
+                        </div>
+                      )}
+
+                      {calendarSyncState === 'error' && (
+                        <div className="border border-accent-red/30 bg-accent-red/10 px-2.5 py-3 text-[11px] leading-relaxed text-accent-red">
+                          {calendarError || 'Could not load calendar events.'}
+                        </div>
+                      )}
+
+                      {calendarSyncState === 'loading' && (
+                        <div className="border border-dashed border-white/10 px-2.5 py-3 text-center font-mono text-[10px] uppercase tracking-widest text-white/30">
+                          Loading schedule...
+                        </div>
+                      )}
+
+                      {calendarConfigured && calendarSyncState !== 'error' && sortedCalendarEvents.length === 0 && calendarSyncState !== 'loading' && (
+                        <div className="border border-dashed border-white/10 px-2.5 py-3 text-center font-mono text-[10px] uppercase tracking-widest text-white/30">
+                          No events for {formatDayLabel(taskDay)}
+                        </div>
+                      )}
+
+                      {sortedCalendarEvents.length > 0 && (
+                        <div className="space-y-2">
+                          {sortedCalendarEvents.map((event, index) => {
+                            const { startMs, endMs } = getEventBounds(event);
+                            const isCurrent = Boolean(currentCalendarEvent && currentCalendarEvent.id === event.id);
+                            const isPast = !event.allDay && Number.isFinite(endMs) && endMs <= nowMs;
+                            const prev = sortedCalendarEvents[index - 1];
+                            const prevEnd = prev && !prev.allDay ? getEventBounds(prev).endMs : Number.NaN;
+                            const prevStart = prev && !prev.allDay ? getEventBounds(prev).startMs : Number.NaN;
+                            const showNowLine = !event.allDay
+                              && Number.isFinite(startMs)
+                              && startMs > nowMs
+                              && (
+                                index === 0
+                                || (prev?.allDay ?? false)
+                                || (Number.isFinite(prevEnd) && prevEnd <= nowMs)
+                                || (Number.isFinite(prevStart) && prevStart <= nowMs && !(Number.isFinite(prevEnd) && prevEnd > nowMs))
+                              )
+                              && !isCurrent;
+
+                            return (
+                              <div key={event.id} className="space-y-2">
+                                {showNowLine && (
+                                  <div className="flex items-center gap-2 py-1">
+                                    <div className="h-px flex-1 bg-accent-green/70" />
+                                    <span className="font-mono text-[10px] font-black uppercase tracking-[0.18em] text-accent-green">
+                                      Now {formatClock(nowMs)}
+                                    </span>
+                                    <div className="h-px flex-1 bg-accent-green/70" />
+                                  </div>
+                                )}
+                                <div
+                                  className={`border px-2.5 py-2 ${
+                                    isCurrent
+                                      ? 'border-accent-green/50 bg-accent-green/10'
+                                      : isPast
+                                        ? 'border-white/10 bg-black/20 opacity-55'
+                                        : 'border-white/10 bg-black/30'
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <div className="truncate text-sm font-semibold text-paper-cream" title={event.title}>
+                                        {event.title}
+                                      </div>
+                                      {event.location ? (
+                                        <div className="mt-1 flex min-w-0 items-center gap-1 text-[10px] text-white/40">
+                                          <MapPin className="h-3 w-3 shrink-0" strokeWidth={3} />
+                                          <span className="truncate">{event.location}</span>
+                                        </div>
+                                      ) : null}
+                                      {isCurrent ? (
+                                        <div className="mt-1 text-[9px] font-black uppercase tracking-[0.16em] text-accent-green">
+                                          Happening now
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                    <div className="shrink-0 text-right font-mono text-[10px] uppercase tracking-wider text-white/45">
+                                      {event.allDay
+                                        ? 'All day'
+                                        : `${formatCalendarTime(event.start, false)}${event.end ? `-${formatCalendarTime(event.end, false)}` : ''}`}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {!currentCalendarEvent
+                            && nextCalendarEvent == null
+                            && sortedCalendarEvents.some(event => !event.allDay) && (
+                            <div className="flex items-center gap-2 py-1">
+                              <div className="h-px flex-1 bg-accent-green/70" />
+                              <span className="font-mono text-[10px] font-black uppercase tracking-[0.18em] text-accent-green">
+                                Now {formatClock(nowMs)}
+                              </span>
+                              <div className="h-px flex-1 bg-accent-green/70" />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
-
-              {taskStatusFilter === 'done' && doneTasks.map(task => renderTaskRow(task))}
-            </div>
           </motion.aside>
         )}
       </AnimatePresence>
