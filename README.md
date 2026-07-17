@@ -39,6 +39,7 @@ Most Pomodoro apps are either:
 **Keshi Pomodoro** sits in the middle:
 
 - a timer that *feels* intentional (Keshi / scrapbook / lo-fi UI)
+- a compact **Sprint / Schedule** side panel with Google Calendar now/next cues
 - a **Discipline** surface that shows whether you actually showed up
 - an API that humans *and* agents (Hermes) can write into safely
 
@@ -102,9 +103,57 @@ Binary habits, multi-view matrices (Grid / Lanes / Weeks / Rank), focus reality 
 | Pillar | What you get |
 | --- | --- |
 | **Focus timer** | Pomodoro ring, focus/break modes, keyboard shortcuts, session history |
+| **Sprint tasks** | Day-scoped todo panel, status filters, drag reorder, refresh sync |
+| **Schedule** | Google Calendar OAuth (read-only) with compact Now/Next cues + timeline |
 | **Atmosphere** | Lo-fi scrapbook UI, theme studio, radio widget, motion entrance |
 | **Discipline** | Habit matrix, focus reality, 7D/30D range, readiness signals, evidence logs |
 | **Automation** | Per-user habit catalog API, binary scores, Hermes-ready idempotent writes |
+
+---
+
+## Sprint panel & Google Calendar
+
+The right-side sprint dock is intentionally dense so it does not steal focus from the timer.
+
+### Tasks vs Schedule
+
+| Tab | Purpose |
+| --- | --- |
+| **Tasks** | Day-scoped sprint list (todo / doing / done), add/reorder, refresh |
+| **Schedule** | Google Calendar events for the selected day, with a live now marker |
+
+### Always-on next cue
+
+When the panel is closed, a one-line chip can sit beside the task button:
+
+- **Now** · current event · end time
+- **Next** · upcoming event · start time
+
+Click it to jump straight into the Schedule tab.
+
+### In-panel schedule strip
+
+Inside the panel, calendar state is shown as two half-width slots:
+
+| Slot | Meaning |
+| --- | --- |
+| **Now** | Happening right now, or Free time |
+| **Next** | The following timed event, or None |
+
+### Auth model
+
+Calendar is **read-only**.
+
+1. Prefer Google OAuth through central auth (`calendar.readonly`)
+2. Fall back to a secret ICS URL in Settings if OAuth is not connected
+
+Production endpoints:
+
+- Connect: `https://xsmity.cloud/auth/google/calendar/connect?return_to=...`
+- Events: `https://xsmity.cloud/auth/google/calendar/events?date=YYYY-MM-DD`
+- Status: `https://xsmity.cloud/auth/google/calendar/status`
+
+The edge proxy routes calendar reads under `/auth/*`. Clients should not depend on `/api/google/*` in production.
 
 ---
 
@@ -197,6 +246,7 @@ Node API  (server/pomodoro-server.mjs)
 
 - App: `https://pomodoro.xsmity.cloud`  
 - API: `https://pomodoro.xsmity.cloud/api`  
+- Central auth / calendar: `https://xsmity.cloud`  
 - Agent gateway: `https://xsmity.cloud/api/agent/pomodoro`
 
 ---
@@ -265,11 +315,13 @@ pomodoro-keshi/
 │   │   ├── ThemeSettings.tsx
 │   │   └── ...
 │   ├── lib/
+│   │   ├── calendarApi.ts
+│   │   ├── centralAuth.ts
 │   │   ├── disciplineApi.ts
 │   │   ├── disciplineDashboardModel.ts
 │   │   └── ...
 │   ├── context/            # auth + theme
-│   └── App.tsx
+│   └── App.tsx             # timer + sprint/schedule panel
 ├── tests/                  # Node test runner + Playwright demos
 ├── CONTEXT.md              # product language + current discipline model
 └── DESIGN_SYSTEM.md        # visual system tokens
@@ -382,6 +434,7 @@ Workflow: [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)
 
 - [ ] Exportable weekly discipline report (PNG/PDF)
 - [ ] Public demo fixtures without auth friction
+- [ ] Multi-calendar selection beyond primary Google calendar
 - [ ] More matrix encodings (pattern fill for colorblind)
 - [ ] Plugin hooks for third-party agent writers
 - [ ] Optional multi-language UI strings (EN first)
