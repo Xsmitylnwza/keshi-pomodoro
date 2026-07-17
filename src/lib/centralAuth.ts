@@ -29,7 +29,7 @@ export function centralLoginUrl(returnTo = window.location.href) {
   return `${centralAuthBaseUrl()}/auth/login?return_to=${encodeURIComponent(returnTo)}`;
 }
 
-export function centralLogoutUrl(returnTo = window.location.origin) {
+export function centralLogoutUrl(returnTo = typeof window !== 'undefined' ? window.location.href : '/') {
   return `${centralAuthBaseUrl()}/auth/logout?return_to=${encodeURIComponent(returnTo)}`;
 }
 

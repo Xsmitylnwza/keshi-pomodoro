@@ -78,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         window.location.href = centralLoginUrl(returnTo);
       },
-      logout: (returnTo = window.location.origin) => {
+      logout: (returnTo = window.location.href) => {
         if (localMock) {
           try {
             window.localStorage.setItem(LOCAL_SESSION_KEY, '0');
