@@ -12,6 +12,7 @@ const distDir = process.env.POMODORO_DIST_DIR || path.join(rootDir, 'dist');
 const dataDir = process.env.POMODORO_DATA_DIR || path.join(rootDir, 'data');
 const port = Number(process.env.PORT || 4177);
 const host = process.env.HOST || '127.0.0.1';
+const habitIntelligenceUrl = String(process.env.HABIT_INTELLIGENCE_URL || 'https://habits.xsmity.cloud').replace(/\/+$/, '');
 const legacyDefaultTaskId = 'inbox';
 
 const legacyTasksFile = path.join(dataDir, 'tasks.json');
@@ -50,6 +51,7 @@ const DEFAULT_HABITS = [
 ];
 const businessTimeZone = process.env.BUSINESS_TIME_ZONE || 'Asia/Bangkok';
 const centralAuthEnabled = isTruthyEnv(process.env.CENTRAL_AUTH_ENABLED);
+const legacyDisciplineEnabled = isTruthyEnv(process.env.POMODORO_ENABLE_LEGACY_DISCIPLINE);
 const centralAuthBaseUrl = centralAuthEnabled ? normalizeCentralAuthUrl(process.env.CENTRAL_AUTH_URL) : '';
 const trustedCentralServiceToken = process.env.XSMITY_SERVICE_TOKEN || process.env.CENTRAL_SERVICE_TOKEN || '';
 const defaultUserKey = process.env.POMODORO_DEFAULT_USER_ID || process.env.DEFAULT_OWNER_USER_ID || '';
@@ -1252,6 +1254,35 @@ function buildFocusActivityByDate(range, sessions, events) {
   return activityByDate;
 }
 
+async function buildFocusTrend(userKey, url) {
+  const range = buildTrendRange(url);
+  const focusActivityByDate = buildFocusActivityByDate(
+    range,
+    await readPomodoros(userKey),
+    await readPomodoroEvents(userKey),
+  );
+  return {
+    days: range.days,
+    from: range.from,
+    to: range.to,
+    startDate: range.startDate,
+    endDate: range.endDate,
+    trend: datesBetween(range.startDate, range.endDate).map(date => ({
+      date,
+      activity: publicFocusActivity(focusActivityByDate.get(date) ?? emptyFocusActivity()),
+    })),
+  };
+}
+
+function publicFocusActivity(activity) {
+  return {
+    focusMinutes: Math.max(0, Math.round(Number(activity.focusMinutes || 0))),
+    completedSessions: Math.max(0, Math.round(Number(activity.completedSessions || 0))),
+    firstStartedAt: typeof activity.firstStartedAt === 'string' ? activity.firstStartedAt : null,
+    hourlyMinutes: Array.from({ length: 24 }, (_, hour) => Math.max(0, Math.round(Number(activity.hourlyMinutes?.[hour] || 0)))),
+  };
+}
+
 async function recomputeStreak(userKey) {
   const db = await getDisciplineDb(userKey);
   const rows = db.prepare('SELECT date FROM daily_scores ORDER BY date ASC').all();
@@ -1440,6 +1471,14 @@ async function handleApi(req, res, url) {
     return;
   }
   const userKey = authContext.userKey;
+
+  if (pathname.startsWith('/api/discipline/') && !legacyDisciplineEnabled) {
+    sendJson(res, 410, {
+      error: 'habit_api_moved',
+      replacement: 'https://xsmity.cloud/api/agent/habits',
+    });
+    return;
+  }
 
   if (pathname === '/api/settings' && req.method === 'GET') {
     sendJson(res, 200, { settings: await readAppSettings(userKey) });
@@ -1692,6 +1731,11 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (pathname === '/api/analytics/focus/trend' && req.method === 'GET') {
+    sendJson(res, 200, await buildFocusTrend(userKey, url));
+    return;
+  }
+
   if (pathname === '/api/discipline/scores' && req.method === 'POST') {
     const body = await readBody(req);
     const date = requireDateKey(body?.date);
@@ -1938,6 +1982,11 @@ async function handleApi(req, res, url) {
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    if (url.pathname === '/discipline' || url.pathname.startsWith('/discipline/')) {
+      res.writeHead(302, { location: habitIntelligenceUrl, 'cache-control': 'no-store' });
+      res.end();
+      return;
+    }
     if (url.pathname.startsWith('/api/')) {
       await handleApi(req, res, url);
       return;

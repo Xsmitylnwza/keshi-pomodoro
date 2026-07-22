@@ -127,78 +127,12 @@ test('demo_menu_general', async ({ page }) => {
   await settle(page, 900);
 });
 
-test('demo_discipline_dashboard', async ({ page }) => {
-  await page.goto('/');
-  await settle(page, 1000);
-
-  // Open account / discipline entry points
-  const disciplineNav = page.getByRole('button', { name: /discipline/i }).or(page.getByText(/discipline/i));
-  // try account menu first
-  const account = page.locator('button').filter({ hasText: /account|profile/i }).first();
-  if (await account.count()) {
-    await account.click().catch(() => {});
-    await settle(page, 500);
-  }
-
-  // Direct navigation path if app supports hash/route; else click any Discipline control
-  const openDisc = page.getByText(/discipline dashboard|discipline/i).first();
-  if (await openDisc.count()) {
-    await openDisc.click().catch(() => {});
-  } else {
-    // try sidebar or top nav
-    await page.goto(baseURL.replace(/\/$/, '') + '/#discipline').catch(() => {});
-  }
-  await settle(page, 1500);
-
-  // Wait for discipline chrome if present
-  const range7 = page.getByRole('button', { name: /7d|7 day/i }).first();
-  const range30 = page.getByRole('button', { name: /30d|30 day/i }).first();
-  if (await range7.count()) {
-    await range7.click();
-    await settle(page, 800);
-  }
-  if (await range30.count()) {
-    await range30.click();
-    await settle(page, 1000);
-  }
-  if (await range7.count()) {
-    await range7.click();
-    await settle(page, 800);
-  }
-
-  // Switch habit matrix views
-  for (const name of ['Grid', 'Lanes', 'Weeks', 'Rank']) {
-    const btn = page.getByRole('button', { name: new RegExp(`^${name}$`, 'i') }).first();
-    if (await btn.count()) {
-      await btn.click().catch(() => {});
-      await settle(page, 900);
-    }
-  }
-
-  // Focus matrix views
-  for (const name of ['Hours', 'Days', 'Rank']) {
-    const btn = page.getByRole('button', { name: new RegExp(`^${name}$`, 'i') }).first();
-    if (await btn.count()) {
-      await btn.click().catch(() => {});
-      await settle(page, 800);
-    }
-  }
-
-  // Open evidence / habits if chrome buttons exist
-  const evidence = page.getByRole('button', { name: /evidence/i }).first();
-  if (await evidence.count()) {
-    await evidence.click().catch(() => {});
-    await settle(page, 1000);
-  }
-  const habits = page.getByRole('button', { name: /habits|manage habits/i }).first();
-  if (await habits.count()) {
-    await habits.click().catch(() => {});
-    await settle(page, 1200);
-  }
-
-  // Scroll matrix into view for capture density
-  await page.evaluate(() => window.scrollBy(0, 500));
-  await settle(page, 900);
-  await page.evaluate(() => window.scrollBy(0, 700));
-  await settle(page, 900);
+test('discipline route moves to Habit Intelligence', async ({ page }) => {
+  await page.route('https://habits.xsmity.cloud/**', route => route.fulfill({
+    status: 200,
+    contentType: 'text/html',
+    body: '<title>Rhythm</title><h1>Habit Intelligence</h1>',
+  }));
+  await page.goto('/discipline');
+  await page.waitForURL('https://habits.xsmity.cloud/**');
 });

@@ -1,7 +1,7 @@
 {
   "name": "pomodoro-keshi",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -39,7 +39,7 @@
     "vite": "^7.2.4"
   },
   "license": "MIT",
-  "description": "Lo-fi Pomodoro timer with a Discipline dashboard for binary habit tracking and focus reality analytics",
+  "description": "Lo-fi Pomodoro timer with daily sprint tasks, Calendar cues, and privacy-safe focus analytics",
   "author": "Xsmity",
   "repository": {
     "type": "git",
@@ -53,8 +53,8 @@
     "pomodoro",
     "focus",
     "timer",
-    "habits",
-    "discipline",
+    "tasks",
+    "calendar",
     "react",
     "vite",
     "lofi"

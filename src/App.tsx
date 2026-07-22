@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowDown, ArrowUp, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Clock3, GripVertical, ListTodo, LogIn, MapPin, Pause, Play, Plus, RotateCcw, Trash2, UserCircle, Wifi, WifiOff, X } from 'lucide-react';
 import { CustomCursor } from './components/CustomCursor';
 import Background from './components/Background';
-import { AccountMenu, DisciplineDashboard } from './components/DisciplineDashboard';
+import { AccountMenu } from './components/AccountMenu';
 
 import { RadioWidget } from './components/RadioWidget';
 
@@ -88,6 +88,7 @@ const taskBusinessDate = (task?: SprintTask | null) => {
   return Number.isNaN(parsed.getTime()) ? null : toDateKey(parsed);
 };
 const TASK_STATUS_ORDER: SprintTask['status'][] = ['todo', 'doing', 'done'];
+const HABIT_INTELLIGENCE_URL = (import.meta.env.VITE_HABIT_INTELLIGENCE_URL || 'https://habits.xsmity.cloud').replace(/\/+$/, '');
 
 function AuthGate({
   loading,
@@ -196,18 +197,16 @@ function App() {
   const sessionIdRef = useRef<string | null>(null);
   const isDisciplineRoute = pathname.startsWith('/discipline');
 
-  const navigateTo = (nextPath: string) => {
-    if (typeof window === 'undefined' || window.location.pathname === nextPath) return;
-    window.history.pushState({}, '', nextPath);
-    setPathname(nextPath);
-    window.scrollTo({ top: 0, behavior: 'auto' });
-  };
-
   useEffect(() => {
     const handlePopState = () => setPathname(window.location.pathname);
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (!isDisciplineRoute || typeof window === 'undefined') return;
+    window.location.replace(HABIT_INTELLIGENCE_URL);
+  }, [isDisciplineRoute]);
 
   // Sound Utility
   const playClick = () => {
@@ -351,7 +350,7 @@ function App() {
   useEffect(() => {
     const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
     const s = (timeLeft % 60).toString().padStart(2, '0');
-    document.title = isDisciplineRoute ? `Discipline / ${m}:${s}` : `${m}:${s} / ${mode.toUpperCase()}`;
+    document.title = isDisciplineRoute ? 'Opening Rhythm' : `${m}:${s} / ${mode.toUpperCase()}`;
   }, [timeLeft, mode, isDisciplineRoute]);
 
   function handleComplete() {
@@ -1312,6 +1311,18 @@ function App() {
     </>
   );
 
+  if (isDisciplineRoute) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#080808] p-6 text-paper-cream">
+        <div className="max-w-md border-2 border-white/20 bg-white/[0.04] p-7 text-center">
+          <p className="font-marker text-3xl uppercase">Opening Rhythm</p>
+          <p className="mt-3 text-sm text-white/55">Habit history and analytics now live in Habit Intelligence.</p>
+          <a className="mt-5 inline-flex border-2 border-paper-cream px-4 py-2 text-xs font-black uppercase tracking-widest" href={HABIT_INTELLIGENCE_URL}>Continue</a>
+        </div>
+      </main>
+    );
+  }
+
   if (auth.loading || !auth.authenticated) {
     return (
       <AuthGate
@@ -1320,22 +1331,6 @@ function App() {
         backgroundColor={dynamicBg}
         localMock={isLocalMockAuthEnabled()}
       />
-    );
-  }
-
-  if (isDisciplineRoute) {
-    return (
-      <>
-        <DisciplineDashboard
-          onNavigateHome={() => navigateTo('/')}
-          onOpenSettings={() => { setShowSettings(true); playClick(); }}
-          onOpenInsights={() => { openInsights(); playClick(); }}
-          onLogout={() => { playClick(); auth.logout(); }}
-          user={auth.user}
-          focusSessionMinutes={focusTime}
-        />
-        {appModals}
-      </>
     );
   }
 
@@ -1383,7 +1378,7 @@ function App() {
             >
               <AccountMenu
                 user={auth.user}
-                onOpenDiscipline={() => { playClick(); navigateTo('/discipline'); }}
+                onOpenHabits={() => { playClick(); window.location.assign(HABIT_INTELLIGENCE_URL); }}
                 onOpenSettings={() => { setShowSettings(true); playClick(); }}
                 onOpenInsights={() => { openInsights(); playClick(); }}
                 onLogout={() => { playClick(); auth.logout(); }}

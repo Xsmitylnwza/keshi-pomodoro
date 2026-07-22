@@ -66,12 +66,24 @@ before(async () => {
       POMODORO_DATA_DIR: dataDir,
       POMODORO_DIST_DIR: path.join(dataDir, 'dist'),
       BUSINESS_TIME_ZONE: 'Asia/Bangkok',
+      POMODORO_ENABLE_LEGACY_DISCIPLINE: 'true',
+      HABIT_INTELLIGENCE_URL: 'https://habits.example.test',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   server.stdout.on('data', chunk => { stdout += chunk.toString(); });
   server.stderr.on('data', chunk => { stderr += chunk.toString(); });
   await waitForHealth();
+});
+
+test('discipline UI redirects to Habit Intelligence while legacy APIs remain available', async () => {
+  const response = await fetch(`${baseUrl}/discipline`, { redirect: 'manual' });
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), 'https://habits.example.test');
+
+  const legacyApi = await api('/api/discipline/habits');
+  assert.equal(legacyApi.response.status, 200);
+  assert.ok(Array.isArray(legacyApi.body.habits));
 });
 
 after(async () => {
@@ -239,19 +251,21 @@ test('pomodoros and events are idempotent and review by businessDate', async () 
   assert.equal(review.body.events.length, 1);
 });
 
-test('trend activity highlights completed focus sessions even without a discipline score', async () => {
-  const { response, body } = await api('/api/discipline/scores/trend?from=2026-07-05&to=2026-07-06');
+test('focus analytics projects completed sessions without habit or task-title data', async () => {
+  const { response, body } = await api('/api/analytics/focus/trend?from=2026-07-05&to=2026-07-06');
   assert.equal(response.status, 200);
   const activeDay = body.trend.find(day => day.date === '2026-07-05');
   const emptyDay = body.trend.find(day => day.date === '2026-07-06');
 
-  assert.equal(activeDay.total, 0);
   assert.equal(activeDay.activity.focusMinutes, 25);
   assert.equal(activeDay.activity.completedSessions, 1);
-  assert.equal(activeDay.activity.segments[0].source, 'inferred');
   assert.equal(activeDay.activity.hourlyMinutes[0], 25);
   assert.equal(emptyDay.activity.focusMinutes, 0);
   assert.deepEqual(emptyDay.activity.hourlyMinutes, Array.from({ length: 24 }, () => 0));
+  assert.equal('habits' in body, false);
+  assert.equal('scores' in activeDay, false);
+  assert.equal('segments' in activeDay.activity, false);
+  assert.equal(JSON.stringify(body).includes('Write reliability plan'), false);
 });
 
 test('trend activity uses the recorded timer start for linked sessions', async () => {
@@ -286,12 +300,12 @@ test('trend activity uses the recorded timer start for linked sessions', async (
     businessDate: '2026-07-06',
   });
 
-  const { body } = await api('/api/discipline/scores/trend?from=2026-07-06&to=2026-07-06');
+  const { body } = await api('/api/analytics/focus/trend?from=2026-07-06&to=2026-07-06');
   const activity = body.trend[0].activity;
   assert.equal(activity.focusMinutes, 25);
   assert.equal(activity.firstStartedAt, '2026-07-06T03:00:00.000Z');
   assert.equal(activity.hourlyMinutes[10], 25);
-  assert.equal(activity.segments[0].source, 'event');
+  assert.equal('segments' in activity, false);
 });
 
 test('discipline logs are idempotent', async () => {
@@ -565,6 +579,16 @@ test('central auth protects API routes when enabled', async () => {
     });
     assert.equal(acceptedService.status, 200);
     assert.ok((await acceptedService.json()).settings);
+
+    const movedDiscipline = await fetch(`${protectedBaseUrl}/api/discipline/habits`, {
+      headers: {
+        accept: 'application/json',
+        'x-xsmity-service': 'xsmity-auth',
+        'x-xsmity-service-token': 'central-service-test-token',
+      },
+    });
+    assert.equal(movedDiscipline.status, 410);
+    assert.equal((await movedDiscipline.json()).error, 'habit_api_moved');
 
     const accepted = await fetch(`${protectedBaseUrl}/api/settings`, {
       headers: {
