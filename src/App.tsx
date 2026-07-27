@@ -378,7 +378,7 @@ function App() {
 
     // Add to history with unique ID
     const selectedTask = tasks.find(task => task.id === selectedTaskId);
-    const completedBusinessDate = taskBusinessDate(selectedTask) ?? todayKey();
+    const completedBusinessDate = todayKey();
     const historyId = crypto.randomUUID();
     const newItem: HistoryItem = {
       mode: mode,
@@ -674,7 +674,7 @@ function App() {
     const elapsedSeconds = overrides?.elapsedSeconds ?? Math.max(0, plannedSeconds - remainingSeconds);
     const sessionId = overrides?.sessionId ?? sessionIdRef.current ?? crypto.randomUUID();
     const eventId = crypto.randomUUID();
-    const businessDate = taskBusinessDate(selectedTask) ?? todayKey();
+    const businessDate = todayKey();
 
     sessionIdRef.current = sessionId;
 
