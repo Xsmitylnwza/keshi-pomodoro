@@ -15,6 +15,10 @@ import App from './App.tsx'
 import { ThemeProvider } from './context/ThemeContext'
 import { AuthProvider } from './context/AuthContext'
 
+if (window.keshiDesktop?.runtime.kind === 'electron') {
+  document.documentElement.classList.add('keshi-electron')
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>

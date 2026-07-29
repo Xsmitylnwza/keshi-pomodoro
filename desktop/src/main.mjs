@@ -8,6 +8,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  Menu,
   Notification,
   powerMonitor,
   safeStorage,
@@ -130,6 +131,17 @@ function createMainWindow() {
     show: false,
     backgroundColor: '#0d0f0e',
     title: 'Keshi Pomodoro',
+    autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    ...(process.platform === 'win32'
+      ? {
+          titleBarOverlay: {
+            color: '#00000000',
+            symbolColor: '#f4f0e6',
+            height: 40,
+          },
+        }
+      : {}),
     webPreferences: {
       partition: PARTITION,
       preload: path.join(__dirname, 'preload.cjs'),
@@ -141,6 +153,7 @@ function createMainWindow() {
       additionalArguments: [`--keshi-app-version=${app.getVersion()}`],
     },
   });
+  mainWindow.setMenuBarVisibility(false);
 
   applyWebContentsSecurity(mainWindow.webContents, { isPackaged: app.isPackaged });
   mainWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
@@ -401,6 +414,7 @@ if (ownsSingleInstance) {
   });
 
   app.whenReady().then(async () => {
+    Menu.setApplicationMenu(null);
     const persistentSession = session.fromPartition(PARTITION);
     applySessionSecurity(persistentSession);
     await loadTrayExplanation();

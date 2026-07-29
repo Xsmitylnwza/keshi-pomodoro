@@ -3,9 +3,11 @@
 Inventory date: 2026-07-29
 
 This is the release-blocking G6 inventory. The production web build uses
-`public-safe/` as its only public asset directory. The legacy `public/`
-directory is intentionally not copied by Vite and is not redistributed by the
-desktop installer.
+`public-safe/` as its only public asset directory. On 2026-07-29 the staged
+owner requested restoration of the complete legacy in-app photo set from the
+retained Dev Server release. Those files now live under
+`public-safe/legacy/`; unrelated legacy MP3 and demo-media files remain
+excluded.
 
 ## Project-created assets
 
@@ -20,6 +22,24 @@ desktop installer.
 
 The interaction and completion sounds are Web Audio oscillator tones generated
 at runtime. No MP3 or sampled audio is redistributed.
+
+## Restored Dev Server photo set
+
+The following files were recovered from
+`/opt/pomodoro/releases/current/dist.prev`. Their SHA-256 values match the
+corresponding repository originals. The decorative photo was pinned locally
+from the exact URL used by the previous implementation so the renderer no
+longer depends on that third-party host at runtime.
+
+| Asset | Purpose | SHA-256 |
+| --- | --- | --- |
+| `public-safe/legacy/hailey-bieber-2022.jpg` | upper-left collage | `2dc3f85f60698141fb72677a411d992f38d2f3a1e05f895f7087f2fbb054e7c1` |
+| `public-safe/legacy/hailey-justin-decorative.jpg` | upper-right collage | `c198371c30bc9bfda3afc1473253ac39805bbce327f8f31a5f477fabf738a9c6` |
+| `public-safe/legacy/focus-left.jpg` | main left collage | `28f59fafc1284f353ce1ae3513165ad324ad015fa14ce2fc0611770d92743eb7` |
+| `public-safe/legacy/focus-right.jpg` | main right collage | `9c86cb1e49cf7a0de26372c455b23783e5f5c3f43429ff58952b82349b5833a1` |
+| `public-safe/legacy/brand-photo.jpg` | in-app brand mark | `87a8a18f63402f9dea2ceb5a920e8855717dab45eba65e54b55ab8a907abeda8` |
+| `public-safe/legacy/logo.png` | favicon and notification icon | `9c66dff2e787a25db1f817563eac6284f5967eaf88c7ba581b0aac3ef1736408` |
+| `public-safe/legacy/profile.jpg` | retained complete legacy set | `54f38865cc9e7fbd70ce18310fdca60919c51832e7ee1beb51e3c8a00bc130af` |
 
 ## Licensed third-party assets
 
@@ -49,16 +69,13 @@ removed or deferred; CSP and Electron security are not weakened.
 
 ## Explicitly excluded legacy assets
 
-The former `public/` directory contains photos, MP3 files, and demo media whose
-redistribution provenance is not established. `vite.config.ts` now sets
-`publicDir: 'public-safe'`, all runtime references point to reviewed assets, and
-the release workflow builds only that safe directory. Those legacy files may
-remain in repository history for web-design reference but are not present in
-`dist/`, Electron ASAR, Squirrel packages, or update artifacts.
+The former `public/` directory also contains MP3 files and large demo media.
+Those files are not required by the application and remain excluded from
+`dist/`, Electron ASAR, Squirrel packages, and update artifacts.
 
 ## G6 decision
 
-Every asset redistributed by the Windows release is either project-created or
-covered by a recorded redistributable license. G6 passes for the asset set
-defined above. Any future media addition reopens G6 and must update this file
-before a public tag is allowed.
+The restored photos are approved for this owner-only staged rollout by direct
+user instruction, but their public redistribution rights have not been
+documented. G6 is therefore open for any public release tag. Restore the safe
+SVG set or attach redistribution evidence before a public Windows release.

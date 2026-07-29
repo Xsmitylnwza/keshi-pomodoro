@@ -11,6 +11,10 @@ test('shell keeps Electron security defaults explicit', () => {
   assert.match(mainSource, /sandbox:\s*true/);
   assert.match(mainSource, /webSecurity:\s*true/);
   assert.match(mainSource, /persist:keshi/);
+  assert.match(mainSource, /titleBarStyle:\s*'hidden'/);
+  assert.match(mainSource, /titleBarOverlay:[\s\S]+color:\s*'#00000000'/);
+  assert.match(mainSource, /mainWindow\.setMenuBarVisibility\(false\)/);
+  assert.match(mainSource, /Menu\.setApplicationMenu\(null\)/);
 });
 
 test('automatic login is opt-in for development and disabled when packaged', () => {

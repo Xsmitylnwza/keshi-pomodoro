@@ -64,7 +64,7 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                     rotate: { type: "spring", stiffness: 50, damping: 30 },
                 }}
             >
-                <img src="/keshi-collage-focus.svg"
+                <img src="/legacy/hailey-bieber-2022.jpg"
                     className="w-64 h-80 object-cover grayscale contrast-150 blur-sm" alt="decorative" />
             </motion.div>
 
@@ -86,7 +86,7 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                     rotate: { type: "spring", stiffness: 40, damping: 30 },
                 }}
             >
-                <img src="/keshi-collage-break.svg"
+                <img src="/legacy/hailey-justin-decorative.jpg"
                     className="w-72 h-96 object-cover sepia contrast-125" alt="decorative" />
             </motion.div>
 
@@ -118,8 +118,8 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                         className="relative w-72 h-96 bg-white p-2 pb-16 torn-paper-1 shadow-2xl transform -rotate-3 z-10 pointer-events-auto"
                         whileHover={{ scale: 1.08, rotate: 0 }}
                     >
-                        <img src={leftImage || "/keshi-collage-focus.svg"}
-                            alt="Abstract focus collage"
+                        <img src={leftImage || "/legacy/focus-left.jpg"}
+                            alt="Focus collage"
                             className="w-full h-full object-cover grayscale sepia-[.4] contrast-125 brightness-90 hover:grayscale-0 hover:sepia-0 hover:contrast-100 hover:brightness-100 transition-all duration-500" />
 
                         {/* Vision Board Pin (Realistic Tack) */}
@@ -216,7 +216,7 @@ const Background: React.FC<BackgroundProps> = ({ mode }) => {
                 >
 
 
-                    <img src={rightImage || "/keshi-collage-break.svg"}
+                    <img src={rightImage || "/legacy/focus-right.jpg"}
                         className="w-full h-full object-cover scale-150 object-top mix-blend-multiply opacity-80 grayscale sepia-[.4] contrast-125 brightness-90 group-hover:opacity-100 transition-opacity" alt="fragment" />
 
                 </motion.div>

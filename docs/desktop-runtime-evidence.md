@@ -13,7 +13,7 @@ mark a gate passed from code inspection alone.
 | G3 crash healing | Pass | Kill API process after each event/history/Pomodoro/runtime boundary, restart, replay, and inspect exactly one projection record | `tests/timer-runtime.test.mjs`; `tests/timer-process-kill.integration.mjs`; `docs/evidence/timer-process-kill-2026-07-29.txt` |
 | G4 Windows lifecycle | Unit and Electron startup smoke pass; lifecycle run pending | hide, quit, restart, sleep, offline completion, notification click, one run/notification, correct restore | `desktop/tests/`; clean-VM artifact pending |
 | G5 signed update | Unsigned local Squirrel make passes; signed run pending | Valid Authenticode N and N+1; clean-VM install/update; state retained; tamper rejected | `.github/workflows/desktop-release.yml`; `docs/evidence/desktop-local-package-2026-07-29.txt`; signed release artifact pending |
-| G6 asset rights | Pass for current safe asset set | Inventory of every redistributed asset with original provenance or license | `desktop/ASSET_PROVENANCE.md` |
+| G6 asset rights | Open for public release; owner-only legacy photos restored by request | Inventory of every redistributed asset with original provenance or license | `desktop/ASSET_PROVENANCE.md` |
 
 ## Five login/logout cycles
 

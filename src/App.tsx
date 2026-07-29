@@ -510,7 +510,7 @@ function App() {
     if (!link) return;
     // We can use the same logo but if we had a green one we'd swap it.
     // Since we don't, we just ensure it points to the correct static asset.
-    link.href = '/keshi-icon.svg';
+    link.href = '/legacy/logo.png';
   }, [mode]);
 
   // Handle visibility change - recalculate time when returning to tab
@@ -546,7 +546,7 @@ function App() {
 
       new Notification(notifTitle, {
         body: notifBody,
-        icon: '/keshi-icon.svg',
+        icon: '/legacy/logo.png',
         tag: 'keshi-pomodoro-timer',
         requireInteraction: true,
       });
@@ -1687,7 +1687,7 @@ function App() {
       <div className="noise-overlay"></div>
 
       {/* Navigation (Floating / Minimal) */}
-      <nav className="fixed top-0 left-0 right-0 z-[80] p-3 sm:p-4 md:p-6 flex justify-between items-start" style={{ viewTransitionName: 'main-nav' }}>
+      <nav className="keshi-shell-nav fixed top-0 left-0 right-0 z-[80] p-3 sm:p-4 md:p-6 flex justify-between items-start" style={{ viewTransitionName: 'main-nav' }}>
         <motion.div
           className="flex items-center gap-2 sm:gap-4 group cursor-pointer"
           variants={fadeDown}
@@ -1696,7 +1696,7 @@ function App() {
           transition={{ delay: entranceDelays.logo }}
         >
           <div className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 relative isolate">
-            <img src="/keshi-icon.svg"
+            <img src="/legacy/brand-photo.jpg"
               alt="Logo"
               className="w-full h-full object-cover rounded-full border-2 border-paper-cream grayscale group-hover:scale-110 group-hover:grayscale-0 transition-all duration-300 mix-blend-normal" />
           </div>

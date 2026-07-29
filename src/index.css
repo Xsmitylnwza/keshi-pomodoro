@@ -2,6 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+html.keshi-electron::before {
+  -webkit-app-region: drag;
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 79;
+  height: env(titlebar-area-height, 40px);
+}
+
+.keshi-shell-nav {
+  padding-top: calc(env(titlebar-area-height, 0px) + 0.75rem);
+}
+
+html.keshi-electron .keshi-shell-nav {
+  -webkit-app-region: drag;
+}
+
+html.keshi-electron .keshi-shell-nav :is(a, button, input, select, textarea, [role="button"]) {
+  -webkit-app-region: no-drag;
+}
+
+@media (min-width: 640px) {
+  .keshi-shell-nav {
+    padding-top: calc(env(titlebar-area-height, 0px) + 1rem);
+  }
+}
+
+@media (min-width: 768px) {
+  .keshi-shell-nav {
+    padding-top: calc(env(titlebar-area-height, 0px) + 1.5rem);
+  }
+}
+
 @layer base {
   :root {
     --accent-red: #b91c1c;
