@@ -61,6 +61,8 @@ let updater = null;
 let updaterSnapshot = null;
 let quitPromise = null;
 const smokeMode = !app.isPackaged && process.env.KESHI_DESKTOP_SMOKE === '1';
+const autoLoginInDev = !app.isPackaged
+  && process.env.KESHI_DESKTOP_AUTO_LOGIN === '1';
 
 function appUrl() {
   if (!app.isPackaged) {
@@ -406,6 +408,20 @@ if (ownsSingleInstance) {
     registerTimerIpc();
     createMainWindow();
     registerAuthIpc(persistentSession);
+    if (autoLoginInDev) {
+      void currentCentralUser(persistentSession)
+        .then(user => {
+          if (user) {
+            console.log('KESHI_DESKTOP_DEV_AUTHENTICATED');
+            return null;
+          }
+          console.log('KESHI_DESKTOP_DEV_PAIRING_REQUIRED');
+          return authController.login();
+        })
+        .catch(error => {
+          console.warn('Keshi dev auto-login failed', error?.message || 'unknown error');
+        });
+    }
     updater = createDesktopUpdater({
       autoUpdater,
       feedUrl: 'https://github.com/Xsmitylnwza/keshi-pomodoro/releases/latest/download',

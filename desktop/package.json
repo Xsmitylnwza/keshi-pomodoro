@@ -14,7 +14,7 @@
     "tmp": "0.2.7"
   },
   "scripts": {
-    "dev": "electron-forge start",
+    "dev": "set KESHI_DESKTOP_AUTO_LOGIN=1&& electron-forge start",
     "start": "electron-forge start",
     "check": "node --check src/main.mjs && node --check src/preload.cjs && node --check src/security.mjs && node --check src/shell/tray.mjs && node --check src/auth/desktop-auth.mjs && node --check src/auth/login-modal.mjs && node --check src/auth/login-preload.cjs && node --check src/timer/timer-store.mjs && node --check src/timer/timer-engine.mjs && node --check src/update/desktop-updater.mjs && node --check src/uninstall-policy.mjs && node --check scripts/desktop-build-preflight.mjs && node --check tests/electron-runtime-smoke.mjs",
     "test": "node --test tests/*.test.mjs",

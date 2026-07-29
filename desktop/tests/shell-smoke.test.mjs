@@ -13,6 +13,18 @@ test('shell keeps Electron security defaults explicit', () => {
   assert.match(mainSource, /persist:keshi/);
 });
 
+test('automatic login is opt-in for development and disabled when packaged', () => {
+  assert.match(
+    mainSource,
+    /const autoLoginInDev = !app\.isPackaged[\s\S]+KESHI_DESKTOP_AUTO_LOGIN === '1'/,
+  );
+  assert.match(
+    mainSource,
+    /currentCentralUser\(persistentSession\)[\s\S]+KESHI_DESKTOP_DEV_AUTHENTICATED/,
+  );
+  assert.match(mainSource, /KESHI_DESKTOP_DEV_PAIRING_REQUIRED[\s\S]+authController\.login\(\)/);
+});
+
 test('preload exposes a versioned runtime object with only named narrow IPC', () => {
   assert.match(preloadSource, /bridgeVersion:\s*1/);
   assert.match(preloadSource, /IPC_CHANNELS\.authLogin/);
