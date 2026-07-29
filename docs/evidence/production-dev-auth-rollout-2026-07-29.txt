@@ -1,0 +1,57 @@
+Keshi Pomodoro production-backed desktop dev rollout
+Date: 2026-07-29 Asia/Bangkok
+
+Scope
+-----
+- Electron remains a desktop client.
+- Central Auth PostgreSQL users, Google OAuth, and auth_sessions remain
+  canonical.
+- /opt/pomodoro/data remains canonical for tasks, settings, runtime, events,
+  history, and Pomodoro projections.
+- Rollout is limited to the most recently active Central user whose ID matches
+  the most recently used Pomodoro user-data directory.
+
+Retained recovery backup
+------------------------
+Path: /opt/backups/keshi-desktop/20260729T070701Z
+- compressed PostgreSQL pg_dump: validated with gzip -t
+- /opt/pomodoro/data archive: validated with tar -tzf
+- pre-rollout auth environment copy
+- SHA256SUMS.txt
+
+Deployments
+-----------
+Central Auth:
+- commit: b6685a1e64d181e696ad6cc276f4914bf3d2b69b
+- workflow run: https://github.com/Xsmitylnwza/Xsmity-Auth/actions/runs/30430507520
+- result: success
+
+Pomodoro:
+- commit: 954133c712077a133124bf64065226c0dfd3edb7
+- workflow run: https://github.com/Xsmitylnwza/keshi-pomodoro/actions/runs/30430510292
+- result: success
+
+Production verification
+-----------------------
+- desktop_login_attempts table present
+- DESKTOP_AUTH_ENABLED=true
+- desktop auth allowlist exactly matches the staged owner
+- SERVER_TIMER_ENABLED=true
+- server timer allowlist exactly matches the staged owner
+- POMODORO_CSP_MODE=report-only
+- public Pomodoro health returned HTTP 200
+- public desktop login route is deployed with no-store/security headers
+- real HTTPS pairing attempt create and authenticated-secret cancel passed
+- canonical timer runtime read passed and startEnabled=true
+- canonical production task read passed with 117 tasks; task content was not
+  printed or copied into evidence
+- Electron Forge dev process launched successfully against the production
+  origins
+
+Interactive proof still required
+--------------------------------
+The owner must complete Google authentication and approve the displayed
+one-time pairing in the system browser. No agent should handle the user's
+Google password or 2FA. After approval, verify the normal xsmity.sid session in
+the persist:keshi partition and confirm the same production task count in the
+desktop renderer.

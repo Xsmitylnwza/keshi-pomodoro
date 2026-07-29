@@ -138,6 +138,18 @@ npm test
 npm run smoke
 ```
 
+Run the interactive desktop development client from the repository root:
+
+```powershell
+npm run desktop:dev
+```
+
+Desktop dev mode loads `https://pomodoro.xsmity.cloud` by default and uses the
+real Central Auth Google login, shared production session database, and
+per-user Pomodoro data on the VPS. It does not use the local mock user or a
+local business database. `KESHI_DESKTOP_APP_URL` is only for an explicit
+localhost renderer override.
+
 Timer rollout controls:
 
 | Variable | Values | Purpose |
