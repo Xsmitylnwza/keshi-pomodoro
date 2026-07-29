@@ -9,7 +9,7 @@ mark a gate passed from code inspection alone.
 | Gate | Status | Required direct evidence | Evidence path |
 | --- | --- | --- | --- |
 | G1 secure remote renderer | Pending external run | Clean Windows VM; UI, local Web Audio tones, tasks, settings, and allowed YouTube embed under sandbox/webSecurity/CSP | Pending |
-| G2 real session handoff | Deployed; real pairing create/cancel passes; interactive Google approval pending | System-browser Google login; `persist:keshi` Domain cookie authenticates both domains; no renderer cookie copy | `docs/evidence/production-dev-auth-rollout-2026-07-29.txt`; approval artifact pending |
+| G2 real session handoff | Pass for staged owner in dev mode | System-browser Google login; `persist:keshi` Domain cookie authenticates both domains; no renderer cookie copy | `docs/evidence/production-dev-auth-rollout-2026-07-29.txt` |
 | G3 crash healing | Pass | Kill API process after each event/history/Pomodoro/runtime boundary, restart, replay, and inspect exactly one projection record | `tests/timer-runtime.test.mjs`; `tests/timer-process-kill.integration.mjs`; `docs/evidence/timer-process-kill-2026-07-29.txt` |
 | G4 Windows lifecycle | Unit and Electron startup smoke pass; lifecycle run pending | hide, quit, restart, sleep, offline completion, notification click, one run/notification, correct restore | `desktop/tests/`; clean-VM artifact pending |
 | G5 signed update | Unsigned local Squirrel make passes; signed run pending | Valid Authenticode N and N+1; clean-VM install/update; state retained; tamper rejected | `.github/workflows/desktop-release.yml`; `docs/evidence/desktop-local-package-2026-07-29.txt`; signed release artifact pending |
@@ -105,6 +105,7 @@ Target Windows machine:
   `docs/evidence/live-rollout-preflight-2026-07-29.txt`
 - Central production cookie domain: confirmed `.xsmity.cloud` without exposing
   cookie or secret values
-- Desktop-auth route and rollout flags: not deployed
-- Pomodoro server-timer/CSP rollout flags: not configured
+- Desktop-auth route and owner-only rollout flags: deployed
+- Pomodoro server-timer owner allowlist: deployed
+- Pomodoro CSP: deployed in report-only observation mode
 - Windows signing Actions secrets: not configured

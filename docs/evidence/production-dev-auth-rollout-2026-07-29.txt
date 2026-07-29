@@ -48,10 +48,18 @@ Production verification
 - Electron Forge dev process launched successfully against the production
   origins
 
-Interactive proof still required
---------------------------------
-The owner must complete Google authentication and approve the displayed
-one-time pairing in the system browser. No agent should handle the user's
-Google password or 2FA. After approval, verify the normal xsmity.sid session in
-the persist:keshi partition and confirm the same production task count in the
-desktop renderer.
+Interactive proof completed
+---------------------------
+- The owner completed Google authentication and approved the matching
+  one-time pairing in the system browser. No password, 2FA value, email,
+  display code, pairing secret, cookie value, or token was recorded.
+- The production attempt transitioned from pending to approved to redeemed.
+- The persist:keshi cookie store was updated at redemption time.
+- A clean Electron dev restart emitted KESHI_DESKTOP_DEV_AUTHENTICATED without
+  creating another pairing attempt.
+- Production access logs identified KeshiPomodoro/0.1.0 Electron/43.2.0 and
+  returned HTTP 200 for /auth/session, /api/settings, /api/tasks, and
+  /api/history.
+- /api/tasks returned the canonical production payload previously verified as
+  117 tasks. Task contents were not printed or copied into evidence.
+- The Electron dev process remains running against the production origins.
