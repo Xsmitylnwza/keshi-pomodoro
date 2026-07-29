@@ -201,6 +201,8 @@ function App() {
 
   // Refs
   const audioContextRef = useRef<AudioContext | null>(null);
+  const clickSoundRef = useRef<HTMLAudioElement | null>(null);
+  const completionSoundRef = useRef<HTMLAudioElement | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const serverRuntimeRef = useRef<ServerTimerRuntime | null>(null);
   const completionInFlightRef = useRef(false);
@@ -251,8 +253,7 @@ function App() {
   }, [isDisciplineRoute]);
 
   // Sound Utility
-  const playTone = (kind: 'click' | 'complete') => {
-    if (!soundEnabled) return;
+  const playFallbackTone = (kind: 'click' | 'complete') => {
     try {
       const AudioContextClass = window.AudioContext
         || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -276,6 +277,20 @@ function App() {
     } catch (error) {
       console.warn('Audio tone failed', error);
     }
+  };
+
+  const playTone = (kind: 'click' | 'complete') => {
+    if (!soundEnabled) return;
+    const audio = kind === 'click' ? clickSoundRef.current : completionSoundRef.current;
+    if (!audio) {
+      playFallbackTone(kind);
+      return;
+    }
+    audio.currentTime = 0;
+    void audio.play().catch(error => {
+      console.warn(`${kind} audio playback failed`, error);
+      playFallbackTone(kind);
+    });
   };
 
   const playClick = () => {
@@ -1682,6 +1697,8 @@ function App() {
     >
       <CustomCursor />
       <Background mode={mode} />
+      <audio ref={clickSoundRef} src="/legacy/clicksoundeffect.mp3" preload="auto" aria-hidden="true" />
+      <audio ref={completionSoundRef} src="/legacy/completion-bell.mp3" preload="auto" aria-hidden="true" />
 
       {/* Grain Overlay handled globally in index.css (.noise-overlay) */}
       <div className="noise-overlay"></div>
