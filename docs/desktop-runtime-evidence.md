@@ -98,3 +98,13 @@ Target Windows machine:
 - Packaged launch: blocked before process creation by workstation Windows
   Application Control, which rejects this unsigned binary
 - Evidence: `docs/evidence/desktop-local-package-2026-07-29.txt`
+
+## Live rollout preflight
+
+- Read-only production and GitHub prerequisite check:
+  `docs/evidence/live-rollout-preflight-2026-07-29.txt`
+- Central production cookie domain: confirmed `.xsmity.cloud` without exposing
+  cookie or secret values
+- Desktop-auth route and rollout flags: not deployed
+- Pomodoro server-timer/CSP rollout flags: not configured
+- Windows signing Actions secrets: not configured

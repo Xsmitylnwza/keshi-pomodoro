@@ -1,0 +1,33 @@
+Keshi Pomodoro live rollout preflight (read-only)
+Date: 2026-07-29 Asia/Bangkok
+
+Public endpoints
+----------------
+PASS https://pomodoro.xsmity.cloud/api/health returned HTTP 200 and no-store.
+PASS unauthenticated /api/timer/runtime returned HTTP 401 and no-store.
+INFO https://xsmity.cloud/auth/desktop/login?attempt=invalid returned HTTP 404,
+     confirming desktop-auth routes are not deployed yet.
+
+VPS configuration checks
+------------------------
+PASS xsmity-auth container COOKIE_DOMAIN exactly matched .xsmity.cloud.
+INFO xsmity-auth DESKTOP_AUTH_ENABLED was not present.
+INFO xsmity-auth DESKTOP_AUTH_ALLOWED_USER_IDS was not present.
+INFO pomodoro SERVER_TIMER_ENABLED was not present.
+INFO pomodoro POMODORO_CSP_MODE was not present.
+
+GitHub release prerequisites
+----------------------------
+INFO feature/keshi-electron-desktop exists on the remote.
+INFO feature/keshi-electron-auth exists on the remote.
+BLOCKED the Keshi Pomodoro repository had no Actions secret names configured.
+BLOCKED signed release requires WINDOWS_CERTIFICATE_PFX_BASE64 and
+        WINDOWS_CERTIFICATE_PASSWORD.
+
+Rollout consequence
+-------------------
+Do not dispatch either production workflow yet. Before Stage 1:
+- retain PostgreSQL and Pomodoro data-directory backups;
+- explicitly configure POMODORO_CSP_MODE=report-only;
+- deploy both capabilities dark;
+- verify ordinary browser behavior before adding the owner allowlist.
