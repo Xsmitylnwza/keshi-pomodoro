@@ -1,0 +1,21 @@
+Keshi Pomodoro redistributed font notices
+===========================================
+
+Space Grotesk
+License: SIL Open Font License 1.1
+Copyright 2020 The Space Grotesk Project Authors
+Source: https://github.com/floriankarsten/space-grotesk
+
+Crimson Text
+License: SIL Open Font License 1.1
+Copyright 2010 The Crimson Text Project Authors
+Source: https://github.com/googlefonts/Crimson
+
+Permanent Marker
+License: Apache License 2.0
+Copyright 2010 Font Diner, Inc. All rights reserved.
+Source: https://github.com/google/fonts
+
+The exact font files are supplied by the pinned Fontsource 5.3.0 packages.
+Their package metadata and license files are retained in package-lock.json and
+node_modules during reproducible builds.

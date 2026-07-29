@@ -1,10 +1,12 @@
 import { createServer } from 'node:http';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, mkdir, open, rename, unlink } from 'node:fs/promises';
 import { createReadStream, existsSync } from 'node:fs';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createTimerRuntimeService } from './timer-runtime.mjs';
+import { contentSecurityHeaders } from './content-security.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -52,6 +54,17 @@ const DEFAULT_HABITS = [
 const businessTimeZone = process.env.BUSINESS_TIME_ZONE || 'Asia/Bangkok';
 const centralAuthEnabled = isTruthyEnv(process.env.CENTRAL_AUTH_ENABLED);
 const legacyDisciplineEnabled = isTruthyEnv(process.env.POMODORO_ENABLE_LEGACY_DISCIPLINE);
+const serverTimerEnabled = isTruthyEnv(process.env.SERVER_TIMER_ENABLED);
+const serverTimerAllowlist = new Set(
+  String(
+    process.env.SERVER_TIMER_ALLOWED_USER_IDS
+    || process.env.SERVER_TIMER_ALLOWLIST
+    || '',
+  )
+    .split(',')
+    .map(value => sanitizeUserKey(value))
+    .filter(Boolean),
+);
 const centralAuthBaseUrl = centralAuthEnabled ? normalizeCentralAuthUrl(process.env.CENTRAL_AUTH_URL) : '';
 const trustedCentralServiceToken = process.env.XSMITY_SERVICE_TOKEN || process.env.CENTRAL_SERVICE_TOKEN || '';
 const defaultUserKey = process.env.POMODORO_DEFAULT_USER_ID || process.env.DEFAULT_OWNER_USER_ID || '';
@@ -75,6 +88,13 @@ const defaultAppSettings = {
     icsUrl: '',
   },
 };
+const mutationQueues = new Map();
+const timerWritePauseBoundary = process.env.NODE_ENV === 'test'
+  ? String(process.env.POMODORO_TEST_PAUSE_AFTER_TIMER_WRITE || '')
+  : '';
+const timerWritePauseMarker = process.env.NODE_ENV === 'test'
+  ? String(process.env.POMODORO_TEST_TIMER_WRITE_MARKER || '')
+  : '';
 
 const contentTypes = new Map([
   ['.css', 'text/css; charset=utf-8'],
@@ -102,7 +122,54 @@ async function readJson(file, fallback) {
 
 async function writeJson(file, value) {
   await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  const tempFile = path.join(
+    path.dirname(file),
+    `.${path.basename(file)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  let handle;
+  try {
+    handle = await open(tempFile, 'wx');
+    await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, 'utf8');
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    await rename(tempFile, file);
+  } catch (error) {
+    if (handle) await handle.close().catch(() => {});
+    await unlink(tempFile).catch(() => {});
+    throw error;
+  }
+}
+
+async function pauseAfterTimerWrite(boundary) {
+  if (!timerWritePauseBoundary || timerWritePauseBoundary !== boundary) return;
+
+  const resolvedDataDir = path.resolve(dataDir);
+  const resolvedMarker = path.resolve(timerWritePauseMarker);
+  if (!timerWritePauseMarker
+    || !resolvedMarker.startsWith(`${resolvedDataDir}${path.sep}`)) {
+    throw new Error('timer_test_pause_marker_invalid');
+  }
+
+  await writeJson(resolvedMarker, {
+    boundary,
+    pid: process.pid,
+    persistedAt: new Date().toISOString(),
+  });
+  console.log(`POMODORO_TEST_TIMER_WRITE_PAUSED:${boundary}`);
+  await new Promise(() => {});
+}
+
+async function withUserMutation(userKey, operation) {
+  const queueKey = sanitizeUserKey(userKey) || 'legacy-default-user';
+  const previous = mutationQueues.get(queueKey) || Promise.resolve();
+  const current = previous.catch(() => {}).then(operation);
+  mutationQueues.set(queueKey, current);
+  try {
+    return await current;
+  } finally {
+    if (mutationQueues.get(queueKey) === current) mutationQueues.delete(queueKey);
+  }
 }
 
 function isTruthyEnv(value) {
@@ -135,6 +202,58 @@ function userFile(userKey, fileName, legacyFile) {
 function userIdentityKey(user) {
   return sanitizeUserKey(user?.id || user?.providerSubject || user?.email || '');
 }
+
+function isServerTimerStartEnabled(userKey) {
+  return serverTimerEnabled
+    && (serverTimerAllowlist.size === 0 || serverTimerAllowlist.has(sanitizeUserKey(userKey)));
+}
+
+async function readTimerRuntime(userKey) {
+  const file = userFile(userKey, 'timer-runtime.json', path.join(dataDir, 'timer-runtime.json'));
+  try {
+    return JSON.parse(await readFile(file, 'utf8'));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    const runtimeError = new Error('timer_runtime_corrupt');
+    runtimeError.statusCode = 500;
+    throw runtimeError;
+  }
+}
+
+async function writeTimerRuntime(userKey, runtime) {
+  await writeJson(
+    userFile(userKey, 'timer-runtime.json', path.join(dataDir, 'timer-runtime.json')),
+    runtime,
+  );
+}
+
+const timerRuntimeService = createTimerRuntimeService({
+  readRuntime: readTimerRuntime,
+  writeRuntime: async (userKey, runtime) => {
+    await writeTimerRuntime(userKey, runtime);
+    if (runtime?.active === null) await pauseAfterTimerWrite('terminal-runtime');
+  },
+  readEvents: readPomodoroEvents,
+  writeEvents: async (userKey, events) => {
+    await writePomodoroEvents(userKey, events);
+    if (events?.[0]?.type === 'pomodoro_completed') {
+      await pauseAfterTimerWrite('completed-event');
+    }
+  },
+  readHistory,
+  writeHistory: async (userKey, history) => {
+    await writeHistory(userKey, history);
+    await pauseAfterTimerWrite('history');
+  },
+  readPomodoros,
+  writePomodoros: async (userKey, pomodoros) => {
+    await writePomodoros(userKey, pomodoros);
+    await pauseAfterTimerWrite('pomodoro');
+  },
+  isStartEnabled: isServerTimerStartEnabled,
+  toBusinessDateKey,
+  businessTimeZone,
+});
 
 function serviceUserKey(req) {
   return sanitizeUserKey(
@@ -1330,9 +1449,53 @@ async function recomputeStreak(userKey) {
   return { current, longest, lastScoreDate, updatedAt: now };
 }
 
-async function readBody(req) {
+async function readBody(req, maxBytes = 256 * 1024) {
+  const contentLength = Number(req.headers['content-length']);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    req.resume();
+    const error = new Error('payload_too_large');
+    error.statusCode = 413;
+    throw error;
+  }
+
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let total = 0;
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      req.off('data', onData);
+      req.off('end', onEnd);
+      req.off('error', onError);
+    };
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const onData = chunk => {
+      total += chunk.length;
+      if (total > maxBytes) {
+        const error = new Error('payload_too_large');
+        error.statusCode = 413;
+        req.resume();
+        fail(error);
+        return;
+      }
+      chunks.push(chunk);
+    };
+    const onEnd = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const onError = error => fail(error);
+    req.on('data', onData);
+    req.on('end', onEnd);
+    req.on('error', onError);
+  });
+
   if (chunks.length === 0) return null;
   try {
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
@@ -1458,19 +1621,46 @@ function safeStaticPath(urlPath) {
   return resolved;
 }
 
-async function handleApi(req, res, url) {
+async function handleApi(req, res, url, queuedAuth = null) {
   const pathname = url.pathname;
   if (pathname === '/api/health') {
     sendJson(res, 200, { ok: true, service: 'keshi-pomodoro' });
     return;
   }
 
-  const authContext = await requestAuthContext(req);
+  const authContext = queuedAuth?.context || await requestAuthContext(req);
   if (!authContext.authenticated) {
     sendJson(res, 401, { error: 'auth_required' });
     return;
   }
   const userKey = authContext.userKey;
+
+  if (!queuedAuth?.active && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    await withUserMutation(
+      userKey,
+      () => handleApi(req, res, url, { context: authContext, active: true }),
+    );
+    return;
+  }
+
+  if (pathname === '/api/timer/runtime' && req.method === 'GET') {
+    sendJson(res, 200, {
+      ...await timerRuntimeService.runtime(userKey),
+      startEnabled: isServerTimerStartEnabled(userKey),
+    });
+    return;
+  }
+
+  if (pathname === '/api/timer/commands' && req.method === 'POST') {
+    const body = await readBody(req, 8 * 1024);
+    const result = await timerRuntimeService.command(
+      userKey,
+      authContext.user?.id || userKey || 'legacy-default-user',
+      body,
+    );
+    sendJson(res, result.status, result.body);
+    return;
+  }
 
   if (pathname.startsWith('/api/discipline/') && !legacyDisciplineEnabled) {
     sendJson(res, 410, {
@@ -2003,6 +2193,7 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, {
       'content-type': contentTypes.get(ext) || 'application/octet-stream',
       'cache-control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable',
+      ...contentSecurityHeaders(),
     });
     createReadStream(staticPath)
       .on('error', () => sendNotFound(res))

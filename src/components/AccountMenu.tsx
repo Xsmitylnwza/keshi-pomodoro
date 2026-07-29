@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Activity, BarChart3, ChevronDown, LogOut, Settings2, UserCircle, type LucideIcon } from 'lucide-react';
+import { Activity, BarChart3, ChevronDown, LogOut, Settings2, Trash2, UserCircle, type LucideIcon } from 'lucide-react';
 import type { CentralAuthUser } from '../lib/centralAuth';
 
 export function AccountMenu({
@@ -9,6 +9,7 @@ export function AccountMenu({
   onOpenSettings,
   onOpenInsights,
   onLogout,
+  onLogoutAndRemoveData,
   compactOnMobile = false,
 }: {
   user: CentralAuthUser | null;
@@ -16,6 +17,7 @@ export function AccountMenu({
   onOpenSettings: () => void;
   onOpenInsights: () => void;
   onLogout: () => void;
+  onLogoutAndRemoveData?: () => void;
   compactOnMobile?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -134,6 +136,14 @@ export function AccountMenu({
             </div>
             <div className="border-t border-white/10 pt-2">
               <AccountMenuItem icon={LogOut} label="Sign out" onClick={() => runAction(onLogout)} danger />
+              {onLogoutAndRemoveData && (
+                <AccountMenuItem
+                  icon={Trash2}
+                  label="Sign out & remove desktop data"
+                  onClick={() => runAction(onLogoutAndRemoveData)}
+                  danger
+                />
+              )}
             </div>
           </motion.div>
         )}

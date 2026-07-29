@@ -1,0 +1,39 @@
+Keshi Pomodoro timer process-kill recovery evidence
+Date: 2026-07-29 Asia/Bangkok
+Branch: feature/keshi-electron-desktop
+Command: npm run test:process-kill
+Test file: tests/timer-process-kill.integration.mjs
+
+Method
+------
+For each completion boundary, a real Pomodoro API child process:
+1. started a focus timer against a unique temporary data directory;
+2. durably wrote the selected completion projection;
+3. emitted a test-only marker after the atomic write completed;
+4. was terminated by its parent with SIGKILL;
+5. was restarted against the exact same data directory;
+6. received the exact same completion command again.
+
+The pause hook is active only when NODE_ENV=test and accepts a marker path only
+below POMODORO_DATA_DIR. Production environments cannot activate it.
+
+Results
+-------
+PASS completed-event       437.209 ms
+PASS history               523.4828 ms
+PASS pomodoro              409.0922 ms
+PASS terminal-runtime      493.1152 ms
+
+tests: 4
+pass: 4
+fail: 0
+duration: 1988.6552 ms
+
+Post-restart assertions at every boundary
+------------------------------------------
+- one pomodoro_completed event idempotency key
+- one history idempotency key
+- one focus Pomodoro idempotency key
+- terminal runtime active = null
+- runtime revision = 2
+- one completion command receipt

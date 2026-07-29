@@ -1,0 +1,47 @@
+Keshi Pomodoro local Windows package evidence
+Date: 2026-07-29 Asia/Bangkok
+Branch: feature/keshi-electron-desktop
+Desktop version: 0.1.0
+Build runtime: Node v22.23.1, x64
+Forge: 7.11.2
+Electron: 43.2.0
+
+Result
+------
+Forge package: PASS
+Squirrel make: PASS
+Squirrel log terminal entry: Program: Finished Squirrel Updater
+
+Artifacts
+---------
+Keshi Pomodoro-0.1.0 Setup.exe
+  size: 140330496 bytes
+  sha256: 1b88d8088619b6aaae2df55497d7f388a2234926ada29dd8a30f6b590dfd32e5
+
+keshi_pomodoro_desktop-0.1.0-full.nupkg
+  size: 139193708 bytes
+  sha256: eea76a314377cacfe170f20aaeccd40ad018462ba6538b70c88752d9b68e6f9b
+
+RELEASES
+  size: 93 bytes
+  sha256: 5eb780e4ec30d993767961483012390c8f39f75ba9250a44083ee1c0d9482f6f
+
+Packaged executable fuse read
+-----------------------------
+RunAsNode: Disabled
+EnableCookieEncryption: Enabled
+EnableNodeOptionsEnvironmentVariable: Disabled
+EnableNodeCliInspectArguments: Disabled
+EnableEmbeddedAsarIntegrityValidation: Enabled
+OnlyLoadAppFromAsar: Enabled
+
+Signature and launch limitation
+-------------------------------
+The local Setup.exe is NotSigned because no release certificate was supplied.
+Development Electron runtime smoke passed.
+Packaged executable launch was blocked before process creation by this
+workstation's Windows Application Control policy:
+"An Application Control policy has blocked this file."
+
+This is not G5 evidence. G5 still requires an Authenticode-signed N and N+1
+release and clean-VM install/update/tamper tests.

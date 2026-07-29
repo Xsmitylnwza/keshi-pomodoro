@@ -124,6 +124,32 @@ Central Auth
 
 Dates use `YYYY-MM-DD` in `Asia/Bangkok`.
 
+### Windows desktop client
+
+The independent Electron package is under `desktop/`. It is a client of the
+same production UI, Central Auth session database, and Pomodoro VPS data; it
+does not create local identities or a second business database.
+
+```powershell
+cd desktop
+npm ci
+npm run check
+npm test
+npm run smoke
+```
+
+Timer rollout controls:
+
+| Variable | Values | Purpose |
+| --- | --- | --- |
+| `SERVER_TIMER_ENABLED` | truthy / false | Enables server-arbitrated starts |
+| `SERVER_TIMER_ALLOWED_USER_IDS` | comma-separated Central user IDs | Limits starts to staged users; `SERVER_TIMER_ALLOWLIST` remains a compatibility alias |
+| `POMODORO_CSP_MODE` | `report-only`, `enforce`, `disabled` | Stages restrictive CSP; production target is `enforce` |
+
+The accurate product label is “connected desktop app with resilient in-flight
+timer recovery.” New starts and pause/resume/cancel require connectivity;
+completion alone has a durable encrypted offline outbox.
+
 ## Habit migration note
 
 Do not delete or mutate a legacy `discipline.sqlite` file. Rhythm's importer reads a backup snapshot, preserves explicit positive scores as completed outcomes, and maps ambiguous legacy `0` values to `legacy_unrecorded` rather than `missed`.

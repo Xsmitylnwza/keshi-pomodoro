@@ -6,8 +6,9 @@ export interface AuthContextValue {
   loading: boolean;
   user: CentralAuthUser | null;
   refresh: () => Promise<void>;
-  login: (returnTo?: string) => void;
-  logout: (returnTo?: string) => void;
+  login: (returnTo?: string) => void | Promise<void>;
+  logout: (returnTo?: string) => void | Promise<void>;
+  logoutAndRemoveLocalData?: () => void | Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

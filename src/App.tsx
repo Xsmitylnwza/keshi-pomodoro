@@ -32,6 +32,13 @@ import {
 import type { AppCalendarSettings } from './lib/appSettingsApi';
 import { fetchCalendarEvents, googleCalendarConnectUrl, type CalendarEvent, type CalendarEventsResponse } from './lib/calendarApi';
 import type { HistoryItem, PomodoroEventType, SprintTask } from './types';
+import { browserTimerPort } from './lib/timer/BrowserTimerPort.mjs';
+import {
+  desktopTimerPort,
+  type DesktopTimerSnapshot,
+} from './lib/timer/DesktopTimerPort';
+import type { TimerMode } from './lib/timer/TimerPort';
+import type { ServerTimerRuntime } from './lib/timer/ServerTimerPort.mjs';
 import {
   fadeDown,
   fadeUp,
@@ -44,8 +51,6 @@ import {
   staggerItem,
   entranceDelays,
 } from './utils/animations';
-
-type TimerMode = 'focus' | 'break';
 
 const MODES = {
   focus: {
@@ -89,6 +94,7 @@ const taskBusinessDate = (task?: SprintTask | null) => {
 };
 const TASK_STATUS_ORDER: SprintTask['status'][] = ['todo', 'doing', 'done'];
 const HABIT_INTELLIGENCE_URL = (import.meta.env.VITE_HABIT_INTELLIGENCE_URL || 'https://habits.xsmity.cloud').replace(/\/+$/, '');
+const authoritativeTimerPort = desktopTimerPort ?? browserTimerPort;
 
 function AuthGate({
   loading,
@@ -153,6 +159,8 @@ function App() {
   const [mode, setMode] = useState<TimerMode>('focus');
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [isRunning, setIsRunning] = useState(false);
+  const [timerAuthority, setTimerAuthority] = useState<'loading' | 'legacy' | 'server'>('loading');
+  const [desktopTimerSnapshot, setDesktopTimerSnapshot] = useState<DesktopTimerSnapshot | null>(null);
   const [focusTime, setFocusTime] = useState(25);
   const [breakTime, setBreakTime] = useState(5);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -192,10 +200,44 @@ function App() {
   const [hasMounted, setHasMounted] = useState(false);
 
   // Refs
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const clickSoundRef = useRef<HTMLAudioElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const serverRuntimeRef = useRef<ServerTimerRuntime | null>(null);
+  const completionInFlightRef = useRef(false);
+  const completionRetryRef = useRef<number | null>(null);
+  const completionCommandIdRef = useRef<string | null>(null);
+  const handleCompleteRef = useRef<() => void>(() => {});
+  const toggleTimerRef = useRef<() => Promise<void>>(async () => {});
+  const playClickRef = useRef<() => void>(() => {});
   const isDisciplineRoute = pathname.startsWith('/discipline');
+
+  const applyServerRuntime = (runtime: ServerTimerRuntime) => {
+    serverRuntimeRef.current = runtime;
+    const active = runtime.active;
+    if (!active) {
+      sessionIdRef.current = null;
+      endTimeRef.current = null;
+      setIsRunning(false);
+      return;
+    }
+
+    sessionIdRef.current = active.runId;
+    setMode(active.mode);
+    if (active.taskId) setSelectedTaskId(active.taskId);
+    if (active.status === 'running' && active.endAt) {
+      const endAtMs = Date.parse(active.endAt);
+      endTimeRef.current = Number.isFinite(endAtMs) ? endAtMs : null;
+      setTimeLeft(endTimeRef.current === null
+        ? active.remainingSeconds
+        : browserTimerPort.remainingSeconds(endTimeRef.current));
+      setIsRunning(true);
+      return;
+    }
+
+    endTimeRef.current = null;
+    setTimeLeft(active.remainingSeconds);
+    setIsRunning(false);
+  };
 
   useEffect(() => {
     const handlePopState = () => setPathname(window.location.pathname);
@@ -209,11 +251,35 @@ function App() {
   }, [isDisciplineRoute]);
 
   // Sound Utility
-  const playClick = () => {
-    if (clickSoundRef.current && soundEnabled) {
-      clickSoundRef.current.currentTime = 0;
-      clickSoundRef.current.play().catch(e => console.log('Audio play failed', e));
+  const playTone = (kind: 'click' | 'complete') => {
+    if (!soundEnabled) return;
+    try {
+      const AudioContextClass = window.AudioContext
+        || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const context = audioContextRef.current ?? new AudioContextClass();
+      audioContextRef.current = context;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = kind === 'complete' ? 'sine' : 'triangle';
+      oscillator.frequency.setValueAtTime(kind === 'complete' ? 660 : 420, context.currentTime);
+      if (kind === 'complete') {
+        oscillator.frequency.setValueAtTime(880, context.currentTime + 0.14);
+      }
+      gain.gain.setValueAtTime(0.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(kind === 'complete' ? 0.16 : 0.05, context.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + (kind === 'complete' ? 0.34 : 0.08));
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start();
+      oscillator.stop(context.currentTime + (kind === 'complete' ? 0.35 : 0.09));
+    } catch (error) {
+      console.warn('Audio tone failed', error);
     }
+  };
+
+  const playClick = () => {
+    playTone('click');
   };
 
   // Initial Load
@@ -229,7 +295,7 @@ function App() {
       setTaskSyncState('syncing');
       let bootstrapHasError = false;
 
-      const [syncedTasksResult, settingsResult, historyResult] = await Promise.all([
+      const [syncedTasksResult, settingsResult, historyResult, timerRuntimeResult] = await Promise.all([
         fetchSprintTasks().catch(error => {
           console.warn('Task sync failed', error);
           bootstrapHasError = true;
@@ -243,6 +309,10 @@ function App() {
         fetchAppHistory().catch(error => {
           console.warn('History sync failed', error);
           bootstrapHasError = true;
+          return null;
+        }),
+        authoritativeTimerPort.runtime().catch(error => {
+          console.warn('Server timer capability check failed', error);
           return null;
         }),
       ]);
@@ -270,6 +340,11 @@ function App() {
       }
 
       setHistory(historyResult?.history ?? []);
+      const useServerTimer = Boolean(
+        desktopTimerPort || timerRuntimeResult?.startEnabled || timerRuntimeResult?.active,
+      );
+      setTimerAuthority(useServerTimer ? 'server' : 'legacy');
+      if (useServerTimer && timerRuntimeResult) applyServerRuntime(timerRuntimeResult);
       setTaskSyncState(bootstrapHasError ? 'offline' : 'online');
 
       if ('Notification' in window && Notification.permission === 'default') {
@@ -285,6 +360,115 @@ function App() {
       active = false;
     };
   }, [auth.authenticated, auth.loading]);
+
+  useEffect(() => {
+    if (!auth.authenticated || timerAuthority !== 'server' || desktopTimerPort) return;
+    let disposed = false;
+    let pollTimer: number | null = null;
+
+    const schedule = () => {
+      if (disposed) return;
+      const delay = document.visibilityState === 'visible' ? 15_000 : 60_000;
+      pollTimer = window.setTimeout(() => void syncRuntime(), delay);
+    };
+    const syncRuntime = async () => {
+      try {
+        const previousActive = serverRuntimeRef.current?.active || null;
+        const runtime = await authoritativeTimerPort.runtime();
+        if (disposed) return;
+        if (!runtime.startEnabled && !runtime.active) {
+          serverRuntimeRef.current = null;
+          setTimerAuthority('legacy');
+          return;
+        }
+        applyServerRuntime(runtime);
+        if (previousActive && !runtime.active) {
+          const syncedHistory = await fetchAppHistory().catch(() => null);
+          if (disposed) return;
+          if (syncedHistory) {
+            setHistory(syncedHistory.history);
+            const completed = syncedHistory.history.some(item => item.id === previousActive.runId);
+            const nextMode = completed ? browserTimerPort.nextMode(previousActive.mode) : previousActive.mode;
+            setMode(nextMode);
+            setTimeLeft((nextMode === 'focus' ? focusTime : breakTime) * 60);
+          }
+        }
+        setTaskSyncState('online');
+      } catch (error) {
+        console.warn('Server timer runtime sync failed', error);
+        setTaskSyncState('offline');
+      } finally {
+        schedule();
+      }
+    };
+    const handleVisibility = () => {
+      if (pollTimer !== null) window.clearTimeout(pollTimer);
+      pollTimer = null;
+      if (document.visibilityState === 'visible') void syncRuntime();
+      else schedule();
+    };
+
+    schedule();
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      disposed = true;
+      if (pollTimer !== null) window.clearTimeout(pollTimer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [auth.authenticated, timerAuthority, focusTime, breakTime]);
+
+  useEffect(() => {
+    const desktopPort = desktopTimerPort;
+    if (!auth.authenticated || !desktopPort) return;
+    let previousSnapshot: DesktopTimerSnapshot | null = null;
+    const applyDesktopSnapshot = (snapshot: DesktopTimerSnapshot) => {
+      setDesktopTimerSnapshot(snapshot);
+      const previousActive = serverRuntimeRef.current?.active || null;
+      applyServerRuntime({
+        schemaVersion: 1,
+        revision: snapshot.revision,
+        active: snapshot.active,
+        startEnabled: snapshot.startEnabled,
+      });
+      setTimerAuthority('server');
+      setTaskSyncState(snapshot.connection === 'online' ? 'online' : 'offline');
+      if (!snapshot.active && snapshot.presentedMode) {
+        setMode(snapshot.presentedMode);
+        setTimeLeft((snapshot.presentedMode === 'focus' ? focusTime : breakTime) * 60);
+      }
+      if ((previousActive && !snapshot.active)
+        || (previousSnapshot?.completionPending && !snapshot.completionPending)) {
+        void fetchAppHistory()
+          .then(result => setHistory(result.history))
+          .catch(error => console.warn('Desktop completion history refresh failed', error));
+      }
+      previousSnapshot = snapshot;
+    };
+    const unsubscribe = desktopPort.subscribe(applyDesktopSnapshot);
+    void window.keshiDesktop!.timer.snapshot().then(applyDesktopSnapshot);
+    const visibility = () => desktopPort.setVisible(document.visibilityState === 'visible');
+    const online = () => desktopPort.signalOnline();
+    visibility();
+    document.addEventListener('visibilitychange', visibility);
+    window.addEventListener('online', online);
+    return () => {
+      unsubscribe();
+      document.removeEventListener('visibilitychange', visibility);
+      window.removeEventListener('online', online);
+    };
+  }, [auth.authenticated, focusTime, breakTime]);
+
+  useEffect(() => {
+    if (!desktopTimerPort) return;
+    void desktopTimerPort.setSoundEnabled(soundEnabled);
+  }, [soundEnabled]);
+
+  useEffect(() => () => {
+    if (completionRetryRef.current !== null) {
+      window.clearTimeout(completionRetryRef.current);
+      completionRetryRef.current = null;
+    }
+  }, []);
 
   const refreshTasks = async () => {
     setTaskSyncState('syncing');
@@ -326,14 +510,14 @@ function App() {
     if (!link) return;
     // We can use the same logo but if we had a green one we'd swap it.
     // Since we don't, we just ensure it points to the correct static asset.
-    link.href = '/logo.png';
+    link.href = '/keshi-icon.svg';
   }, [mode]);
 
   // Handle visibility change - recalculate time when returning to tab
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && isRunning && endTimeRef.current !== null) {
-        const remaining = Math.ceil((endTimeRef.current - Date.now()) / 1000);
+        const remaining = browserTimerPort.remainingSeconds(endTimeRef.current);
         if (remaining <= 0) {
           setTimeLeft(0);
         } else {
@@ -353,43 +537,103 @@ function App() {
     document.title = isDisciplineRoute ? 'Opening Rhythm' : `${m}:${s} / ${mode.toUpperCase()}`;
   }, [timeLeft, mode, isDisciplineRoute]);
 
-  function handleComplete() {
-    setIsRunning(false);
-    if (soundEnabled && audioRef.current) audioRef.current.play();
-    logTimerEvent('pomodoro_completed', {
-      elapsedSeconds: plannedSecondsFor(mode),
-      remainingSeconds: 0,
-    });
-
-    // Browser notification for users on other tabs
+  const showCompletionNotification = (completedMode: TimerMode) => {
     if ('Notification' in window && Notification.permission === 'granted') {
-      const notifTitle = mode === 'focus' ? 'Focus Complete!' : 'Break Over!';
-      const notifBody = mode === 'focus'
+      const notifTitle = completedMode === 'focus' ? 'Focus Complete!' : 'Break Over!';
+      const notifBody = completedMode === 'focus'
         ? `Great work! ${focusTime} minute focus session complete. Time for a break.`
         : `Break's over! Ready to focus for ${focusTime} minutes?`;
 
       new Notification(notifTitle, {
         body: notifBody,
-        icon: '/logo.png',
+        icon: '/keshi-icon.svg',
         tag: 'keshi-pomodoro-timer',
         requireInteraction: true,
       });
     }
+  };
+
+  async function handleServerComplete() {
+    if (desktopTimerPort) return;
+    const runtime = serverRuntimeRef.current;
+    const active = runtime?.active;
+    if (!runtime || !active || active.status !== 'running' || completionInFlightRef.current) return;
+    completionInFlightRef.current = true;
+    let retryNeeded = false;
+
+    try {
+      completionCommandIdRef.current ??= crypto.randomUUID();
+      const result = await browserTimerPort.complete({
+        runId: active.runId,
+        expectedRevision: runtime.revision,
+        commandId: completionCommandIdRef.current,
+      });
+      applyServerRuntime(result.runtime);
+      completionCommandIdRef.current = null;
+      await finalizeServerCompletion(active.mode);
+    } catch (error) {
+      console.warn('Server timer completion failed', error);
+      setTaskSyncState('offline');
+      retryNeeded = true;
+      try {
+        const latest = await browserTimerPort.runtime();
+        applyServerRuntime(latest);
+        if (!latest.active) {
+          completionCommandIdRef.current = null;
+          retryNeeded = false;
+          await finalizeServerCompletion(active.mode);
+        }
+      } catch {
+        // Keep the last durable snapshot and retry after reconnect.
+      }
+    } finally {
+      completionInFlightRef.current = false;
+      if (retryNeeded && completionRetryRef.current === null) {
+        completionRetryRef.current = window.setTimeout(() => {
+          completionRetryRef.current = null;
+          void handleServerComplete();
+        }, 5000);
+      }
+    }
+  }
+
+  async function finalizeServerCompletion(completedMode: TimerMode) {
+    playTone('complete');
+    showCompletionNotification(completedMode);
+    const syncedHistory = await fetchAppHistory().catch(error => {
+      console.warn('Completion history refresh failed', error);
+      return null;
+    });
+    if (syncedHistory) setHistory(syncedHistory.history);
+    const nextMode = browserTimerPort.nextMode(completedMode);
+    setMode(nextMode);
+    setTimeLeft((nextMode === 'focus' ? focusTime : breakTime) * 60);
+    setTaskSyncState('online');
+  }
+
+  function handleComplete() {
+    if (timerAuthority === 'server') {
+      void handleServerComplete();
+      return;
+    }
+    setIsRunning(false);
+    playTone('complete');
+    logTimerEvent('pomodoro_completed', {
+      elapsedSeconds: plannedSecondsFor(mode),
+      remainingSeconds: 0,
+    });
+
+    showCompletionNotification(mode);
 
     // Add to history with unique ID
     const selectedTask = tasks.find(task => task.id === selectedTaskId);
     const completedBusinessDate = todayKey();
-    const historyId = crypto.randomUUID();
-    const newItem: HistoryItem = {
-      mode: mode,
-      duration: mode === 'focus' ? focusTime : breakTime,
-      date: new Date().toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', month: 'short', day: 'numeric' }),
-      id: historyId,
-      taskId: selectedTask?.id,
-      taskTitle: selectedTask?.title,
+    const newItem = browserTimerPort.historyItem({
+      mode,
+      durations: { focusMinutes: focusTime, breakMinutes: breakTime },
+      selectedTask,
       businessDate: completedBusinessDate,
-      idempotencyKey: `keshi:history:${historyId}`,
-    };
+    });
     const newHistory = [newItem, ...history];
     setHistory(newHistory);
     void appendAppHistory(newItem)
@@ -416,20 +660,20 @@ function App() {
         });
     }
 
-    const newMode = mode === 'focus' ? 'break' : 'focus';
+    const newMode = browserTimerPort.nextMode(mode);
     sessionIdRef.current = null;
     setMode(newMode);
     setTimeLeft((newMode === 'focus' ? focusTime : breakTime) * 60);
   };
 
-  const resetTimer = () => {
-    cancelActiveTimer();
+  const resetTimer = async () => {
+    await cancelActiveTimer();
     setIsRunning(false);
     setTimeLeft((mode === 'focus' ? focusTime : breakTime) * 60);
   };
 
-  const switchMode = (newMode: TimerMode) => {
-    if (newMode !== mode) cancelActiveTimer();
+  const switchMode = async (newMode: TimerMode) => {
+    if (newMode !== mode) await cancelActiveTimer();
     setMode(newMode);
     setIsRunning(false);
     setTimeLeft(newMode === 'focus' ? focusTime * 60 : breakTime * 60);
@@ -649,7 +893,10 @@ function App() {
     }
   };
 
-  const plannedSecondsFor = (timerMode: TimerMode) => (timerMode === 'focus' ? focusTime : breakTime) * 60;
+  const plannedSecondsFor = (timerMode: TimerMode) => browserTimerPort.plannedSeconds(
+    timerMode,
+    { focusMinutes: focusTime, breakMinutes: breakTime },
+  );
 
   const getNextTaskStatus = (status: SprintTask['status']) => {
     const currentIndex = TASK_STATUS_ORDER.indexOf(status);
@@ -668,31 +915,26 @@ function App() {
   };
 
   const logTimerEvent = (type: PomodoroEventType, overrides?: { elapsedSeconds?: number; remainingSeconds?: number; sessionId?: string }) => {
+    if (timerAuthority === 'server') return;
     const selectedTask = tasks.find(task => task.id === selectedTaskId);
     const plannedSeconds = plannedSecondsFor(mode);
     const remainingSeconds = overrides?.remainingSeconds ?? timeLeft;
     const elapsedSeconds = overrides?.elapsedSeconds ?? Math.max(0, plannedSeconds - remainingSeconds);
-    const sessionId = overrides?.sessionId ?? sessionIdRef.current ?? crypto.randomUUID();
-    const eventId = crypto.randomUUID();
     const businessDate = todayKey();
-
-    sessionIdRef.current = sessionId;
-
-    pushPomodoroEvent({
-      id: eventId,
-      sessionId,
+    const result = browserTimerPort.event({
       type,
       mode,
-      taskId: selectedTask?.id ?? null,
-      taskTitle: selectedTask?.title ?? null,
+      selectedTask,
       plannedSeconds,
-      elapsedSeconds,
       remainingSeconds,
-      createdAt: new Date().toISOString(),
+      elapsedSeconds,
+      sessionId: overrides?.sessionId ?? sessionIdRef.current,
       businessDate,
-      source: 'keshi-pomodoro',
-      idempotencyKey: `keshi:event:${eventId}`,
-    })
+    });
+
+    sessionIdRef.current = result.sessionId;
+
+    pushPomodoroEvent(result.event)
       .then(() => {
         if (sprintApiBaseUrl) setTaskSyncState('online');
       })
@@ -702,7 +944,34 @@ function App() {
       });
   };
 
-  const cancelActiveTimer = () => {
+  const cancelActiveTimer = async () => {
+    if (timerAuthority === 'server') {
+      const runtime = serverRuntimeRef.current;
+      const active = runtime?.active;
+      if (!runtime || !active) return;
+      if (active.ownerClientId !== authoritativeTimerPort.clientId) {
+        console.warn('Timer is owned by another client');
+        return;
+      }
+      try {
+        const result = await authoritativeTimerPort.cancel({
+          runId: active.runId,
+          expectedRevision: runtime.revision,
+        });
+        applyServerRuntime(result.runtime);
+        setTaskSyncState('online');
+      } catch (error) {
+        console.warn('Server timer cancel failed', error);
+        setTaskSyncState('offline');
+        try {
+          applyServerRuntime(await authoritativeTimerPort.runtime());
+        } catch {
+          // Preserve the last known runtime until reconnect.
+        }
+      }
+      return;
+    }
+
     const plannedSeconds = plannedSecondsFor(mode);
     const elapsedSeconds = Math.max(0, plannedSeconds - timeLeft);
     if (elapsedSeconds > 0 && sessionIdRef.current) {
@@ -711,7 +980,50 @@ function App() {
     sessionIdRef.current = null;
   };
 
-  function toggleTimer() {
+  async function toggleTimer() {
+    if (timerAuthority === 'loading') return;
+    if (timerAuthority === 'server') {
+      const runtime = serverRuntimeRef.current;
+      if (!runtime) return;
+      try {
+        const active = runtime.active;
+        if (!active) {
+          const selectedTask = tasks.find(task => task.id === selectedTaskId);
+          const result = await authoritativeTimerPort.start({
+            expectedRevision: runtime.revision,
+            mode,
+            taskId: selectedTask?.id || null,
+            taskTitle: selectedTask?.title || null,
+            plannedSeconds: plannedSecondsFor(mode),
+          });
+          applyServerRuntime(result.runtime);
+        } else {
+          if (active.ownerClientId !== authoritativeTimerPort.clientId) {
+            console.warn('Timer is owned by another client');
+            return;
+          }
+          const command = {
+            runId: active.runId,
+            expectedRevision: runtime.revision,
+          };
+          const result = active.status === 'running'
+            ? await authoritativeTimerPort.pause(command)
+            : await authoritativeTimerPort.resume(command);
+          applyServerRuntime(result.runtime);
+        }
+        setTaskSyncState('online');
+      } catch (error) {
+        console.warn('Server timer command failed', error);
+        setTaskSyncState('offline');
+        try {
+          applyServerRuntime(await authoritativeTimerPort.runtime());
+        } catch {
+          // Preserve the last known runtime until reconnect.
+        }
+      }
+      return;
+    }
+
     if (isRunning) {
       logTimerEvent('pomodoro_paused');
       setIsRunning(false);
@@ -725,6 +1037,10 @@ function App() {
     });
     setIsRunning(true);
   }
+
+  handleCompleteRef.current = handleComplete;
+  toggleTimerRef.current = toggleTimer;
+  playClickRef.current = playClick;
 
   // Timer Logic - Using absolute time to handle browser tab throttling
   useEffect(() => {
@@ -740,7 +1056,7 @@ function App() {
       // Check time every 250ms - sufficient for second-level display accuracy
       interval = setInterval(() => {
         if (endTimeRef.current !== null) {
-          const remaining = Math.ceil((endTimeRef.current - Date.now()) / 1000);
+          const remaining = browserTimerPort.remainingSeconds(endTimeRef.current);
 
           if (remaining <= 0) {
             setTimeLeft(0);
@@ -748,9 +1064,9 @@ function App() {
             setTimeLeft(remaining);
           }
         }
-      }, 250);
-    } else if (timeLeft === 0) {
-      completionTimer = window.setTimeout(handleComplete, 0);
+      }, desktopTimerPort ? 1000 : 250);
+    } else if (timeLeft === 0 && !desktopTimerPort) {
+      completionTimer = window.setTimeout(() => handleCompleteRef.current(), 0);
     }
 
     // Clear endTimeRef when timer is paused or stopped
@@ -773,14 +1089,14 @@ function App() {
 
       if (e.key === ' ' || e.key === 'Enter') {
         e.preventDefault();
-        toggleTimer();
-        playClick();
+        void toggleTimerRef.current();
+        playClickRef.current();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isDisciplineRoute, showSettings, showInsights, soundEnabled, taskPendingDelete]);
+  }, [isDisciplineRoute, showSettings, showInsights, taskPendingDelete]);
 
   const addTask = () => {
     const title = newTaskTitle.trim();
@@ -1017,6 +1333,31 @@ function App() {
   const totalTime = (mode === 'focus' ? focusTime : breakTime) * 60;
   // Calculate progress ensuring we don't divide by zero
   const progress = totalTime > 0 ? ((totalTime - timeLeft) / totalTime) * 100 : 0;
+  const desktopOwnedElsewhere = Boolean(
+    desktopTimerSnapshot?.active
+    && desktopTimerSnapshot.active.ownerClientId !== desktopTimerSnapshot.clientId,
+  );
+  const desktopTimerBlocked = Boolean(
+    desktopTimerPort
+    && (
+      desktopTimerSnapshot?.connection !== 'online'
+      || desktopOwnedElsewhere
+      || (!desktopTimerSnapshot?.active && !desktopTimerSnapshot?.startEnabled)
+    ),
+  );
+  const desktopTimerMessage = !desktopTimerPort || !desktopTimerBlocked
+    ? ''
+    : desktopOwnedElsewhere
+      ? 'This timer is controlled by another web or desktop client.'
+      : desktopTimerSnapshot?.connection === 'conflict'
+        ? 'Timer conflict needs recovery. Reconnect and refresh before changing it.'
+        : desktopTimerSnapshot?.connection === 'wrong_user'
+          ? 'Local recovery belongs to a different account and is hidden.'
+          : desktopTimerSnapshot?.connection === 'recovery_blocked'
+            ? 'Timer recovery queue needs attention before another change.'
+            : desktopTimerSnapshot?.connection === 'online'
+              ? 'Desktop timer starts are temporarily unavailable.'
+              : 'Reconnect to change the timer. The running countdown continues locally.';
 
   const { colors } = useTheme();
   const selectedTask = tasks.find(task => task.id === selectedTaskId) ?? null;
@@ -1342,10 +1683,6 @@ function App() {
       <CustomCursor />
       <Background mode={mode} />
 
-      {/* Audio */}
-      <audio ref={audioRef} src="/yandere-simulator-akademi-school-bell.mp3" preload="auto" />
-      <audio ref={clickSoundRef} src="/clicksoundeffect.mp3" preload="auto" />
-
       {/* Grain Overlay handled globally in index.css (.noise-overlay) */}
       <div className="noise-overlay"></div>
 
@@ -1359,7 +1696,7 @@ function App() {
           transition={{ delay: entranceDelays.logo }}
         >
           <div className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 relative isolate">
-            <img src="/f25d6e80f442ce4dc10c171831b1fc76.jpg"
+            <img src="/keshi-icon.svg"
               alt="Logo"
               className="w-full h-full object-cover rounded-full border-2 border-paper-cream grayscale group-hover:scale-110 group-hover:grayscale-0 transition-all duration-300 mix-blend-normal" />
           </div>
@@ -1382,6 +1719,9 @@ function App() {
                 onOpenSettings={() => { setShowSettings(true); playClick(); }}
                 onOpenInsights={() => { openInsights(); playClick(); }}
                 onLogout={() => { playClick(); auth.logout(); }}
+                onLogoutAndRemoveData={auth.logoutAndRemoveLocalData
+                  ? () => { playClick(); void auth.logoutAndRemoveLocalData?.(); }
+                  : undefined}
                 compactOnMobile
               />
             </motion.div>
@@ -1808,7 +2148,11 @@ function App() {
         {/* Ransom Note Title - Mode Switcher */}
         <motion.div
           className="mb-12 relative group cursor-pointer"
-          onClick={() => { switchMode(mode === 'focus' ? 'break' : 'focus'); playClick(); }}
+          onClick={() => {
+            if (desktopTimerBlocked) return;
+            switchMode(mode === 'focus' ? 'break' : 'focus');
+            playClick();
+          }}
           variants={letterContainer}
           initial="initial"
           animate="animate"
@@ -1936,6 +2280,14 @@ function App() {
         </motion.div>
 
         {/* Controls */}
+        {desktopTimerMessage && (
+          <div
+            role="status"
+            className="mb-4 w-full max-w-md border-2 border-amber-300/60 bg-amber-300/10 px-4 py-3 text-center font-mono text-xs text-amber-100"
+          >
+            {desktopTimerMessage}
+          </div>
+        )}
         <motion.div
           className="relative w-full max-w-md flex items-center justify-center"
           variants={staggerContainer}
@@ -1944,20 +2296,22 @@ function App() {
         >
           <motion.button
             onClick={() => { toggleTimer(); playClick(); }}
-            className={`group relative px-6 py-3 sm:px-8 sm:py-3 md:px-10 md:py-4 bg-paper-cream transition-all overflow-hidden border-2 border-black hover:-translate-y-1 active:translate-y-1 active:shadow-none`}
+            disabled={desktopTimerBlocked}
+            className={`group relative px-6 py-3 sm:px-8 sm:py-3 md:px-10 md:py-4 bg-paper-cream transition-all overflow-hidden border-2 border-black hover:-translate-y-1 active:translate-y-1 active:shadow-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0`}
             style={{ boxShadow: '6px 6px 0 rgba(0,0,0,1)' }}
             variants={staggerItem}
           >
             <span className={`relative z-10 font-grotesk text-sm sm:text-base md:text-lg tracking-widest uppercase font-black flex items-center gap-2 sm:gap-3 ${mode === 'focus' ? 'text-accent-red group-hover:text-white' : 'text-accent-green group-hover:text-white'}`}>
               {isRunning ? <Pause className="w-4 h-4 sm:w-5 sm:h-5 fill-current" strokeWidth={3} /> : <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-current" strokeWidth={3} />}
-              {isRunning ? 'Pause' : 'Start'}
+              {desktopTimerBlocked ? 'Unavailable' : isRunning ? 'Pause' : 'Start'}
             </span>
             <div className={`absolute inset-0 transform translate-y-full group-hover:translate-y-0 transition-transform duration-300 ${mode === 'focus' ? 'bg-accent-red' : 'bg-accent-green'}`}></div>
           </motion.button>
 
           <motion.button
             onClick={() => { resetTimer(); playClick(); }}
-            className="absolute right-0 p-3 sm:p-4 rounded-none border-2 border-white/20 hover:border-white transition-all group bg-white/5 hover:bg-white/10 hover:-translate-y-1 active:translate-y-0"
+            disabled={desktopTimerBlocked}
+            className="absolute right-0 p-3 sm:p-4 rounded-none border-2 border-white/20 hover:border-white transition-all group bg-white/5 hover:bg-white/10 hover:-translate-y-1 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
             style={{ boxShadow: '4px 4px 0 rgba(0,0,0,0.5)' }}
             variants={staggerItem}
           >

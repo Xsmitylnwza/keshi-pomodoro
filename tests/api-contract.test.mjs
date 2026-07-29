@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -66,6 +66,7 @@ before(async () => {
       POMODORO_DATA_DIR: dataDir,
       POMODORO_DIST_DIR: path.join(dataDir, 'dist'),
       BUSINESS_TIME_ZONE: 'Asia/Bangkok',
+      SERVER_TIMER_ENABLED: 'true',
       POMODORO_ENABLE_LEGACY_DISCIPLINE: 'true',
       HABIT_INTELLIGENCE_URL: 'https://habits.example.test',
     },
@@ -120,6 +121,88 @@ test('tasks are idempotent and carry businessDate', async () => {
   const listed = await api('/api/tasks');
   assert.equal(listed.response.status, 200);
   assert.equal(listed.body.tasks.length, 1);
+});
+
+test('timer API serializes concurrent starts, bounds bodies, and persists a safe atomic runtime', async () => {
+  const empty = await api('/api/timer/runtime');
+  assert.equal(empty.response.status, 200);
+  assert.deepEqual(empty.body, {
+    schemaVersion: 1,
+    revision: 0,
+    active: null,
+    startEnabled: true,
+  });
+  assert.equal(empty.response.headers.get('cache-control'), 'no-store');
+
+  const oversizedTimer = await api('/api/timer/commands', {
+    method: 'POST',
+    body: JSON.stringify({ padding: 'x'.repeat(9 * 1024) }),
+  });
+  assert.equal(oversizedTimer.response.status, 413);
+  assert.equal(oversizedTimer.body.error, 'payload_too_large');
+
+  const clientId = '44444444-4444-4444-8444-444444444444';
+  const occurredAt = new Date().toISOString();
+  const makeStart = (commandId, runId) => post('/api/timer/commands', {
+    commandId,
+    type: 'start',
+    runId,
+    expectedRevision: 0,
+    occurredAt,
+    payload: {
+      clientId,
+      ownerKind: 'web',
+      mode: 'focus',
+      taskId: 'task-a',
+      taskTitle: 'Write reliability plan',
+      plannedSeconds: 60,
+    },
+  });
+  const [left, right] = await Promise.all([
+    makeStart(
+      '55555555-5555-4555-8555-555555555555',
+      '66666666-6666-4666-8666-666666666666',
+    ),
+    makeStart(
+      '77777777-7777-4777-8777-777777777777',
+      '88888888-8888-4888-8888-888888888888',
+    ),
+  ]);
+  assert.deepEqual(
+    [left.response.status, right.response.status].sort((a, b) => a - b),
+    [200, 409],
+  );
+
+  const active = await api('/api/timer/runtime');
+  assert.equal(active.body.revision, 1);
+  assert.ok(active.body.active);
+  assert.equal('ownerUserId' in active.body.active, false);
+  assert.equal('recentCommands' in active.body, false);
+
+  const cancelled = await post('/api/timer/commands', {
+    commandId: '99999999-9999-4999-8999-999999999999',
+    type: 'cancel',
+    runId: active.body.active.runId,
+    expectedRevision: 1,
+    occurredAt: new Date().toISOString(),
+    payload: { clientId },
+  });
+  assert.equal(cancelled.response.status, 200);
+  assert.equal(cancelled.body.runtime.active, null);
+
+  const persisted = JSON.parse(await readFile(path.join(dataDir, 'timer-runtime.json'), 'utf8'));
+  assert.equal(persisted.revision, 2);
+  assert.equal(persisted.active, null);
+  assert.equal(persisted.recentCommands.length, 2);
+  const dataFiles = await readdir(dataDir);
+  assert.equal(dataFiles.some(name => name.endsWith('.tmp')), false);
+
+  const oversizedGlobal = await api('/api/settings', {
+    method: 'PATCH',
+    body: JSON.stringify({ padding: 'x'.repeat(257 * 1024) }),
+  });
+  assert.equal(oversizedGlobal.response.status, 413);
+  assert.equal(oversizedGlobal.body.error, 'payload_too_large');
 });
 
 test('calendar events can be loaded from secret ICS URL settings', async () => {
@@ -509,11 +592,14 @@ test('central auth protects API routes when enabled', async () => {
 
     const cookie = req.headers.cookie ?? '';
     seenCookies.push(cookie);
+    const userId = String(cookie).includes('xsmity.sid=valid-two')
+      ? 'central-user-2'
+      : 'central-user-1';
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({
       authenticated: String(cookie).includes('xsmity.sid=valid'),
       user: String(cookie).includes('xsmity.sid=valid')
-        ? { id: 'central-user-1', email: 'user@example.com', name: 'Central User' }
+        ? { id: userId, email: `${userId}@example.com`, name: 'Central User' }
         : null,
     }));
   });
@@ -531,6 +617,7 @@ test('central auth protects API routes when enabled', async () => {
         POMODORO_DIST_DIR: path.join(protectedDataDir, 'dist'),
         CENTRAL_AUTH_ENABLED: 'true',
         CENTRAL_AUTH_URL: `http://127.0.0.1:${authPort}`,
+        SERVER_TIMER_ENABLED: 'true',
         XSMITY_SERVICE_TOKEN: 'central-service-test-token',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -599,6 +686,56 @@ test('central auth protects API routes when enabled', async () => {
     assert.equal(accepted.status, 200);
     assert.ok((await accepted.json()).settings);
     assert.ok(seenCookies.includes('xsmity.sid=valid'));
+
+    const startForUser = (cookie, commandId, runId, clientId) => fetch(
+      `${protectedBaseUrl}/api/timer/commands`,
+      {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          cookie,
+        },
+        body: JSON.stringify({
+          commandId,
+          type: 'start',
+          runId,
+          expectedRevision: 0,
+          occurredAt: new Date().toISOString(),
+          payload: {
+            clientId,
+            ownerKind: 'web',
+            mode: 'focus',
+            plannedSeconds: 60,
+          },
+        }),
+      },
+    );
+    const firstRunId = '12121212-1212-4212-8212-121212121212';
+    const secondRunId = '34343434-3434-4434-8434-343434343434';
+    const firstTimer = await startForUser(
+      'xsmity.sid=valid',
+      '56565656-5656-4656-8656-565656565656',
+      firstRunId,
+      '78787878-7878-4878-8878-787878787878',
+    );
+    const secondTimer = await startForUser(
+      'xsmity.sid=valid-two',
+      '90909090-9090-4090-8090-909090909090',
+      secondRunId,
+      'abababab-abab-4bab-8bab-abababababab',
+    );
+    assert.equal(firstTimer.status, 200);
+    assert.equal(secondTimer.status, 200);
+
+    const firstRuntime = await fetch(`${protectedBaseUrl}/api/timer/runtime`, {
+      headers: { cookie: 'xsmity.sid=valid' },
+    }).then(response => response.json());
+    const secondRuntime = await fetch(`${protectedBaseUrl}/api/timer/runtime`, {
+      headers: { cookie: 'xsmity.sid=valid-two' },
+    }).then(response => response.json());
+    assert.equal(firstRuntime.active.runId, firstRunId);
+    assert.equal(secondRuntime.active.runId, secondRunId);
   } finally {
     if (protectedServer && protectedServer.exitCode === null) {
       protectedServer.kill();

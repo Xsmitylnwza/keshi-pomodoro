@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AuthContext, type AuthContextValue } from './AuthContextCore';
-import {
-  centralLoginUrl,
-  centralLogoutUrl,
-  fetchCentralSession,
-  type CentralAuthSession,
-} from '../lib/centralAuth';
+import type { CentralAuthSession } from '../lib/centralAuth';
+import { authPort } from '../lib/authPort';
 import { isLocalMockAuthEnabled, LOCAL_MOCK_USER } from '../lib/localDev';
 
 const initialSession: CentralAuthSession = {
@@ -47,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setLoading(true);
     try {
-      setSession(await fetchCentralSession());
+      setSession(await authPort.fetchSession());
     } catch (error) {
       console.warn('Central auth session check failed', error);
       setSession(initialSession);
@@ -66,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       user: session.user,
       refresh,
-      login: (returnTo = window.location.href) => {
+      login: async (returnTo = window.location.href) => {
         if (localMock) {
           try {
             window.localStorage.setItem(LOCAL_SESSION_KEY, '1');
@@ -76,9 +72,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(localMockSession);
           return;
         }
-        window.location.href = centralLoginUrl(returnTo);
+        try {
+          const result = await authPort.login(returnTo);
+          if (result?.status === 'authenticated') await refresh();
+        } catch (error) {
+          console.warn('Desktop login failed', error);
+        }
       },
-      logout: (returnTo = window.location.href) => {
+      logout: async (returnTo = window.location.href) => {
         if (localMock) {
           try {
             window.localStorage.setItem(LOCAL_SESSION_KEY, '0');
@@ -88,8 +89,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(initialSession);
           return;
         }
-        window.location.href = centralLogoutUrl(returnTo);
+        try {
+          await authPort.logout(returnTo);
+          setSession(initialSession);
+        } catch (error) {
+          console.warn('Desktop logout failed', error);
+        }
       },
+      logoutAndRemoveLocalData: authPort.logoutAndRemoveLocalData
+        ? async () => {
+            try {
+              await authPort.logoutAndRemoveLocalData?.(window.location.href);
+              setSession(initialSession);
+            } catch (error) {
+              console.warn('Desktop local-data removal was cancelled or failed', error);
+            }
+          }
+        : undefined,
     }),
     [loading, localMock, refresh, session.authenticated, session.user],
   );
