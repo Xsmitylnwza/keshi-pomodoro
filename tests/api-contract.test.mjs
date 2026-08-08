@@ -484,6 +484,19 @@ test('cron runs can be recorded and duplicate keys return the original record', 
 
 test('activity calendar projects durable history and corrections', async () => {
   const date = '2026-08-08';
+  const task = await post('/api/tasks', {
+    id: 'activity-quick-task',
+    title: 'NIKKE daily check-in',
+    status: 'doing',
+    businessDate: date,
+    transitionAt: '2026-08-08T05:17:00.000Z',
+  });
+  assert.equal(task.response.status, 201);
+  const completed = await api('/api/tasks/activity-quick-task', {
+    method: 'PUT',
+    body: JSON.stringify({ status: 'done', transitionAt: '2026-08-08T05:32:00.000Z' }),
+  });
+  assert.equal(completed.response.status, 200);
   const focus = await post('/api/history', {
     id: 'activity-history-focus',
     mode: 'focus',
@@ -510,7 +523,7 @@ test('activity calendar projects durable history and corrections', async () => {
   const calendar = await api(`/api/activity/calendar?date=${date}`);
   assert.equal(calendar.response.status, 200);
   assert.equal(calendar.body.date, date);
-  assert.ok(Array.isArray(calendar.body.taskStates));
+  assert.equal(calendar.body.taskStates.find(item => item.taskId === 'activity-quick-task').durationMinutes, 15);
   assert.equal(calendar.body.actual.find(item => item.id === 'history:activity-history-focus').durationMinutes, 25);
   assert.equal(calendar.body.actual.find(item => item.kind === 'manual').title, 'NIKKE daily check-in');
   assert.equal(calendar.body.summary.focusMinutes, 25);

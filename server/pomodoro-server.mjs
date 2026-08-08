@@ -22,6 +22,7 @@ const legacyAppSettingsFile = path.join(dataDir, 'app-settings.json');
 const legacyHistoryFile = path.join(dataDir, 'history.json');
 const legacyTaskSnapshotsFile = path.join(dataDir, 'task-snapshots.json');
 const legacyCronRunsFile = path.join(dataDir, 'cron-runs.json');
+const legacyTaskStatusEventsFile = path.join(dataDir, 'task-status-events.json');
 const legacyActivityCorrectionsFile = path.join(dataDir, 'activity-corrections.json');
 const legacyDisciplineDbFile = process.env.DISCIPLINE_DB_FILE || path.join(dataDir, 'discipline.sqlite');
 const disciplineDbs = new Map();
@@ -1395,6 +1396,34 @@ async function readTasks(userKey) {
 
 const activityCorrectionKinds = new Set(['focus', 'break', 'manual', 'unallocated']);
 
+function normalizeTaskStatusEvent(event = {}) {
+  const changedAt = typeof event.changedAt === 'string' && Number.isFinite(Date.parse(event.changedAt))
+    ? new Date(event.changedAt).toISOString()
+    : new Date().toISOString();
+  return {
+    id: typeof event.id === 'string' && event.id ? event.id : randomUUID(),
+    taskId: typeof event.taskId === 'string' ? event.taskId : '',
+    taskTitle: typeof event.taskTitle === 'string' ? event.taskTitle : 'Untitled task',
+    from: typeof event.from === 'string' ? event.from : null,
+    to: typeof event.to === 'string' ? event.to : 'doing',
+    changedAt,
+    businessDate: resolveBusinessDate(event, changedAt),
+    source: 'keshi-task',
+  };
+}
+
+async function readTaskStatusEvents(userKey) {
+  const events = await readJson(userFile(userKey, 'task-status-events.json', legacyTaskStatusEventsFile), []);
+  return Array.isArray(events) ? events.map(normalizeTaskStatusEvent) : [];
+}
+
+async function appendTaskStatusEvent(userKey, event) {
+  const events = await readTaskStatusEvents(userKey);
+  const normalized = normalizeTaskStatusEvent(event);
+  await writeJson(userFile(userKey, 'task-status-events.json', legacyTaskStatusEventsFile), [normalized, ...events]);
+  return normalized;
+}
+
 function normalizeActivityCorrection(correction = {}) {
   const createdAt = typeof correction.createdAt === 'string' ? correction.createdAt : new Date().toISOString();
   return {
@@ -1512,6 +1541,41 @@ function markFocusConflicts(segments) {
   }
 }
 
+function projectTaskStateWindows(transitions, dateKey) {
+  const { startMs, endMs } = businessDayBounds(dateKey);
+  const byTask = new Map();
+  for (const transition of transitions) {
+    const group = byTask.get(transition.taskId) || [];
+    group.push(transition);
+    byTask.set(transition.taskId, group);
+  }
+  const windows = [];
+  for (const [taskId, group] of byTask) {
+    const ordered = [...group].sort((a, b) => Date.parse(a.changedAt) - Date.parse(b.changedAt));
+    for (let index = 0; index < ordered.length; index += 1) {
+      const transition = ordered[index];
+      if (transition.to !== 'doing') continue;
+      const closing = ordered.slice(index + 1).find(item => item.to !== 'doing');
+      const startedMs = Math.max(startMs, Date.parse(transition.changedAt));
+      const endedMs = Math.min(endMs, closing ? Date.parse(closing.changedAt) : Date.now());
+      if (!Number.isFinite(startedMs) || !Number.isFinite(endedMs) || endedMs <= startedMs) continue;
+      const startedAt = new Date(startedMs).toISOString();
+      const endedAt = new Date(endedMs).toISOString();
+      windows.push({
+        id: `task-state:${transition.id}`,
+        taskId,
+        title: transition.taskTitle,
+        startedAt,
+        endedAt,
+        durationMinutes: activityMinutes(startedAt, endedAt),
+        status: closing?.to === 'done' ? 'completed' : 'open',
+        source: 'task-status-transitions',
+      });
+    }
+  }
+  return windows;
+}
+
 function addNoFocusGaps(segments) {
   const known = segments.filter(item => ['focus', 'break', 'manual'].includes(item.kind))
     .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
@@ -1530,8 +1594,9 @@ function addNoFocusGaps(segments) {
 }
 
 async function buildActivityCalendar(userKey, dateKey) {
-  const [calendar, sessions, history, corrections] = await Promise.all([
+  const [calendar, transitions, sessions, history, corrections] = await Promise.all([
     listCalendarEventsForDate(userKey, dateKey),
+    readTaskStatusEvents(userKey),
     readPomodoros(userKey),
     readHistory(userKey),
     readActivityCorrections(userKey),
@@ -1562,7 +1627,7 @@ async function buildActivityCalendar(userKey, dateKey) {
   return {
     date: dateKey,
     planned,
-    taskStates: [],
+    taskStates: projectTaskStateWindows(transitions, dateKey),
     actual,
     summary: {
       focusMinutes,
@@ -1785,6 +1850,14 @@ async function handleApi(req, res, url) {
       subtasks: Array.isArray(body.subtasks) ? body.subtasks : [],
     });
     await writeJson(userFile(userKey, 'tasks.json', legacyTasksFile), normalizeTasks([task, ...tasks]));
+    await appendTaskStatusEvent(userKey, {
+      taskId: task.id,
+      taskTitle: task.title,
+      from: null,
+      to: task.status,
+      changedAt: typeof body.transitionAt === 'string' ? body.transitionAt : task.createdAt,
+      businessDate: task.businessDate,
+    });
     sendJson(res, 201, { task });
     return;
   }
@@ -1801,15 +1874,27 @@ async function handleApi(req, res, url) {
       return;
     }
 
+    const { transitionAt, ...taskChanges } = body || {};
+    const previousStatus = tasks[index].status;
     const task = normalizeTask({
       ...tasks[index],
-      ...body,
+      ...taskChanges,
       id: taskId,
       title: typeof body?.title === 'string' && body.title.trim() ? body.title.trim() : tasks[index].title,
       updatedAt: new Date().toISOString(),
     });
     tasks[index] = task;
     await writeJson(userFile(userKey, 'tasks.json', legacyTasksFile), tasks);
+    if (task.status !== previousStatus) {
+      await appendTaskStatusEvent(userKey, {
+        taskId: task.id,
+        taskTitle: task.title,
+        from: previousStatus,
+        to: task.status,
+        changedAt: typeof transitionAt === 'string' ? transitionAt : task.updatedAt,
+        businessDate: resolveBusinessDate({ businessDate: body?.businessDate, createdAt: transitionAt || task.updatedAt }),
+      });
+    }
     sendJson(res, 200, { task });
     return;
   }
