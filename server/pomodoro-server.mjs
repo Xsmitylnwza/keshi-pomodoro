@@ -22,6 +22,7 @@ const legacyAppSettingsFile = path.join(dataDir, 'app-settings.json');
 const legacyHistoryFile = path.join(dataDir, 'history.json');
 const legacyTaskSnapshotsFile = path.join(dataDir, 'task-snapshots.json');
 const legacyCronRunsFile = path.join(dataDir, 'cron-runs.json');
+const legacyActivityCorrectionsFile = path.join(dataDir, 'activity-corrections.json');
 const legacyDisciplineDbFile = process.env.DISCIPLINE_DB_FILE || path.join(dataDir, 'discipline.sqlite');
 const disciplineDbs = new Map();
 const legacyScoreKeys = ['deep_work', 'reading', 'exercise', 'sleep', 'nutrition', 'discipline'];
@@ -1392,6 +1393,187 @@ async function readTasks(userKey) {
   return cleanedTasks;
 }
 
+const activityCorrectionKinds = new Set(['focus', 'break', 'manual', 'unallocated']);
+
+function normalizeActivityCorrection(correction = {}) {
+  const createdAt = typeof correction.createdAt === 'string' ? correction.createdAt : new Date().toISOString();
+  return {
+    id: typeof correction.id === 'string' && correction.id ? correction.id : randomUUID(),
+    businessDate: resolveBusinessDate(correction, correction.startedAt || createdAt),
+    operation: correction.operation === 'replace' ? 'replace' : 'add',
+    sourceId: typeof correction.sourceId === 'string' && correction.sourceId ? correction.sourceId : null,
+    kind: activityCorrectionKinds.has(correction.kind) ? correction.kind : 'manual',
+    title: typeof correction.title === 'string' && correction.title.trim() ? correction.title.trim() : 'Manual activity',
+    startedAt: new Date(correction.startedAt).toISOString(),
+    endedAt: new Date(correction.endedAt).toISOString(),
+    reason: typeof correction.reason === 'string' ? correction.reason.trim() : '',
+    createdAt,
+    source: 'user-correction',
+  };
+}
+
+async function readActivityCorrections(userKey) {
+  const corrections = await readJson(userFile(userKey, 'activity-corrections.json', legacyActivityCorrectionsFile), []);
+  return Array.isArray(corrections) ? corrections.filter(item => {
+    return Number.isFinite(Date.parse(item?.startedAt)) && Number.isFinite(Date.parse(item?.endedAt));
+  }).map(normalizeActivityCorrection) : [];
+}
+
+function activityMinutes(startedAt, endedAt) {
+  return Math.max(0, Math.round((Date.parse(endedAt) - Date.parse(startedAt)) / 60000));
+}
+
+function clipActivitySegment(segment, dateKey) {
+  const { startMs, endMs } = businessDayBounds(dateKey);
+  const startedMs = Math.max(startMs, Date.parse(segment.startedAt));
+  const endedMs = Math.min(endMs, Date.parse(segment.endedAt));
+  if (!Number.isFinite(startedMs) || !Number.isFinite(endedMs) || endedMs <= startedMs) return null;
+  const startedAt = new Date(startedMs).toISOString();
+  const endedAt = new Date(endedMs).toISOString();
+  return { ...segment, startedAt, endedAt, durationMinutes: activityMinutes(startedAt, endedAt) };
+}
+
+function intervalUnionMinutes(segments) {
+  const intervals = segments
+    .map(item => [Date.parse(item.startedAt), Date.parse(item.endedAt)])
+    .filter(([start, end]) => Number.isFinite(start) && Number.isFinite(end) && end > start)
+    .sort((left, right) => left[0] - right[0]);
+  let totalMs = 0;
+  let current = null;
+  for (const interval of intervals) {
+    if (!current) current = [...interval];
+    else if (interval[0] <= current[1]) current[1] = Math.max(current[1], interval[1]);
+    else {
+      totalMs += current[1] - current[0];
+      current = [...interval];
+    }
+  }
+  if (current) totalMs += current[1] - current[0];
+  return Math.round(totalMs / 60000);
+}
+
+function projectRecordedActivity(sessions, history, dateKey) {
+  const projectedIds = new Set();
+  const segments = [];
+  for (const session of sessions.filter(item => pomodoroMatchesDate(item, dateKey))) {
+    const endedMs = Date.parse(session.completedAt);
+    const durationMinutes = Number(session.durationMinutes);
+    if (!Number.isFinite(endedMs) || !Number.isFinite(durationMinutes) || durationMinutes <= 0) continue;
+    const segment = clipActivitySegment({
+      id: `pomodoro:${session.id}`,
+      sessionId: session.sessionId || session.id,
+      kind: 'focus',
+      title: session.taskTitle || 'Unassigned focus',
+      taskId: session.taskId || null,
+      startedAt: new Date(endedMs - durationMinutes * 60000).toISOString(),
+      endedAt: new Date(endedMs).toISOString(),
+      source: 'pomodoro-history',
+      estimated: true,
+    }, dateKey);
+    if (segment) {
+      segments.push(segment);
+      projectedIds.add(session.id);
+    }
+  }
+  for (const item of history.filter(entry => entry.businessDate === dateKey)) {
+    if (projectedIds.has(item.id)) continue;
+    const endedMs = Date.parse(item.syncedAt);
+    const durationMinutes = Number(item.duration);
+    if (!Number.isFinite(endedMs) || !Number.isFinite(durationMinutes) || durationMinutes <= 0) continue;
+    const isBreak = item.mode === 'break';
+    const segment = clipActivitySegment({
+      id: `history:${item.id}`,
+      kind: isBreak ? 'break' : 'focus',
+      title: isBreak ? 'Break' : (item.taskTitle || 'Unassigned focus'),
+      taskId: item.taskId || null,
+      startedAt: new Date(endedMs - durationMinutes * 60000).toISOString(),
+      endedAt: new Date(endedMs).toISOString(),
+      source: 'history',
+      estimated: true,
+    }, dateKey);
+    if (segment) segments.push(segment);
+  }
+  return segments;
+}
+
+function markFocusConflicts(segments) {
+  const focus = segments.filter(item => item.kind === 'focus')
+    .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
+  for (let left = 0; left < focus.length; left += 1) {
+    const overlapping = focus.filter(item => (
+      Date.parse(item.startedAt) < Date.parse(focus[left].endedAt)
+      && Date.parse(item.endedAt) > Date.parse(focus[left].startedAt)
+    ));
+    if (overlapping.length > 1) {
+      focus[left].conflict = true;
+      focus[left].conflictTrack = overlapping.indexOf(focus[left]);
+      focus[left].conflictTracks = overlapping.length;
+    }
+  }
+}
+
+function addNoFocusGaps(segments) {
+  const known = segments.filter(item => ['focus', 'break', 'manual'].includes(item.kind))
+    .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
+  const gaps = [];
+  let cursor = known[0] ? Date.parse(known[0].endedAt) : null;
+  for (const segment of known.slice(1)) {
+    const start = Date.parse(segment.startedAt);
+    if (start > cursor) {
+      const startedAt = new Date(cursor).toISOString();
+      const endedAt = new Date(start).toISOString();
+      gaps.push({ id: `gap:${startedAt}:${endedAt}`, kind: 'unallocated', title: 'No Focus logged', startedAt, endedAt, durationMinutes: activityMinutes(startedAt, endedAt), source: 'derived-gap' });
+    }
+    cursor = Math.max(cursor, Date.parse(segment.endedAt));
+  }
+  return gaps;
+}
+
+async function buildActivityCalendar(userKey, dateKey) {
+  const [calendar, sessions, history, corrections] = await Promise.all([
+    listCalendarEventsForDate(userKey, dateKey),
+    readPomodoros(userKey),
+    readHistory(userKey),
+    readActivityCorrections(userKey),
+  ]);
+  const planned = calendar.events.map(event => clipActivitySegment({
+    id: `calendar:${event.id}`,
+    kind: 'planned',
+    title: event.title,
+    startedAt: event.start,
+    endedAt: event.end || new Date(Date.parse(event.start) + 3600000).toISOString(),
+    source: 'calendar',
+  }, dateKey)).filter(Boolean);
+  let actual = projectRecordedActivity(sessions, history, dateKey);
+  const dayCorrections = corrections.filter(item => item.businessDate === dateKey);
+  const replacedIds = new Set(dayCorrections.filter(item => item.operation === 'replace').map(item => item.sourceId));
+  actual = actual.filter(item => !replacedIds.has(item.id));
+  actual.push(...dayCorrections.filter(item => !replacedIds.has(item.id)).map(item => ({
+    ...item,
+    durationMinutes: activityMinutes(item.startedAt, item.endedAt),
+    edited: true,
+  })));
+  markFocusConflicts(actual);
+  const focus = actual.filter(item => item.kind === 'focus');
+  const focusMinutes = intervalUnionMinutes(focus);
+  const summedFocusMinutes = focus.reduce((sum, item) => sum + item.durationMinutes, 0);
+  const gaps = addNoFocusGaps(actual);
+  actual = [...actual, ...gaps].sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
+  return {
+    date: dateKey,
+    planned,
+    taskStates: [],
+    actual,
+    summary: {
+      focusMinutes,
+      manualMinutes: intervalUnionMinutes(actual.filter(item => item.kind === 'manual')),
+      breakMinutes: intervalUnionMinutes(actual.filter(item => item.kind === 'break')),
+      noFocusMinutes: gaps.reduce((sum, item) => sum + item.durationMinutes, 0),
+      overlapMinutes: Math.max(0, summedFocusMinutes - focusMinutes),
+    },
+  };
+}
+
 async function readTaskSnapshots(userKey) {
   const snapshots = await readJson(userFile(userKey, 'task-snapshots.json', legacyTaskSnapshotsFile), {});
   return snapshots && typeof snapshots === 'object' && !Array.isArray(snapshots) ? snapshots : {};
@@ -1502,6 +1684,38 @@ async function handleApi(req, res, url) {
     const date = optionalDateKey(url.searchParams.get('date'), 'date') || todayKey();
     const payload = await listCalendarEventsForDate(userKey, date);
     sendJson(res, 200, payload);
+    return;
+  }
+
+  if (pathname === '/api/activity/calendar' && req.method === 'GET') {
+    const date = optionalDateKey(url.searchParams.get('date'), 'date') || todayKey();
+    sendJson(res, 200, await buildActivityCalendar(userKey, date));
+    return;
+  }
+
+  if (pathname === '/api/activity/corrections' && req.method === 'POST') {
+    const body = await readBody(req);
+    const startedMs = Date.parse(body?.startedAt);
+    const endedMs = Date.parse(body?.endedAt);
+    if (!Number.isFinite(startedMs) || !Number.isFinite(endedMs) || endedMs <= startedMs) {
+      sendJson(res, 400, { error: 'activity_time_invalid' });
+      return;
+    }
+    if (body?.kind !== undefined && !activityCorrectionKinds.has(body.kind)) {
+      sendJson(res, 400, { error: 'activity_kind_invalid' });
+      return;
+    }
+    if (body?.operation === 'replace' && (!body.sourceId || typeof body.sourceId !== 'string')) {
+      sendJson(res, 400, { error: 'source_id_required' });
+      return;
+    }
+    const correction = normalizeActivityCorrection({
+      ...body,
+      businessDate: optionalDateKey(body?.businessDate, 'businessDate') || toBusinessDateKey(body.startedAt),
+    });
+    const corrections = await readActivityCorrections(userKey);
+    await writeJson(userFile(userKey, 'activity-corrections.json', legacyActivityCorrectionsFile), [correction, ...corrections]);
+    sendJson(res, 201, { correction });
     return;
   }
 
