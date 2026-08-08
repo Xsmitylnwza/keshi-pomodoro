@@ -1541,7 +1541,7 @@ function markFocusConflicts(segments) {
   }
 }
 
-function projectTaskStateWindows(transitions, dateKey) {
+function projectTaskStateWindows(transitions, dateKey, tasks = []) {
   const { startMs, endMs } = businessDayBounds(dateKey);
   const byTask = new Map();
   for (const transition of transitions) {
@@ -1573,6 +1573,29 @@ function projectTaskStateWindows(transitions, dateKey) {
       });
     }
   }
+  const transitionedTaskIds = new Set(transitions.map(item => item.taskId));
+  for (const task of tasks.filter(item => (
+    item.status === 'doing'
+    && taskMatchesDate(item, dateKey)
+    && !transitionedTaskIds.has(item.id)
+  ))) {
+    const startedMs = Math.max(startMs, Date.parse(task.updatedAt || task.createdAt));
+    const endedMs = Math.min(endMs, Date.now());
+    if (!Number.isFinite(startedMs) || endedMs <= startedMs) continue;
+    const startedAt = new Date(startedMs).toISOString();
+    const endedAt = new Date(endedMs).toISOString();
+    windows.push({
+      id: `task-state:inferred:${task.id}`,
+      taskId: task.id,
+      title: task.title,
+      startedAt,
+      endedAt,
+      durationMinutes: activityMinutes(startedAt, endedAt),
+      status: 'open',
+      source: 'current-task-backfill',
+      estimated: true,
+    });
+  }
   return windows;
 }
 
@@ -1594,9 +1617,10 @@ function addNoFocusGaps(segments) {
 }
 
 async function buildActivityCalendar(userKey, dateKey) {
-  const [calendar, transitions, sessions, history, corrections] = await Promise.all([
+  const [calendar, transitions, tasks, sessions, history, corrections] = await Promise.all([
     listCalendarEventsForDate(userKey, dateKey),
     readTaskStatusEvents(userKey),
+    readTasks(userKey),
     readPomodoros(userKey),
     readHistory(userKey),
     readActivityCorrections(userKey),
@@ -1627,7 +1651,7 @@ async function buildActivityCalendar(userKey, dateKey) {
   return {
     date: dateKey,
     planned,
-    taskStates: projectTaskStateWindows(transitions, dateKey),
+    taskStates: projectTaskStateWindows(transitions, dateKey, tasks),
     actual,
     summary: {
       focusMinutes,
