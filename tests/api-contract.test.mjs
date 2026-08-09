@@ -530,6 +530,59 @@ test('activity calendar projects durable history and corrections', async () => {
   assert.equal(calendar.body.summary.manualMinutes, 15);
 });
 
+test('concurrent doing windows split global focus and unfocused time per task', async () => {
+  const date = '2026-08-12';
+  const tasks = [
+    ['concurrent-a', 'Interview practice'],
+    ['concurrent-b', 'Hermes Agent review'],
+    ['concurrent-c', 'Hermes Agent implementation'],
+  ];
+  for (const [id, title] of tasks) {
+    const created = await post('/api/tasks', {
+      id,
+      title,
+      status: 'doing',
+      businessDate: date,
+      transitionAt: `${date}T03:00:00.000Z`,
+    });
+    assert.equal(created.response.status, 201);
+    const completed = await api(`/api/tasks/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status: 'done', transitionAt: `${date}T04:00:00.000Z` }),
+    });
+    assert.equal(completed.response.status, 200);
+  }
+  const focus = await post('/api/history', {
+    id: 'concurrent-focus',
+    mode: 'focus',
+    duration: 25,
+    date: 'Aug 12, 10:40 AM',
+    businessDate: date,
+    taskId: 'concurrent-a',
+    taskTitle: 'Interview practice',
+    syncedAt: `${date}T03:40:00.000Z`,
+  });
+  assert.equal(focus.response.status, 201);
+
+  const calendar = await api(`/api/activity/calendar?date=${date}`);
+  assert.equal(calendar.response.status, 200);
+  const windows = calendar.body.taskStates.filter(item => item.taskId.startsWith('concurrent-'));
+  assert.equal(windows.length, 3);
+  for (const window of windows) {
+    assert.equal(window.durationMinutes, 60);
+    assert.equal(window.focusMinutes, 25);
+    assert.equal(window.unfocusedMinutes, 35);
+    assert.deepEqual(window.focusSegments, [{
+      id: `task-focus:${window.id}:history:concurrent-focus`,
+      startedAt: `${date}T03:15:00.000Z`,
+      endedAt: `${date}T03:40:00.000Z`,
+      durationMinutes: 25,
+      sourceId: 'history:concurrent-focus',
+    }]);
+  }
+  assert.equal(calendar.body.summary.focusMinutes, 25);
+});
+
 test('required date parameters return 400', async () => {
   const missingScoreDate = await api('/api/discipline/scores');
   assert.equal(missingScoreDate.response.status, 400);

@@ -1541,7 +1541,7 @@ function markFocusConflicts(segments) {
   }
 }
 
-function projectTaskStateWindows(transitions, dateKey, tasks = []) {
+function projectTaskStateWindows(transitions, dateKey, tasks = [], actual = [], nowMs = Date.now()) {
   const { startMs, endMs } = businessDayBounds(dateKey);
   const byTask = new Map();
   for (const transition of transitions) {
@@ -1557,7 +1557,7 @@ function projectTaskStateWindows(transitions, dateKey, tasks = []) {
       if (transition.to !== 'doing') continue;
       const closing = ordered.slice(index + 1).find(item => item.to !== 'doing');
       const startedMs = Math.max(startMs, Date.parse(transition.changedAt));
-      const endedMs = Math.min(endMs, closing ? Date.parse(closing.changedAt) : Date.now());
+      const endedMs = Math.min(endMs, closing ? Date.parse(closing.changedAt) : nowMs);
       if (!Number.isFinite(startedMs) || !Number.isFinite(endedMs) || endedMs <= startedMs) continue;
       const startedAt = new Date(startedMs).toISOString();
       const endedAt = new Date(endedMs).toISOString();
@@ -1580,7 +1580,7 @@ function projectTaskStateWindows(transitions, dateKey, tasks = []) {
     && !transitionedTaskIds.has(item.id)
   ))) {
     const startedMs = Math.max(startMs, Date.parse(task.updatedAt || task.createdAt));
-    const endedMs = Math.min(endMs, Date.now());
+    const endedMs = Math.min(endMs, nowMs);
     if (!Number.isFinite(startedMs) || endedMs <= startedMs) continue;
     const startedAt = new Date(startedMs).toISOString();
     const endedAt = new Date(endedMs).toISOString();
@@ -1596,7 +1596,35 @@ function projectTaskStateWindows(transitions, dateKey, tasks = []) {
       estimated: true,
     });
   }
-  return windows;
+  return windows.map(window => {
+    const windowStartMs = Date.parse(window.startedAt);
+    const windowEndMs = Date.parse(window.endedAt);
+    const focusSegments = actual
+      .filter(item => item.kind === 'focus')
+      .flatMap(item => {
+        const overlapStart = Math.max(windowStartMs, Date.parse(item.startedAt));
+        const overlapEnd = Math.min(windowEndMs, Date.parse(item.endedAt));
+        if (overlapEnd <= overlapStart) return [];
+        const startedAt = new Date(overlapStart).toISOString();
+        const endedAt = new Date(overlapEnd).toISOString();
+        return [{
+          id: `task-focus:${window.id}:${item.id}`,
+          startedAt,
+          endedAt,
+          durationMinutes: activityMinutes(startedAt, endedAt),
+          sourceId: item.id,
+        }];
+      })
+      .sort((left, right) => Date.parse(left.startedAt) - Date.parse(right.startedAt));
+    const focusMinutes = intervalUnionMinutes(focusSegments);
+    return {
+      ...window,
+      ongoing: window.status === 'open' && nowMs < endMs,
+      focusMinutes,
+      unfocusedMinutes: Math.max(0, window.durationMinutes - focusMinutes),
+      focusSegments,
+    };
+  });
 }
 
 function addNoFocusGaps(segments) {
@@ -1651,7 +1679,7 @@ async function buildActivityCalendar(userKey, dateKey) {
   return {
     date: dateKey,
     planned,
-    taskStates: projectTaskStateWindows(transitions, dateKey, tasks),
+    taskStates: projectTaskStateWindows(transitions, dateKey, tasks, actual),
     actual,
     summary: {
       focusMinutes,
