@@ -31,6 +31,7 @@ import {
 } from './lib/appSettingsApi';
 import type { AppCalendarSettings } from './lib/appSettingsApi';
 import { fetchCalendarEvents, googleCalendarConnectUrl, type CalendarEvent, type CalendarEventsResponse } from './lib/calendarApi';
+import { resolveTimerTaskSelection } from './lib/timerTaskSelection.mjs';
 import type { HistoryItem, PomodoroEventType, SprintTask } from './types';
 import {
   fadeDown,
@@ -195,6 +196,7 @@ function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const clickSoundRef = useRef<HTMLAudioElement | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const sessionTaskRef = useRef<Pick<SprintTask, 'id' | 'title'> | null>(null);
   const isDisciplineRoute = pathname.startsWith('/discipline');
 
   useEffect(() => {
@@ -257,9 +259,11 @@ function App() {
       setSoundEnabled(settings.soundEnabled);
       setCalendarSettings(settings.calendar ?? DEFAULT_APP_SETTINGS.calendar);
 
-      const nextSelectedTaskId = syncedTasksResult.some(task => task.id === settings.selectedTaskId)
-        ? settings.selectedTaskId
-        : syncedTasksResult[0]?.id ?? '';
+      const nextSelectedTaskId = resolveTimerTaskSelection(
+        syncedTasksResult,
+        settings.selectedTaskId,
+        todayKey(),
+      );
       setSelectedTaskId(nextSelectedTaskId);
       setExpandedTaskId(prev => prev ?? (nextSelectedTaskId || null));
 
@@ -286,6 +290,14 @@ function App() {
     };
   }, [auth.authenticated, auth.loading]);
 
+  useEffect(() => {
+    if (!selectedTaskId || resolveTimerTaskSelection(tasks, selectedTaskId, todayKey())) return;
+    setSelectedTaskId('');
+    void updateAppSettings({ selectedTaskId: '' }).catch(error => {
+      console.warn('Selected task sync failed', error);
+    });
+  }, [selectedTaskId, tasks]);
+
   const refreshTasks = async () => {
     setTaskSyncState('syncing');
 
@@ -293,9 +305,11 @@ function App() {
       const syncedTasks = await fetchSprintTasks();
       setTasks(syncedTasks);
 
-      const fallbackSelectedTaskId = syncedTasks.some(task => task.id === selectedTaskId)
-        ? selectedTaskId
-        : syncedTasks[0]?.id ?? '';
+      const fallbackSelectedTaskId = resolveTimerTaskSelection(
+        syncedTasks,
+        selectedTaskId,
+        todayKey(),
+      );
 
       if (fallbackSelectedTaskId !== selectedTaskId) {
         setSelectedTaskId(fallbackSelectedTaskId);
@@ -377,7 +391,7 @@ function App() {
     }
 
     // Add to history with unique ID
-    const selectedTask = tasks.find(task => task.id === selectedTaskId);
+    const selectedTask = sessionTaskRef.current;
     const completedBusinessDate = todayKey();
     const historyId = crypto.randomUUID();
     const newItem: HistoryItem = {
@@ -418,6 +432,7 @@ function App() {
 
     const newMode = mode === 'focus' ? 'break' : 'focus';
     sessionIdRef.current = null;
+    sessionTaskRef.current = null;
     setMode(newMode);
     setTimeLeft((newMode === 'focus' ? focusTime : breakTime) * 60);
   };
@@ -558,7 +573,7 @@ function App() {
     : '';
   const nextUpTitle = nextUpEvent?.title
     ?? (selectedTaskId
-      ? (tasks.find(task => task.id === selectedTaskId)?.title || 'Selected task')
+      ? (tasks.find(task => task.id === resolveTimerTaskSelection(tasks, selectedTaskId, todayKey()))?.title || 'No next task')
       : 'No next task');
   const nextUpHint = nextUpEvent
     ? (nextUpKind === 'now' ? 'Happening now' : 'Up next')
@@ -572,17 +587,16 @@ function App() {
 
   const selectTask = (taskId: string, options?: { expand?: boolean | 'toggle' }) => {
     const expandMode = options?.expand ?? false;
-    setSelectedTaskId(taskId);
+    const eligibleTaskId = resolveTimerTaskSelection(tasks, taskId, todayKey());
+    setSelectedTaskId(eligibleTaskId);
     if (expandMode === true) {
-      setExpandedTaskId(taskId || null);
+      setExpandedTaskId(eligibleTaskId || null);
     } else if (expandMode === 'toggle') {
-      setExpandedTaskId(prev => (prev === taskId ? null : taskId));
+      setExpandedTaskId(prev => (prev === eligibleTaskId ? null : (eligibleTaskId || null)));
     }
-    if (taskId) {
-      void updateAppSettings({ selectedTaskId: taskId }).catch(error => {
-        console.warn('Selected task save failed', error);
-      });
-    }
+    void updateAppSettings({ selectedTaskId: eligibleTaskId }).catch(error => {
+      console.warn('Selected task save failed', error);
+    });
   };
 
   const activateTaskTitle = (taskId: string) => {
@@ -668,11 +682,16 @@ function App() {
   };
 
   const logTimerEvent = (type: PomodoroEventType, overrides?: { elapsedSeconds?: number; remainingSeconds?: number; sessionId?: string }) => {
-    const selectedTask = tasks.find(task => task.id === selectedTaskId);
     const plannedSeconds = plannedSecondsFor(mode);
     const remainingSeconds = overrides?.remainingSeconds ?? timeLeft;
     const elapsedSeconds = overrides?.elapsedSeconds ?? Math.max(0, plannedSeconds - remainingSeconds);
     const sessionId = overrides?.sessionId ?? sessionIdRef.current ?? crypto.randomUUID();
+    if (sessionId !== sessionIdRef.current) {
+      const eligibleTaskId = resolveTimerTaskSelection(tasks, selectedTaskId, todayKey());
+      const selectedTask = tasks.find(task => task.id === eligibleTaskId);
+      sessionTaskRef.current = selectedTask ? { id: selectedTask.id, title: selectedTask.title } : null;
+    }
+    const selectedTask = sessionTaskRef.current;
     const eventId = crypto.randomUUID();
     const businessDate = todayKey();
 
@@ -709,6 +728,7 @@ function App() {
       logTimerEvent('pomodoro_cancelled', { elapsedSeconds, remainingSeconds: timeLeft });
     }
     sessionIdRef.current = null;
+    sessionTaskRef.current = null;
   };
 
   function toggleTimer() {
@@ -1019,7 +1039,8 @@ function App() {
   const progress = totalTime > 0 ? ((totalTime - timeLeft) / totalTime) * 100 : 0;
 
   const { colors } = useTheme();
-  const selectedTask = tasks.find(task => task.id === selectedTaskId) ?? null;
+  const eligibleSelectedTaskId = resolveTimerTaskSelection(tasks, selectedTaskId, todayKey());
+  const selectedTask = tasks.find(task => task.id === eligibleSelectedTaskId) ?? null;
   const dayTasksSorted = tasksForDay(tasks, taskDay).slice().sort((a, b) => (b.order ?? 0) - (a.order ?? 0));
   const taskFilterCounts = {
     all: dayTasksSorted.length,
@@ -2068,6 +2089,5 @@ function App() {
 }
 
 export default App;
-
 
 
