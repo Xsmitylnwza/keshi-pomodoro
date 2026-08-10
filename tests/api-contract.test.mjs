@@ -583,6 +583,85 @@ test('concurrent doing windows split global focus and unfocused time per task', 
   assert.equal(calendar.body.summary.focusMinutes, 25);
 });
 
+test('activity calendar does not carry doing windows into another business day', async () => {
+  const previous = '2026-08-09';
+  const today = '2026-08-10';
+  const task = await post('/api/tasks', {
+    id: 'carryover-hermes',
+    title: 'Hermes carry-over task',
+    status: 'doing',
+    businessDate: previous,
+    createdAt: `${previous}T20:00:00+07:00`,
+    transitionAt: `${previous}T20:00:00+07:00`,
+  });
+  assert.equal(task.response.status, 201);
+
+  const calendar = await api(`/api/activity/calendar?date=${today}`);
+  assert.equal(calendar.response.status, 200);
+  assert.equal(calendar.body.taskStates.some(item => item.taskId === 'carryover-hermes'), false);
+});
+
+test('activity calendar recovers unassigned focus from one same-day doing task', async () => {
+  const date = '2026-08-18';
+  const task = await post('/api/tasks', {
+    id: 'context-focus-task',
+    title: 'Interview context task',
+    status: 'doing',
+    businessDate: date,
+    createdAt: `${date}T09:00:00+07:00`,
+    transitionAt: `${date}T09:00:00+07:00`,
+  });
+  assert.equal(task.response.status, 201);
+
+  const history = await post('/api/history', {
+    id: 'context-focus-history',
+    mode: 'focus',
+    duration: 25,
+    date: 'Aug 18, 9:30 AM',
+    businessDate: date,
+    syncedAt: `${date}T09:30:00+07:00`,
+  });
+  assert.equal(history.response.status, 201);
+
+  const calendar = await api(`/api/activity/calendar?date=${date}`);
+  const focus = calendar.body.actual.find(item => item.id === 'history:context-focus-history');
+  assert.equal(focus.taskId, 'context-focus-task');
+  assert.equal(focus.title, 'Interview context task');
+  assert.equal(focus.attributionRecovered, true);
+});
+
+test('activity calendar marks focus across multiple active tasks as ambiguous without guessing one', async () => {
+  const date = '2026-08-19';
+  for (const [id, title] of [['ambiguous-a', 'Task A'], ['ambiguous-b', 'Task B']]) {
+    const task = await post('/api/tasks', {
+      id,
+      title,
+      status: 'doing',
+      businessDate: date,
+      createdAt: `${date}T09:00:00+07:00`,
+      transitionAt: `${date}T09:00:00+07:00`,
+    });
+    assert.equal(task.response.status, 201);
+  }
+
+  const history = await post('/api/history', {
+    id: 'ambiguous-focus-history',
+    mode: 'focus',
+    duration: 25,
+    date: 'Aug 19, 9:30 AM',
+    businessDate: date,
+    syncedAt: `${date}T09:30:00+07:00`,
+  });
+  assert.equal(history.response.status, 201);
+
+  const calendar = await api(`/api/activity/calendar?date=${date}`);
+  const focus = calendar.body.actual.find(item => item.id === 'history:ambiguous-focus-history');
+  assert.equal(focus.taskId, null);
+  assert.equal(focus.title, 'Focus across 2 active tasks');
+  assert.equal(focus.attributionAmbiguous, true);
+  assert.deepEqual(focus.candidateTaskIds.sort(), ['ambiguous-a', 'ambiguous-b']);
+});
+
 test('required date parameters return 400', async () => {
   const missingScoreDate = await api('/api/discipline/scores');
   assert.equal(missingScoreDate.response.status, 400);

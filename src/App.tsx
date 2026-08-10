@@ -585,9 +585,9 @@ function App() {
     playClick();
   };
 
-  const selectTask = (taskId: string, options?: { expand?: boolean | 'toggle' }) => {
+  const selectTask = (taskId: string, options?: { expand?: boolean | 'toggle' }, sourceTasks = tasks) => {
     const expandMode = options?.expand ?? false;
-    const eligibleTaskId = resolveTimerTaskSelection(tasks, taskId, todayKey());
+    const eligibleTaskId = resolveTimerTaskSelection(sourceTasks, taskId, todayKey());
     setSelectedTaskId(eligibleTaskId);
     if (expandMode === true) {
       setExpandedTaskId(eligibleTaskId || null);
@@ -823,7 +823,7 @@ function App() {
     const nextTasks = [nextTask, ...tasks];
     const normalizedTasks = nextTasks.slice().sort((a, b) => (b.order ?? 0) - (a.order ?? 0));
     setTasks(normalizedTasks);
-    selectTask(nextTask.id);
+    selectTask(nextTask.id, undefined, normalizedTasks);
     setNewTaskTitle('');
 
     createSprintTask(nextTask)
@@ -850,6 +850,7 @@ function App() {
   };
 
   const patchTask = (taskId: string, patch: Partial<SprintTask>) => {
+    const previousTask = tasks.find(task => task.id === taskId);
     const nextTasks = tasks.map(task => {
       if (task.id !== taskId) return task;
       return {
@@ -861,6 +862,9 @@ function App() {
     const updatedTask = nextTasks.find(task => task.id === taskId);
     if (!updatedTask) return;
     persistTask(updatedTask, nextTasks);
+    if (patch.status === 'doing' && previousTask?.status !== 'doing') {
+      selectTask(taskId, undefined, nextTasks);
+    }
   };
 
   const setTaskStatus = (taskId: string, status: SprintTask['status']) => {
@@ -2089,5 +2093,4 @@ function App() {
 }
 
 export default App;
-
 

@@ -1481,23 +1481,65 @@ function intervalUnionMinutes(segments) {
   return Math.round(totalMs / 60000);
 }
 
-function projectRecordedActivity(sessions, history, dateKey) {
+function resolveActiveTasksAt(transitions, dateKey, instantMs, taskById = new Map()) {
+  if (!Number.isFinite(instantMs)) return [];
+  const byTask = new Map();
+  for (const transition of transitions) {
+    const group = byTask.get(transition.taskId) || [];
+    group.push(transition);
+    byTask.set(transition.taskId, group);
+  }
+
+  const active = [];
+  for (const [taskId, group] of byTask) {
+    const ordered = [...group].sort((left, right) => Date.parse(left.changedAt) - Date.parse(right.changedAt));
+    const matching = ordered.find((transition, index) => {
+      if (transition.to !== 'doing' || toBusinessDateKey(transition.changedAt) !== dateKey) return false;
+      const startedMs = Date.parse(transition.changedAt);
+      const closing = ordered.slice(index + 1).find(item => item.to !== 'doing');
+      const endedMs = closing ? Date.parse(closing.changedAt) : Number.POSITIVE_INFINITY;
+      return startedMs <= instantMs && instantMs < endedMs;
+    });
+    if (matching) {
+      active.push({
+        id: taskId,
+        title: matching.taskTitle || taskById.get(taskId)?.title || null,
+      });
+    }
+  }
+  return active;
+}
+
+function projectRecordedActivity(sessions, history, dateKey, transitions = [], tasks = []) {
+  const taskById = new Map(tasks.map(task => [task.id, task]));
   const projectedIds = new Set();
   const segments = [];
   for (const session of sessions.filter(item => pomodoroMatchesDate(item, dateKey))) {
     const endedMs = Date.parse(session.completedAt);
     const durationMinutes = Number(session.durationMinutes);
     if (!Number.isFinite(endedMs) || !Number.isFinite(durationMinutes) || durationMinutes <= 0) continue;
+    const startedMs = endedMs - durationMinutes * 60000;
+    const contextualTasks = !session.taskId && !session.taskTitle
+      ? resolveActiveTasksAt(transitions, dateKey, startedMs, taskById)
+      : [];
+    const contextualTask = contextualTasks.length === 1 ? contextualTasks[0] : null;
+    const contextualTitle = contextualTasks.length > 1
+      ? `Focus across ${contextualTasks.length} active tasks`
+      : null;
     const segment = clipActivitySegment({
       id: `pomodoro:${session.id}`,
       sessionId: session.sessionId || session.id,
       kind: 'focus',
-      title: session.taskTitle || 'Unassigned focus',
-      taskId: session.taskId || null,
-      startedAt: new Date(endedMs - durationMinutes * 60000).toISOString(),
+      title: session.taskTitle || contextualTask?.title || contextualTitle || 'Unassigned focus',
+      taskId: session.taskId || contextualTask?.id || null,
+      startedAt: new Date(startedMs).toISOString(),
       endedAt: new Date(endedMs).toISOString(),
       source: 'pomodoro-history',
       estimated: true,
+      attributionRecovered: Boolean(contextualTask),
+      attributionAmbiguous: contextualTasks.length > 1,
+      candidateTaskIds: contextualTasks.map(task => task.id),
+      candidateTaskTitles: contextualTasks.map(task => task.title).filter(Boolean),
     }, dateKey);
     if (segment) {
       segments.push(segment);
@@ -1510,15 +1552,27 @@ function projectRecordedActivity(sessions, history, dateKey) {
     const durationMinutes = Number(item.duration);
     if (!Number.isFinite(endedMs) || !Number.isFinite(durationMinutes) || durationMinutes <= 0) continue;
     const isBreak = item.mode === 'break';
+    const startedMs = endedMs - durationMinutes * 60000;
+    const contextualTasks = !isBreak && !item.taskId && !item.taskTitle
+      ? resolveActiveTasksAt(transitions, dateKey, startedMs, taskById)
+      : [];
+    const contextualTask = contextualTasks.length === 1 ? contextualTasks[0] : null;
+    const contextualTitle = contextualTasks.length > 1
+      ? `Focus across ${contextualTasks.length} active tasks`
+      : null;
     const segment = clipActivitySegment({
       id: `history:${item.id}`,
       kind: isBreak ? 'break' : 'focus',
-      title: isBreak ? 'Break' : (item.taskTitle || 'Unassigned focus'),
-      taskId: item.taskId || null,
-      startedAt: new Date(endedMs - durationMinutes * 60000).toISOString(),
+      title: isBreak ? 'Break' : (item.taskTitle || contextualTask?.title || contextualTitle || 'Unassigned focus'),
+      taskId: item.taskId || contextualTask?.id || null,
+      startedAt: new Date(startedMs).toISOString(),
       endedAt: new Date(endedMs).toISOString(),
       source: 'history',
       estimated: true,
+      attributionRecovered: Boolean(contextualTask),
+      attributionAmbiguous: contextualTasks.length > 1,
+      candidateTaskIds: contextualTasks.map(task => task.id),
+      candidateTaskTitles: contextualTasks.map(task => task.title).filter(Boolean),
     }, dateKey);
     if (segment) segments.push(segment);
   }
@@ -1555,6 +1609,7 @@ function projectTaskStateWindows(transitions, dateKey, tasks = [], actual = [], 
     for (let index = 0; index < ordered.length; index += 1) {
       const transition = ordered[index];
       if (transition.to !== 'doing') continue;
+      if (toBusinessDateKey(transition.changedAt) !== dateKey) continue;
       const closing = ordered.slice(index + 1).find(item => item.to !== 'doing');
       const startedMs = Math.max(startMs, Date.parse(transition.changedAt));
       const endedMs = Math.min(endMs, closing ? Date.parse(closing.changedAt) : nowMs);
@@ -1568,7 +1623,7 @@ function projectTaskStateWindows(transitions, dateKey, tasks = [], actual = [], 
         startedAt,
         endedAt,
         durationMinutes: activityMinutes(startedAt, endedAt),
-        status: closing?.to === 'done' ? 'completed' : 'open',
+        status: closing?.to === 'done' ? 'completed' : closing ? 'closed' : 'open',
         source: 'task-status-transitions',
       });
     }
@@ -1661,7 +1716,7 @@ async function buildActivityCalendar(userKey, dateKey) {
     endedAt: event.end || new Date(Date.parse(event.start) + 3600000).toISOString(),
     source: 'calendar',
   }, dateKey)).filter(Boolean);
-  let actual = projectRecordedActivity(sessions, history, dateKey);
+  let actual = projectRecordedActivity(sessions, history, dateKey, transitions, tasks);
   const dayCorrections = corrections.filter(item => item.businessDate === dateKey);
   const replacedIds = new Set(dayCorrections.filter(item => item.operation === 'replace').map(item => item.sourceId));
   actual = actual.filter(item => !replacedIds.has(item.id));
